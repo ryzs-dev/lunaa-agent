@@ -11,6 +11,38 @@ const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
+// Message interface for the new messages table
+export interface Message {
+  id?: number;
+  sid: string;
+  order_id?: number;
+  to_number: string;
+  from_number: string;
+  message_type?: string;
+  message_content?: string;
+  template_id?: string;
+  latest_status: string;
+  status_history?: any[];
+  error_code?: string;
+  error_message?: string;
+  sent_at?: string;
+  last_updated?: string;
+  created_at?: string;
+}
+
+// Conversation interface
+export interface Conversation {
+  id?: number;
+  phone_number: string;
+  customer_name?: string;
+  last_message_at?: string;
+  status?: string;
+  assigned_to?: string;
+  tags?: string[];
+  created_at?: string;
+  updated_at?: string;
+}
+
 /**
  * Insert a new order into Supabase
  */
@@ -72,6 +104,28 @@ export async function getOrderByTracking(
 }
 
 /**
+ * Get order by phone number (for linking messages to orders)
+ */
+export async function getOrderByPhoneNumber(
+  phoneNumber: string
+): Promise<Order | null> {
+  const { data, error } = await supabase
+    .from("orders")
+    .select("*")
+    .eq("phone_number", phoneNumber)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .single();
+
+  if (error && error.code !== "PGRST116") {
+    console.error("❌ Failed to get order by phone:", error);
+    throw error;
+  }
+
+  return data ?? null;
+}
+
+/**
  * Get all orders with pending status
  */
 export async function getPendingOrders(): Promise<Order[]> {
@@ -83,26 +137,6 @@ export async function getPendingOrders(): Promise<Order[]> {
 
   if (error) {
     console.error("❌ Failed to get pending orders:", error);
-    throw error;
-  }
-
-  return data;
-}
-
-/**
- * Get orders that need tracking updates
- */
-export async function getOrdersNeedingTracking(): Promise<Order[]> {
-  const { data, error } = await supabase
-    .from("orders")
-    .select("*")
-    .not("tracking_number", "is", null)
-    .neq("tracking_number", "")
-    .not("status", "in", "({delivered,failed,cancelled})")
-    .order("created_at", { ascending: false });
-
-  if (error) {
-    console.error("❌ Failed to get orders needing tracking:", error);
     throw error;
   }
 
@@ -144,7 +178,191 @@ export async function bulkInsertOrders(orders: Order[]): Promise<void> {
 }
 
 /**
- * Update message status with history in Supabase
+ * Insert a new message record
+ */
+export async function insertMessage(message: Message): Promise<number> {
+  // Try to link message to an order by phone number
+  if (!message.order_id && message.to_number) {
+    try {
+      const order = await getOrderByPhoneNumber(message.to_number);
+      if (order) {
+        message.order_id = order.id;
+      }
+    } catch (error) {
+      console.log("Could not link message to order:", error);
+    }
+  }
+
+  const { data, error } = await supabase
+    .from("messages")
+    .insert([message])
+    .select("id")
+    .single();
+
+  if (error) {
+    console.error("❌ Failed to insert message:", error);
+    throw error;
+  }
+
+  // Update or create conversation
+  await upsertConversation(message.to_number, message.sent_at);
+
+  return data.id;
+}
+
+/**
+ * Update message status with history tracking
+ */
+export async function updateMessageStatus(
+  sid: string,
+  status: string,
+  errorCode?: string,
+  errorMessage?: string
+): Promise<void> {
+  try {
+    // Get current message to append to status history
+    const { data: existingMessage, error: selectError } = await supabase
+      .from("messages")
+      .select("status_history")
+      .eq("sid", sid)
+      .single();
+
+    if (selectError && selectError.code !== "PGRST116") {
+      console.error("❌ Failed to get existing message:", selectError);
+      throw selectError;
+    }
+
+    let statusHistory = existingMessage?.status_history || [];
+
+    // Add new status to history
+    statusHistory.push({
+      status,
+      timestamp: new Date().toISOString(),
+      error_code: errorCode,
+      error_message: errorMessage,
+    });
+
+    const updateData: any = {
+      latest_status: status,
+      status_history: statusHistory,
+      last_updated: new Date().toISOString(),
+    };
+
+    if (errorCode) updateData.error_code = errorCode;
+    if (errorMessage) updateData.error_message = errorMessage;
+
+    const { error: updateError } = await supabase
+      .from("messages")
+      .update(updateData)
+      .eq("sid", sid);
+
+    if (updateError) {
+      console.error("❌ Failed to update message status:", updateError);
+      throw updateError;
+    }
+
+    console.log(`✅ Updated message status for ${sid}: ${status}`);
+  } catch (error) {
+    console.error("❌ Error in updateMessageStatus:", error);
+    throw error;
+  }
+}
+
+/**
+ * Upsert conversation record
+ */
+export async function upsertConversation(
+  phoneNumber: string,
+  lastMessageAt?: string
+): Promise<void> {
+  const { error } = await supabase
+    .from("conversations")
+    .upsert({
+      phone_number: phoneNumber,
+      last_message_at: lastMessageAt || new Date().toISOString(),
+    })
+    .eq("phone_number", phoneNumber);
+
+  if (error) {
+    console.error("❌ Failed to upsert conversation:", error);
+    throw error;
+  }
+}
+
+/**
+ * Get messages for a conversation (shared inbox)
+ */
+export async function getMessagesByPhoneNumber(
+  phoneNumber: string,
+  limit: number = 50
+): Promise<Message[]> {
+  const { data, error } = await supabase
+    .from("messages")
+    .select("*")
+    .eq("to_number", phoneNumber)
+    .order("sent_at", { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    console.error("❌ Failed to get messages:", error);
+    throw error;
+  }
+
+  return data || [];
+}
+
+/**
+ * Get all conversations (for shared inbox listing)
+ */
+export async function getConversations(
+  limit: number = 100
+): Promise<Conversation[]> {
+  const { data, error } = await supabase
+    .from("conversations")
+    .select("*")
+    .order("last_message_at", { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    console.error("❌ Failed to get conversations:", error);
+    throw error;
+  }
+
+  return data || [];
+}
+
+/**
+ * Get conversation with latest message details
+ */
+export async function getConversationWithLatestMessage(
+  phoneNumber: string
+): Promise<any> {
+  const { data, error } = await supabase
+    .from("conversations")
+    .select(
+      `
+      *,
+      messages!messages_to_number_fkey (
+        sid,
+        message_content,
+        latest_status,
+        sent_at
+      )
+    `
+    )
+    .eq("phone_number", phoneNumber)
+    .single();
+
+  if (error && error.code !== "PGRST116") {
+    console.error("❌ Failed to get conversation with messages:", error);
+    throw error;
+  }
+
+  return data;
+}
+
+/**
+ * Legacy function for compatibility
  */
 export async function updateMessageStatusInDB(
   sid: string,
@@ -154,38 +372,7 @@ export async function updateMessageStatusInDB(
   timestamp: string = new Date().toISOString(),
   order_id?: number
 ): Promise<void> {
-  const { data: existing, error: selectError } = await supabase
-    .from("messages")
-    .select("status_history")
-    .eq("sid", sid)
-    .single();
-
-  let updatedHistory = [];
-
-  if (existing?.status_history) {
-    try {
-      updatedHistory = JSON.parse(existing.status_history);
-    } catch {
-      updatedHistory = [];
-    }
-  }
-
-  updatedHistory.push({ status, timestamp });
-
-  const { error: upsertError } = await supabase.from("messages").upsert({
-    sid,
-    to_number,
-    from_number,
-    latest_status: status,
-    last_updated: timestamp,
-    status_history: JSON.stringify(updatedHistory),
-    order_id: order_id ?? null,
-  });
-
-  if (upsertError) {
-    console.error("❌ Failed to update message status:", upsertError);
-    throw upsertError;
-  }
+  await updateMessageStatus(sid, status);
 }
 
 /**

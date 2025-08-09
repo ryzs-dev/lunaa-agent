@@ -4,18 +4,31 @@ import trackRouter from "../routes/track";
 import path from "path";
 import syncRouter from "../routes/sync";
 import twilioRouter from "../routes/twilio";
+import inboxRouter from "../routes/inbox";
+import whatsappRouter from "../routes/whatsapp";
 
 dotenv.config({ path: path.resolve(__dirname, "../.env.local") });
 
 const app = express();
 const port = process.env.PORT || 3001;
 
-app.use(express.json());
+// IMPORTANT: Add these middleware to parse request bodies
+app.use(express.json({ limit: "10mb" })); // Parse JSON bodies
+app.use(express.urlencoded({ extended: true, limit: "10mb" })); // Parse URL-encoded bodies
 
-// Mount the route
+// Mount the routes
 app.use("/api", trackRouter);
-app.use("/api", twilioRouter); // Now lives at /api/twilio/status
+app.use("/api", twilioRouter);
+app.use("/api/inbox", inboxRouter);
 app.use("/sync", syncRouter);
+app.use("/api", whatsappRouter);
+
+app.get("/health", (req, res) => {
+  res.json({
+    status: "ok",
+    timestamp: new Date().toISOString(),
+  });
+});
 
 app.listen(port, () => {
   console.log(`🚀 Server running on http://localhost:${port}`);

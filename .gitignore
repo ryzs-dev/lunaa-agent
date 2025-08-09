@@ -1,3 +1,7 @@
 .env.local
 
 google-credentials.json
+
+node_modules
+
+.vscode

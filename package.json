@@ -16,9 +16,11 @@
     "@cloudflare/d1": "^1.4.1",
     "@cloudflare/workers-types": "^4.20250724.0",
     "@supabase/supabase-js": "^2.52.1",
+    "@types/node-cron": "^3.0.11",
     "dotenv": "^17.2.0",
     "express": "^5.1.0",
     "googleapis": "^153.0.0",
+    "node-cron": "^4.2.1",
     "ts-node": "^10.9.2",
     "twilio": "^5.7.3",
     "typescript": "^5.8.3"

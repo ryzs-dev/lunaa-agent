@@ -5,7 +5,10 @@ import {
   getConversationWithLatestMessage,
   upsertConversation,
 } from "../database/supabaseOrders";
-import { sendWhatsAppMessage, sendWhatsAppTemplate } from "../src/twilioClient";
+import {
+  sendWhatsAppTextMessage,
+  sendWhatsAppTemplate,
+} from "../src/twilioClient";
 
 const inboxRouter = express.Router();
 
@@ -147,7 +150,7 @@ inboxRouter.post("/send-message", async (req, res) => {
       messageContent = `Tracking: ${tracking_number}`;
     } else if (message) {
       // Send regular text message
-      messageSid = await sendWhatsAppMessage(to, message);
+      messageSid = await sendWhatsAppTextMessage(to, message);
       messageContent = message;
     } else {
       return res.status(400).json({

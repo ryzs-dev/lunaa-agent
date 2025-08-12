@@ -6,6 +6,7 @@ import syncRouter from "../routes/sync";
 import twilioRouter from "../routes/twilio";
 import inboxRouter from "../routes/inbox";
 import whatsappRouter from "../routes/whatsapp";
+import { startDailyTrackingScheduler } from "./scheduler/trackingScheduler";
 
 dotenv.config({ path: path.resolve(__dirname, "../.env.local") });
 
@@ -33,3 +34,8 @@ app.get("/health", (req, res) => {
 app.listen(port, () => {
   console.log(`🚀 Server running on http://localhost:${port}`);
 });
+
+if (process.env.NODE_ENV === "production") {
+  console.log("\n📅 Starting daily tracking automation...");
+  startDailyTrackingScheduler();
+}

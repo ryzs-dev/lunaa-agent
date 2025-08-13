@@ -49,7 +49,13 @@ interface MessageContext {
 // You can also move this to environment variables for better security
 const AUTHORIZED_PHONE_NUMBERS = process.env.AUTHORIZED_PHONE_NUMBERS
   ? process.env.AUTHORIZED_PHONE_NUMBERS.split(",").map((num) => num.trim())
-  : ["601126470411", "60174941361", "0164525013", "0127909921", "0164561361"];
+  : [
+      "601126470411",
+      "60174941361",
+      "60164525013",
+      "60127909921",
+      "60164561361",
+    ];
 
 /**
  * Check if a phone number is authorized to place orders
@@ -225,53 +231,105 @@ export function extractOrderFromMessage(
     const line = lines[i];
     console.log(`🔍 Processing line ${i + 1}: "${line}"`);
 
-    // Check for date with optional .rpt (8/8/25.rpt or 6/8/2025 or 8/8/25，Cod)
-    if (!orderDate && line.match(/^\d{1,2}\/\d{1,2}\/(\d{2}|\d{4})/i)) {
-      // Handle different date formats:
-      // 1. "8/8/25.rpt" - condensed with repeat indicator
-      // 2. "6/8/2025" - standard date
-      // 3. "8/8/25，Cod" - date with comma and payment method
-
-      let dateMatch = line.match(
-        /^(\d{1,2}\/\d{1,2}\/(?:\d{2}|\d{4}))(\.rpt)?/i
+    // Check for standardized labeled fields
+    // Date: 13/8/25，rpt
+    if (
+      line.toLowerCase().startsWith("date:") ||
+      line.toLowerCase().startsWith("date：")
+    ) {
+      const dateContent = line.replace(/^date[：:]\s*/i, "").trim();
+      const dateMatch = dateContent.match(
+        /^(\d{1,2}\/\d{1,2}\/(?:\d{2}|\d{4}))[，,]?\s*(rpt)?/i
       );
       if (dateMatch) {
         orderDate = formatDateToYYYYMMDD(dateMatch[1]);
         isRepeatCustomer = Boolean(dateMatch[2]);
         console.log(
-          `   ✅ Date found: ${orderDate}, Repeat: ${isRepeatCustomer}`
+          `   ✅ Date (labeled): ${orderDate}, Repeat: ${isRepeatCustomer}`
         );
-
-        // Check if this line also contains payment method after comma
-        // e.g., "8/8/25，Cod"
-        const paymentInDateLine = line.match(
-          /[，,]\s*(cod|bank|cash|transfer)\s*$/i
-        );
-        if (paymentInDateLine && !paymentMethod) {
-          paymentMethod = paymentInDateLine[1].toUpperCase();
-          console.log(`   ✅ Payment method from date line: ${paymentMethod}`);
-        }
       }
       continue;
     }
 
-    // Check for payment method and amount (Cod rm278, Bank rm150, etc.)
-    if (!paymentMethod && line.match(/^(cod|bank|cash|transfer)\s+rm(\d+)$/i)) {
-      const paymentMatch = line.match(/^(cod|bank|cash|transfer)\s+rm(\d+)$/i);
-      if (paymentMatch) {
-        paymentMethod = paymentMatch[1].toUpperCase();
-        totalPaid = parseInt(paymentMatch[2]);
-        console.log(`   ✅ Payment: ${paymentMethod}, Amount: ${totalPaid}`);
-      }
-      continue;
-    }
-
-    // Line 2: Total amount (total：256)
-    if (line.toLowerCase().includes("total") && line.includes("：")) {
+    // total：780 or Total: 780
+    if (
+      (line.toLowerCase().includes("total") &&
+        (line.includes("：") || line.includes(":"))) ||
+      line.toLowerCase().startsWith("total")
+    ) {
       const totalMatch = line.match(/total[：:]\s*(\d+)/i);
       if (totalMatch) {
         totalPaid = parseInt(totalMatch[1]);
-        console.log(`   ✅ Total found: ${totalPaid}`);
+        console.log(`   ✅ Total (labeled): ${totalPaid}`);
+      }
+      continue;
+    }
+
+    // Name : Yong Pugy Wan or Name: Yong Pugy Wan
+    if (
+      line.toLowerCase().startsWith("name") &&
+      (line.includes(":") || line.includes("："))
+    ) {
+      let nameContent = line.replace(/^name\s*[：:]\s*/i, "").trim();
+
+      // Extract payment method from name if present
+      const paymentIndicatorMatch = nameContent.match(
+        /\s*[\(（]([^)）]+)[\)）]\s*$/
+      );
+      if (paymentIndicatorMatch) {
+        const indicator = paymentIndicatorMatch[1].toLowerCase();
+        if (
+          !paymentMethod &&
+          (indicator === "cod" ||
+            indicator === "bank" ||
+            indicator === "cash" ||
+            indicator === "transfer")
+        ) {
+          paymentMethod = indicator.toUpperCase();
+          console.log(`   ✅ Payment method from name: ${paymentMethod}`);
+        }
+        nameContent = nameContent
+          .replace(/\s*[\(（][^)）]*[\)）]\s*$/, "")
+          .trim();
+      }
+
+      customerName = nameContent;
+      console.log(`   ✅ Name (labeled): ${customerName}`);
+      continue;
+    }
+
+    // Contact : 011 29291699 or Contact: 011 29291699
+    if (
+      line.toLowerCase().startsWith("contact") &&
+      (line.includes(":") || line.includes("："))
+    ) {
+      phoneNumber = line
+        .replace(/^contact\s*[：:]\s*/i, "")
+        .trim()
+        .replace(/[\s\-]/g, "");
+      console.log(`   ✅ Contact (labeled): ${phoneNumber}`);
+      continue;
+    }
+
+    // Address: [address content] or Address : [address content]
+    if (
+      line.toLowerCase().startsWith("address") &&
+      (line.includes(":") || line.includes("："))
+    ) {
+      address = line.replace(/^address\s*[：:]\s*/i, "").trim();
+      console.log(`   📍 Address (labeled): ${address}`);
+      continue;
+    }
+
+    // Payment: COD or Payment : Bank
+    if (
+      line.toLowerCase().startsWith("payment") &&
+      (line.includes(":") || line.includes("："))
+    ) {
+      const paymentContent = line.replace(/^payment\s*[：:]\s*/i, "").trim();
+      if (paymentContent.toLowerCase().match(/^(cod|bank|cash|transfer)$/i)) {
+        paymentMethod = paymentContent.toUpperCase();
+        console.log(`   ✅ Payment (labeled): ${paymentMethod}`);
       }
       continue;
     }
@@ -911,60 +969,104 @@ function extractState(line: string): string {
 }
 
 /**
- * Append order to Google Sheets
+ * Append order to Google Sheets - writes to both 'Test' and 'Aug 25' sheets
  */
 export async function appendOrderToSheet(
   orderData: OrderData
 ): Promise<{ success: boolean; rowIndex?: number; error?: string }> {
   try {
     const spreadsheetId = process.env.GOOGLE_SHEET_ID!;
-    const sheetName = "Test"; // Your specified sheet name
-
-    console.log(`📊 Adding order to Google Sheets (${sheetName})...`);
-
-    // Get current sheet data to determine next row
-    const response = await sheets.spreadsheets.values.get({
-      spreadsheetId,
-      range: `${sheetName}!A:AC`,
-    });
-
-    const rows = response.data.values || [];
-    const nextRow = rows.length + 1;
-
-    if (rows.length === 0) {
-      throw new Error("Sheet appears to be empty - no headers found");
-    }
-
-    const headers = rows[0];
-    console.log(`📋 Found ${headers.length} headers:`, headers);
-
-    // Create row data based on your sheet structure
-    const rowData = createSheetRowData(orderData, headers);
+    const sheetNames = ["Test", "Aug 25"]; // Write to both sheets
 
     console.log(
-      `📝 Row data prepared:`,
-      rowData
-        .filter((cell, index) =>
-          cell !== "" ? `${headers[index]}: ${cell}` : null
-        )
-        .filter(Boolean)
+      `📊 Adding order to Google Sheets (${sheetNames.join(", ")})...`
     );
 
-    // Append the new row
-    await sheets.spreadsheets.values.append({
-      spreadsheetId,
-      range: `${sheetName}!A:AC`,
-      valueInputOption: "RAW",
-      requestBody: {
-        values: [rowData],
-      },
-    });
+    let results = [];
 
-    console.log(`✅ Order added to sheet "${sheetName}" at row ${nextRow}`);
+    for (const sheetName of sheetNames) {
+      try {
+        // Get current sheet data to determine next row
+        const response = await sheets.spreadsheets.values.get({
+          spreadsheetId,
+          range: `${sheetName}!A:AC`,
+        });
 
-    return { success: true, rowIndex: nextRow };
+        const rows = response.data.values || [];
+        const nextRow = rows.length + 1;
+
+        if (rows.length === 0) {
+          console.log(`⚠️ Sheet "${sheetName}" appears to be empty - skipping`);
+          continue;
+        }
+
+        const headers = rows[0];
+        console.log(
+          `📋 Found ${headers.length} headers in "${sheetName}":`,
+          headers
+        );
+
+        // Create row data based on your sheet structure
+        const rowData = createSheetRowData(orderData, headers);
+
+        console.log(
+          `📝 Row data prepared for "${sheetName}":`,
+          rowData
+            .filter((cell, index) =>
+              cell !== "" ? `${headers[index]}: ${cell}` : null
+            )
+            .filter(Boolean)
+        );
+
+        // Append the new row
+        await sheets.spreadsheets.values.append({
+          spreadsheetId,
+          range: `${sheetName}!A:AC`,
+          valueInputOption: "RAW",
+          requestBody: {
+            values: [rowData],
+          },
+        });
+
+        console.log(`✅ Order added to sheet "${sheetName}" at row ${nextRow}`);
+        results.push({ sheetName, success: true, rowIndex: nextRow });
+      } catch (sheetError) {
+        console.error(
+          `❌ Failed to add order to sheet "${sheetName}":`,
+          sheetError
+        );
+        results.push({
+          sheetName,
+          success: false,
+          error:
+            sheetError instanceof Error
+              ? sheetError.message
+              : String(sheetError),
+        });
+      }
+    }
+
+    // Return success if at least one sheet was updated successfully
+    const successfulSheets = results.filter((r) => r.success);
+    if (successfulSheets.length > 0) {
+      return {
+        success: true,
+        rowIndex: successfulSheets[0].rowIndex,
+        error:
+          results.length > successfulSheets.length
+            ? `Successfully added to ${successfulSheets.length}/${results.length} sheets`
+            : undefined,
+      };
+    } else {
+      return {
+        success: false,
+        error: `Failed to add to all sheets: ${results
+          .map((r) => r.error)
+          .join(", ")}`,
+      };
+    }
   } catch (error) {
-    console.error("❌ Failed to add order to sheet:", error);
+    console.error("❌ Failed to add order to sheets:", error);
     return {
       success: false,
       error: error instanceof Error ? error.message : String(error),

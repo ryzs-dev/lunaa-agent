@@ -40,6 +40,12 @@ const AUTHORIZED_PHONE_NUMBERS = process.env.AUTHORIZED_PHONE_NUMBERS
         "60164525013",
         "60127909921",
         "60164561361",
+        // Test numbers for testing
+        "60123456789",
+        "60126675705",
+        "60127370668",
+        "60191234567",
+        "60187654321",
     ];
 /**
  * Enhanced phone number normalization for Malaysia (+60) and Singapore (+65)
@@ -47,30 +53,28 @@ const AUTHORIZED_PHONE_NUMBERS = process.env.AUTHORIZED_PHONE_NUMBERS
 function normalizePhoneNumber(phoneNumber) {
     if (!phoneNumber)
         return "";
-    // Remove all non-digit characters
     const digits = phoneNumber.replace(/\D/g, "");
     // Handle Malaysian numbers (+60)
     if (digits.startsWith("60")) {
-        return digits; // Already has country code
+        return digits;
     }
     else if (digits.startsWith("0")) {
-        return "60" + digits.substring(1); // Remove leading 0, add 60
+        return "60" + digits.substring(1);
     }
     else if (digits.length >= 9 && digits.length <= 11 &&
         (digits.startsWith("1") || digits.startsWith("3") ||
             digits.startsWith("4") || digits.startsWith("5") ||
             digits.startsWith("6") || digits.startsWith("7") ||
             digits.startsWith("8") || digits.startsWith("9"))) {
-        return "60" + digits; // Malaysian mobile/landline without country code
+        return "60" + digits;
     }
     // Handle Singaporean numbers (+65)
     if (digits.startsWith("65")) {
-        return digits; // Already has country code
+        return digits;
     }
     else if (digits.length === 8 && /^[3689]/.test(digits)) {
-        return "65" + digits; // Singapore number without country code
+        return "65" + digits;
     }
-    // Return as-is if can't determine format
     return digits;
 }
 /**
@@ -82,10 +86,8 @@ function isAuthorizedPhoneNumber(phoneNumber) {
     const normalizedPhone = normalizePhoneNumber(phoneNumber);
     return AUTHORIZED_PHONE_NUMBERS.some((authorizedNumber) => {
         const normalizedAuthorized = normalizePhoneNumber(authorizedNumber);
-        // Direct match
         if (normalizedPhone === normalizedAuthorized)
             return true;
-        // Match with both having country codes
         if (normalizedPhone.startsWith("60") && normalizedAuthorized.startsWith("60")) {
             return normalizedPhone.substring(2) === normalizedAuthorized.substring(2);
         }
@@ -96,28 +98,21 @@ function isAuthorizedPhoneNumber(phoneNumber) {
     });
 }
 /**
- * Enhanced payment method detection with more comprehensive patterns
+ * Enhanced payment method detection
  */
 function detectPaymentMethod(text) {
     if (!text)
         return null;
     const textLower = text.toLowerCase().trim();
-    // Enhanced payment method patterns
     const paymentPatterns = [
-        // Cash on Delivery
         { pattern: /\b(cod|cash\s*on\s*delivery)\b/i, method: "COD" },
-        // Touch 'n Go
         { pattern: /\b(tng|touch\s*n\s*go|touchngo|touch\s*and\s*go)\b/i, method: "TNG" },
-        // Bank Transfer variants
         { pattern: /\b(bank\s*transfer|bank\s*in|transfer|online\s*banking|fpx)\b/i, method: "BANK TRANSFER" },
-        // Credit/Debit Card
         { pattern: /\b(card|credit\s*card|debit\s*card|stripe|visa|mastercard)\b/i, method: "CARD" },
-        // E-wallet variants
-        { pattern: /\b(grab\s*pay|grabtpay)\b/i, method: "GRABPAY" },
+        { pattern: /\b(grab\s*pay|grabpay)\b/i, method: "GRABPAY" },
         { pattern: /\b(boost)\b/i, method: "BOOST" },
         { pattern: /\b(maya|paymaya)\b/i, method: "MAYA" },
         { pattern: /\b(gcash)\b/i, method: "GCASH" },
-        // Generic cash
         { pattern: /\b(cash|tunai)\b/i, method: "CASH" },
     ];
     for (const { pattern, method } of paymentPatterns) {
@@ -128,46 +123,39 @@ function detectPaymentMethod(text) {
     return null;
 }
 /**
- * Enhanced repeat customer detection with multiple patterns
+ * Enhanced repeat customer detection
  */
 function detectRepeatCustomer(text) {
     if (!text)
         return false;
     const textLower = text.toLowerCase();
-    // Multiple repeat customer indicators
     const repeatPatterns = [
-        /\b\.?rpt\b/i, // .rpt or rpt
-        /\brepeat\b/i, // repeat
-        /\brepeating\b/i, // repeating
-        /\breturn\s*customer\b/i, // return customer
-        /\bregular\s*customer\b/i, // regular customer
-        /\bexisting\s*customer\b/i, // existing customer
-        /\bold\s*customer\b/i, // old customer
-        /\b重复\b/, // Chinese: repeat
-        /\b老客户\b/, // Chinese: old customer
-        /\b回头客\b/, // Chinese: returning customer
+        /\b\.?rpt\b/i,
+        /\brepeat\b/i,
+        /\brepeating\b/i,
+        /\breturn\s*customer\b/i,
+        /\bregular\s*customer\b/i,
+        /\bexisting\s*customer\b/i,
+        /\bold\s*customer\b/i,
+        /\b重复\b/,
+        /\b老客户\b/,
+        /\b回头客\b/,
     ];
     return repeatPatterns.some(pattern => pattern.test(textLower));
 }
 /**
- * Enhanced phone number extraction with better Malaysian/Singaporean patterns
+ * Enhanced phone number extraction
  */
 function extractPhoneNumber(text) {
     if (!text)
         return null;
-    // Enhanced phone number patterns
     const phonePatterns = [
-        // Malaysian mobile with country code
         /\b(\+?60\s*1[0-9]\s*[0-9]{3,4}\s*[0-9]{4})\b/g,
-        // Malaysian mobile without country code
         /\b(01[0-9]\s*[0-9]{3,4}\s*[0-9]{4})\b/g,
-        // Malaysian landline with area code
         /\b(\+?60\s*[3-9]\s*[0-9]{3,4}\s*[0-9]{4})\b/g,
         /\b(0[3-9]\s*[0-9]{3,4}\s*[0-9]{4})\b/g,
-        // Singapore mobile
         /\b(\+?65\s*[689][0-9]{3}\s*[0-9]{4})\b/g,
         /\b([689][0-9]{3}\s*[0-9]{4})\b/g,
-        // Generic patterns with dashes
         /\b(\+?60\s*1[0-9]-[0-9]{3,4}-[0-9]{4})\b/g,
         /\b(01[0-9]-[0-9]{3,4}-[0-9]{4})\b/g,
         /\b(\+?65\s*[689][0-9]{3}-[0-9]{4})\b/g,
@@ -175,14 +163,46 @@ function extractPhoneNumber(text) {
     for (const pattern of phonePatterns) {
         const matches = text.match(pattern);
         if (matches && matches.length > 0) {
-            // Return the first valid phone number found
-            return matches[0].replace(/\s+/g, ""); // Remove spaces
+            return matches[0].replace(/\s+/g, "");
         }
     }
     return null;
 }
 /**
- * Add a phone number to the authorized list (for admin use)
+ * Extract total amount from text
+ */
+function extractTotalAmount(text) {
+    if (!text)
+        return 0;
+    // Pattern 1: total：256 or total: 256 or Total: RM256
+    let totalMatch = text.match(/total\s*[：:]\s*(?:rm\s*)?(\d+)/i);
+    // Pattern 2: total 256 or Total RM256 (without colon)
+    if (!totalMatch) {
+        totalMatch = text.match(/total\s+(?:rm\s*)?(\d+)/i);
+    }
+    // Pattern 3: Just numbers after total (flexible)
+    if (!totalMatch) {
+        totalMatch = text.match(/total.*?(\d+)/i);
+    }
+    // Pattern 4: RM prefix
+    if (!totalMatch) {
+        totalMatch = text.match(/^rm\s*(\d+)$/i);
+    }
+    // Pattern 5: Amount with currency
+    if (!totalMatch) {
+        totalMatch = text.match(/(\d{2,4})\s*(ringgit|dollar|myr|sgd)/i);
+    }
+    // Pattern 6: Standalone amount (if reasonable range)
+    if (!totalMatch && text.match(/^\d{2,4}$/)) {
+        const amount = parseInt(text);
+        if (amount >= 20 && amount <= 9999) {
+            return amount;
+        }
+    }
+    return totalMatch ? parseInt(totalMatch[1]) : 0;
+}
+/**
+ * Admin functions
  */
 function addAuthorizedPhoneNumber(phoneNumber) {
     const normalizedPhone = normalizePhoneNumber(phoneNumber);
@@ -194,9 +214,6 @@ function addAuthorizedPhoneNumber(phoneNumber) {
     console.log(`⚠️ ${normalizedPhone} is already authorized`);
     return false;
 }
-/**
- * Remove a phone number from the authorized list (for admin use)
- */
 function removeAuthorizedPhoneNumber(phoneNumber) {
     const normalizedPhone = normalizePhoneNumber(phoneNumber);
     const index = AUTHORIZED_PHONE_NUMBERS.findIndex((num) => normalizePhoneNumber(num) === normalizedPhone);
@@ -208,15 +225,9 @@ function removeAuthorizedPhoneNumber(phoneNumber) {
     console.log(`⚠️ ${normalizedPhone} was not found in authorized numbers`);
     return false;
 }
-/**
- * Get list of all authorized phone numbers
- */
 function getAuthorizedPhoneNumbers() {
     return [...AUTHORIZED_PHONE_NUMBERS];
 }
-/**
- * Send a response message for unauthorized users
- */
 function getUnauthorizedMessage() {
     return "Sorry, your phone number is not authorized to place orders through this bot. Please contact the administrator if you believe this is an error.";
 }
@@ -273,16 +284,24 @@ function extractOrderFromMessage(messageBody, context) {
     for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
         console.log(`🔍 Processing line ${i + 1}: "${line}"`);
-        // Enhanced date detection with repeat customer handling
+        // Enhanced date detection - check if line looks like a date
+        if (line.match(/^\d{1,2}[\/\-]\d{1,2}[\/\-](\d{2}|\d{4})$/)) {
+            orderDate = formatDateToYYYYMMDD(line);
+            console.log(`   ✅ Date detected: ${orderDate}`);
+            // Check for repeat indicators in the same message
+            if (detectRepeatCustomer(messageBody)) {
+                isRepeatCustomer = true;
+                console.log(`   ✅ Repeat customer detected in message`);
+            }
+            continue;
+        }
         if (line.toLowerCase().startsWith("date") &&
             (line.includes(":") || line.includes("："))) {
             const dateContent = line.replace(/^date\s*[：:]\s*/i, "").trim();
-            // Check for repeat indicators in the date line
             if (detectRepeatCustomer(dateContent)) {
                 isRepeatCustomer = true;
                 console.log(`   ✅ Repeat customer detected in date line`);
             }
-            // Extract date part
             const cleanDateContent = dateContent.replace(/\s+(repeat|rpt).*$/i, "").trim();
             const dateMatch = cleanDateContent.match(/^(\d{1,2}[\/\-]\d{1,2}[\/\-](?:\d{2}|\d{4}))$/i);
             if (dateMatch) {
@@ -292,27 +311,23 @@ function extractOrderFromMessage(messageBody, context) {
             continue;
         }
         // Enhanced total detection
-        if ((line.toLowerCase().includes("total") &&
-            (line.includes("：") || line.includes(":"))) ||
-            line.toLowerCase().startsWith("total")) {
-            const totalMatch = line.match(/total[：:]\s*rm?\s*(\d+)/i);
-            if (totalMatch) {
-                totalPaid = parseInt(totalMatch[1]);
-                console.log(`   ✅ Total (labeled): ${totalPaid}`);
+        if (!totalPaid) {
+            const extractedTotal = extractTotalAmount(line);
+            if (extractedTotal > 0) {
+                totalPaid = extractedTotal;
+                console.log(`   ✅ Total detected: ${totalPaid}`);
+                continue;
             }
-            continue;
         }
-        // Enhanced name detection with payment method extraction
+        // Enhanced name detection
         if (line.toLowerCase().startsWith("name") &&
             (line.includes(":") || line.includes("："))) {
             let nameContent = line.replace(/^name\s*[：:]\s*/i, "").trim();
-            // Extract payment method from name if present
             const detectedPayment = detectPaymentMethod(nameContent);
             if (detectedPayment && !paymentMethod) {
                 paymentMethod = detectedPayment;
                 console.log(`   ✅ Payment method from name: ${paymentMethod}`);
             }
-            // Remove payment indicators from name
             nameContent = nameContent
                 .replace(/\s*[\(（]([^)）]*)[\)）]\s*$/g, "")
                 .trim();
@@ -349,7 +364,7 @@ function extractOrderFromMessage(messageBody, context) {
             }
             continue;
         }
-        // Chinese format handling (enhanced)
+        // Chinese format handling
         if (line.includes("汇款人名字：")) {
             customerName = line.replace("汇款人名字：", "").trim();
             console.log(`   ✅ Sender name (汇款人): ${customerName}`);
@@ -379,7 +394,7 @@ function extractOrderFromMessage(messageBody, context) {
             console.log(`   🏙️ Parsed - City: ${city}, Postcode: ${postcode}, State: ${state}`);
             continue;
         }
-        // Enhanced phone number detection
+        // Enhanced phone number detection - prioritize this before address detection
         if (!phoneNumber) {
             const extractedPhone = extractPhoneNumber(line);
             if (extractedPhone) {
@@ -389,15 +404,13 @@ function extractOrderFromMessage(messageBody, context) {
             }
         }
         // Enhanced customer name detection with payment method extraction
-        if (!customerName && line.match(/^[A-Za-z\s\(\)（）\-\.]+$/)) {
+        if (!customerName && line.match(/^[A-Za-z\s\(\)（）\-\.]+$/) && !extractPhoneNumber(line)) {
             let tempCustomerName = line.trim();
-            // Extract payment method if present
             const detectedPayment = detectPaymentMethod(tempCustomerName);
             if (detectedPayment && !paymentMethod) {
                 paymentMethod = detectedPayment;
                 console.log(`   ✅ Payment method from name: ${paymentMethod}`);
             }
-            // Remove payment indicators from customer name
             tempCustomerName = tempCustomerName
                 .replace(/\s*[\(（]([^)）]*)[\)）]\s*$/g, "")
                 .trim();
@@ -405,7 +418,7 @@ function extractOrderFromMessage(messageBody, context) {
             console.log(`   ✅ Customer name: ${customerName}`);
             continue;
         }
-        // Product code detection (unchanged)
+        // Product code detection
         const productCodePattern = /^(\d+[wfs](\d+ml)?)+$/i;
         const isProductCode = productCodePattern.test(line.trim());
         const looksLikeAddress = line.includes(",") ||
@@ -418,17 +431,18 @@ function extractOrderFromMessage(messageBody, context) {
             console.log(`   ✅ Product code found: ${productCode}`);
             break;
         }
-        // Address lines handling (enhanced)
+        // Address lines handling - exclude lines that look like amounts
         if (!productCode &&
             line &&
             !isProductCode &&
             !line.includes("：") &&
             !line.match(/^\d{1,2}[\/\-]\d{1,2}[\/\-](\d{2}|\d{4})/i) &&
             !detectPaymentMethod(line) &&
-            !line.toLowerCase().includes("total")) {
+            !line.toLowerCase().includes("total") &&
+            !line.match(/^(?:rm\s*)?\d{2,4}$/i) &&
+            !extractPhoneNumber(line)) {
             address += (address ? ", " : "") + line;
             console.log(`   📍 Address line added: ${line}`);
-            // Enhanced state detection
             const addressComponents = parseAddress(address);
             if (addressComponents.state) {
                 state = addressComponents.state;
@@ -441,9 +455,21 @@ function extractOrderFromMessage(messageBody, context) {
             continue;
         }
     }
-    // Use receiver name if available (Chinese format), otherwise use customer name
+    // Final pass: If no total found, try to extract from any line
+    if (!totalPaid) {
+        console.log(`🔍 Final pass: searching for total amount...`);
+        for (const line of lines) {
+            if (line.match(/\d{2,4}/) && !extractPhoneNumber(line) && !line.match(/^\d{1,2}[\/\-]\d{1,2}[\/\-]/)) {
+                const extractedTotal = extractTotalAmount(line);
+                if (extractedTotal > 0) {
+                    totalPaid = extractedTotal;
+                    console.log(`   ✅ Total found in final pass: ${totalPaid} (from line: "${line}")`);
+                    break;
+                }
+            }
+        }
+    }
     const finalCustomerName = receiverName || customerName || context.customerName || "WhatsApp Customer";
-    // Create enhanced remark with more details
     const baseRemark = `Order from WhatsApp${context.groupName ? ` (Group: ${context.groupName})` : ""}${receiverName && customerName ? ` (Sender: ${customerName})` : ""}${isRepeatCustomer ? " (Repeat Customer)" : " (New Customer)"}`;
     const remarkWithProductCode = productCode
         ? `${baseRemark} - ${productCode}`
@@ -485,12 +511,9 @@ function extractOrderFromMessage(messageBody, context) {
  */
 function isCondensedFormat(messageBody) {
     const trimmed = messageBody.trim();
-    // Check for date pattern at the beginning
     const hasDateAtStart = /^\d{1,2}[\/\-]\d{1,2}[\/\-](\d{2}|\d{4})/.test(trimmed);
-    // Check if it's a single line
     const lineCount = trimmed.split("\n").filter((line) => line.trim()).length;
     const isSingleLine = lineCount <= 2;
-    // Check for product code pattern at the end
     const hasProductCodeAtEnd = /\s+\d+[wfs](\d+ml)?(\d+[wfs](\d+ml)?)*\s*$/i.test(trimmed);
     console.log(`📊 Format detection: Lines=${lineCount}, DateAtStart=${hasDateAtStart}, ProductAtEnd=${hasProductCodeAtEnd}`);
     return hasDateAtStart && isSingleLine && hasProductCodeAtEnd;
@@ -501,7 +524,6 @@ function isCondensedFormat(messageBody) {
 function extractCondensedOrder(messageBody, context) {
     console.log(`🔍 Extracting condensed order format...`);
     const trimmed = messageBody.trim();
-    // Enhanced date extraction with repeat detection
     const dateMatch = trimmed.match(/^(\d{1,2}[\/\-]\d{1,2}[\/\-](?:\d{2}|\d{4}))(\.?rpt|\.?repeat)?/i);
     if (!dateMatch) {
         console.log(`❌ No date found at start`);
@@ -511,21 +533,28 @@ function extractCondensedOrder(messageBody, context) {
     const isRepeat = Boolean(dateMatch[2]) || detectRepeatCustomer(trimmed);
     const orderDate = formatDateToYYYYMMDD(dateStr);
     console.log(`   ✅ Date: ${orderDate}, Repeat: ${isRepeat}`);
-    // Remove the date part and continue parsing
     let remaining = trimmed.substring(dateMatch[0].length).trim();
-    // Enhanced payment and amount detection
     let paymentMethod = detectPaymentMethod(remaining) || "";
     let totalPaid = 0;
-    const paymentMatch = remaining.match(/^(cod|bank|cash|transfer|tng)\s+rm(\d+)/i);
+    // Pattern 1: Payment method with amount (cod rm278, bank rm150, tng rm200)
+    const paymentMatch = remaining.match(/^(cod|bank|cash|transfer|tng|grabpay|boost)\s+rm\s*(\d+)/i);
     if (paymentMatch) {
         if (!paymentMethod) {
             paymentMethod = detectPaymentMethod(paymentMatch[1]) || paymentMatch[1].toUpperCase();
         }
         totalPaid = parseInt(paymentMatch[2]);
         remaining = remaining.substring(paymentMatch[0].length).trim();
-        console.log(`   ✅ Payment: ${paymentMethod}, Amount: ${totalPaid}`);
+        console.log(`   ✅ Payment & Amount: ${paymentMethod}, Amount: ${totalPaid}`);
     }
-    // Extract product code from the end
+    else {
+        // Pattern 2: Just amount without payment method (rm278, 278)
+        const amountMatch = remaining.match(/^(?:rm\s*)?(\d{2,4})\s+/i);
+        if (amountMatch) {
+            totalPaid = parseInt(amountMatch[1]);
+            remaining = remaining.substring(amountMatch[0].length).trim();
+            console.log(`   ✅ Amount only: ${totalPaid}`);
+        }
+    }
     const productCodeMatch = remaining.match(/\s+(\d+[wfs](\d+ml)?(\d+[wfs](\d+ml)?)*)\s*$/i);
     if (!productCodeMatch) {
         console.log(`❌ No product code found at end`);
@@ -536,33 +565,27 @@ function extractCondensedOrder(messageBody, context) {
         .substring(0, remaining.length - productCodeMatch[0].length)
         .trim();
     console.log(`   ✅ Product code: ${productCode}`);
-    // Enhanced customer name, phone, and address parsing
     const extractedPhone = extractPhoneNumber(remaining);
     if (!extractedPhone) {
         console.log(`❌ Could not extract phone number`);
         return null;
     }
     const phoneNumber = normalizePhoneNumber(extractedPhone);
-    // Split around the phone number
     const phoneIndex = remaining.indexOf(extractedPhone);
     let customerName = remaining.substring(0, phoneIndex).trim();
     const addressString = remaining.substring(phoneIndex + extractedPhone.length).trim();
-    // Enhanced customer name cleanup
     const detectedPaymentFromName = detectPaymentMethod(customerName);
     if (detectedPaymentFromName && !paymentMethod) {
         paymentMethod = detectedPaymentFromName;
         console.log(`   ✅ Payment method from name: ${paymentMethod}`);
     }
-    // Remove payment indicators from customer name
     customerName = customerName
         .replace(/\s*[\(（]([^)）]*)[\)）]\s*$/g, "")
         .trim();
     console.log(`   ✅ Customer: ${customerName}`);
     console.log(`   ✅ Phone: ${phoneNumber}`);
     console.log(`   📍 Address: ${addressString}`);
-    // Parse address components
     const addressComponents = parseAddress(addressString);
-    // Create enhanced remark
     const baseRemark = `Order from WhatsApp${context.groupName ? ` (Group: ${context.groupName})` : ""}${isRepeat ? " (Repeat Customer)" : " (New Customer)"}`;
     const remarkWithProductCode = `${baseRemark} - ${productCode}`;
     const orderData = {
@@ -586,7 +609,7 @@ function extractCondensedOrder(messageBody, context) {
     return orderData;
 }
 /**
- * Parse product code like "1w1f1s1w30ml" or "3f1w" into individual products
+ * Parse product code
  */
 function parseProductCode(productCode) {
     if (!productCode)
@@ -645,7 +668,6 @@ function formatDateToYYYYMMDD(dateStr) {
         const day = parts[0].padStart(2, "0");
         const month = parts[1].padStart(2, "0");
         let year = parts[2];
-        // Handle 2-digit years
         if (year.length === 2) {
             const yearNum = parseInt(year);
             year = yearNum < 50 ? `20${year}` : `19${year}`;
@@ -655,20 +677,39 @@ function formatDateToYYYYMMDD(dateStr) {
     return new Date().toISOString().split("T")[0];
 }
 /**
- * Enhanced address parsing with better Malaysian/Singaporean location detection
+ * Enhanced address parsing with better postcode detection
  */
 function parseAddress(addressLine) {
     let city = "";
     let postcode = "";
     let state = "";
     // Extract postcode (5-digit number for Malaysia, 6-digit for Singapore)
-    const postcodeMatch = addressLine.match(/(\d{5,6})/);
-    if (postcodeMatch) {
-        postcode = postcodeMatch[1];
+    // But exclude phone numbers by checking context
+    const postcodeMatches = addressLine.match(/\b(\d{5})\b/g);
+    if (postcodeMatches) {
+        // Filter out phone number parts
+        for (const match of postcodeMatches) {
+            // Check if this 5-digit number is part of a phone number
+            const phonePattern = /\b\d{2,3}[\s\-]?\d{3,4}[\s\-]?\d{4}\b/;
+            const surroundingText = addressLine.substring(Math.max(0, addressLine.indexOf(match) - 10), addressLine.indexOf(match) + match.length + 10);
+            if (!phonePattern.test(surroundingText)) {
+                postcode = match;
+                break;
+            }
+        }
     }
-    // Enhanced state detection for Malaysia and Singapore
+    // Try 6-digit for Singapore if no 5-digit found
+    if (!postcode) {
+        const postcodeMatch6 = addressLine.match(/\b(\d{6})\b/);
+        if (postcodeMatch6) {
+            const surroundingText = addressLine.substring(Math.max(0, addressLine.indexOf(postcodeMatch6[1]) - 10), addressLine.indexOf(postcodeMatch6[1]) + postcodeMatch6[1].length + 10);
+            const phonePattern = /\b\d{2,3}[\s\-]?\d{3,4}[\s\-]?\d{4}\b/;
+            if (!phonePattern.test(surroundingText)) {
+                postcode = postcodeMatch6[1];
+            }
+        }
+    }
     const locationStates = [
-        // Malaysian states
         { name: "Selangor", variants: ["selangor", "sel", "shah alam", "petaling jaya", "pj", "subang", "klang"] },
         { name: "Kuala Lumpur", variants: ["kuala lumpur", "kl", "k.l", "k l"] },
         { name: "Penang", variants: ["penang", "pulau pinang", "pg", "georgetown", "george town"] },
@@ -685,7 +726,6 @@ function parseAddress(addressLine) {
         { name: "Sarawak", variants: ["sarawak", "kuching", "miri", "sibu"] },
         { name: "Putrajaya", variants: ["putrajaya", "cyberjaya"] },
         { name: "Labuan", variants: ["labuan"] },
-        // Singapore (treat as single entity)
         { name: "Singapore", variants: ["singapore", "sg", "republik singapura"] },
     ];
     const addressLower = addressLine.toLowerCase();
@@ -699,9 +739,7 @@ function parseAddress(addressLine) {
         if (state)
             break;
     }
-    // Enhanced city extraction
     const parts = addressLine.split(",").map((part) => part.trim());
-    // Enhanced city prefixes for better recognition
     const cityPrefixes = [
         "taman", "bandar", "kampung", "kg", "pekan", "town",
         "shah alam", "petaling jaya", "pj", "subang jaya",
@@ -713,7 +751,6 @@ function parseAddress(addressLine) {
     ];
     for (const part of parts) {
         const partLower = part.toLowerCase();
-        // Check for city prefixes
         for (const prefix of cityPrefixes) {
             if (partLower.includes(prefix)) {
                 city = part.replace(/\d{5,6}.*$/, "").trim();
@@ -724,7 +761,6 @@ function parseAddress(addressLine) {
             }
         }
     }
-    // Enhanced multi-word city detection
     const addressWords = addressLine.toLowerCase().split(/\s+/);
     for (let i = 0; i < addressWords.length - 1; i++) {
         const twoWordCombo = `${addressWords[i]} ${addressWords[i + 1]}`;
@@ -748,14 +784,13 @@ function parseAddress(addressLine) {
             return { city, postcode, state };
         }
     }
-    // Fallback: extract city from postcode vicinity
     for (let i = 0; i < parts.length; i++) {
-        if (/\d{5,6}/.test(parts[i])) {
+        if (postcode && /\d{5,6}/.test(parts[i]) && parts[i].includes(postcode)) {
             if (i > 0) {
                 city = parts[i - 1].trim();
             }
             else {
-                const beforePostcode = parts[i].replace(/\d{5,6}.*$/, "").trim();
+                const beforePostcode = parts[i].replace(new RegExp(postcode + ".*$"), "").trim();
                 if (beforePostcode) {
                     city = beforePostcode;
                 }
@@ -763,15 +798,14 @@ function parseAddress(addressLine) {
             break;
         }
     }
-    // Clean up city name
-    city = city.replace(/\d{5,6}/, "").trim().replace(/\.$/, "");
+    city = city.replace(new RegExp(postcode), "").trim().replace(/\.$/, "");
     if (state) {
         city = city.replace(new RegExp(state, "gi"), "").trim();
     }
     return { city, postcode, state };
 }
 /**
- * Enhanced sheet data creation with better mapping
+ * Sheet operations
  */
 function appendOrderToSheet(orderData) {
     return __awaiter(this, void 0, void 0, function* () {
@@ -848,22 +882,17 @@ function appendOrderToSheet(orderData) {
         }
     });
 }
-/**
- * Enhanced sheet row data creation with better field mapping
- */
 function createSheetRowData(orderData, headers) {
     const rowData = new Array(headers.length).fill("");
     headers.forEach((header, index) => {
         const headerLower = header.toLowerCase().trim();
         switch (headerLower) {
             case "no":
-                // Auto-numbered by sheets
                 break;
             case "order date":
                 rowData[index] = orderData.orderDate;
                 break;
             case "fbname":
-                // Could map to group name or leave empty
                 rowData[index] = orderData.groupName || "";
                 break;
             case "name":
@@ -912,13 +941,10 @@ function createSheetRowData(orderData, headers) {
                 rowData[index] = orderData.remark || "";
                 break;
             case "package (rm)":
-                // Could be calculated from products or left empty
                 break;
             case "postage (rm)":
-                // Could be calculated or left empty
                 break;
             case "website/shopee charges (rm)":
-                // Leave empty for WhatsApp orders
                 break;
             case "total paid (rm)":
                 rowData[index] = orderData.totalPaid || "";
@@ -942,26 +968,21 @@ function createSheetRowData(orderData, headers) {
                 rowData[index] = orderData.phoneNumber || "";
                 break;
             case "tracking number":
-                // Leave empty - to be filled later
                 break;
             case "courires company":
             case "courier company":
-                // Leave empty - to be filled later
                 break;
             case "new/repeat":
                 rowData[index] = orderData.isRepeatCustomer ? "repeat" : "new";
                 break;
             case "cash sale receipt":
-                // Leave empty
                 break;
             case "agent by / under":
                 rowData[index] = "WhatsApp Bot";
                 break;
             case "sql system":
-                // Leave empty or add system identifier
                 break;
             case "currency":
-                // Determine currency based on phone number
                 const phone = orderData.phoneNumber || "";
                 if (phone.startsWith("65")) {
                     rowData[index] = "SGD";
@@ -971,10 +992,9 @@ function createSheetRowData(orderData, headers) {
                 }
                 break;
             case "status":
-                rowData[index] = "Pending"; // Default status for new orders
+                rowData[index] = "Pending";
                 break;
             default:
-                // Leave other columns empty
                 break;
         }
     });

@@ -49,7 +49,7 @@ interface MessageContext {
 // You can also move this to environment variables for better security
 const AUTHORIZED_PHONE_NUMBERS = process.env.AUTHORIZED_PHONE_NUMBERS
   ? process.env.AUTHORIZED_PHONE_NUMBERS.split(",").map((num) => num.trim())
-  : ["601126470411", "60174941361"];
+  : ["601126470411", "60174941361", "0164525013", "0127909921", "0164561361"];
 
 /**
  * Check if a phone number is authorized to place orders

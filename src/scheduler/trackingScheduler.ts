@@ -1,12 +1,12 @@
 // src/scheduler/trackingScheduler.ts
 import cron from "node-cron";
 import { fetchSheetData, updateSheetStatusByTracking } from "../googleSheet";
-import { getProcessed, saveProcessed } from "../../utils/tracker";
 import {
   sendCompleteMessageSequence,
   sendWhatsAppTemplate,
   getMessageStatusBySid,
 } from "../twilioClient";
+import { getProcessed, saveProcessed } from "../utils/tracker";
 
 // Malaysia timezone is UTC+8
 const MALAYSIA_TIMEZONE = "Asia/Kuala_Lumpur";

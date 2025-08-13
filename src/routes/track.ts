@@ -1,18 +1,15 @@
 import express, { Request, Response } from "express";
-import {
-  fetchSheetData,
-  updateSheetStatusByTracking,
-} from "../src/googleSheet";
-import { getProcessed, saveProcessed } from "../utils/tracker";
+import { fetchSheetData, updateSheetStatusByTracking } from "../googleSheet";
 import {
   getMessageStatusBySid,
   sendWhatsAppTemplate,
   sendProductUsageInstructions,
   sendCompleteMessageSequence,
-} from "../src/twilioClient";
+} from "../twilioClient";
 import { updateMessageStatusInDB } from "../database/supabaseOrders";
 import dotenv from "dotenv";
 import path from "path";
+import { getProcessed, saveProcessed } from "../utils/tracker";
 
 dotenv.config({ path: path.resolve(__dirname, "../.env.local") });
 

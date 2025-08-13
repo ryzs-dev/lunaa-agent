@@ -1,10 +1,10 @@
 // routes/whatsapp.ts
 import express from "express";
+import { updateMessageStatusInDB } from "../database/supabaseOrders";
 import {
   appendOrderToSheet,
   extractOrderFromMessage,
-} from "../src/whatsappOrderBot";
-import { updateMessageStatusInDB } from "../database/supabaseOrders";
+} from "../whatsappOrderBot";
 
 const whatsappRouter = express.Router();
 
@@ -60,7 +60,7 @@ whatsappRouter.post("/whatsapp/incoming", async (req, res) => {
     console.log(`   Customer: ${orderData.customerName}`);
     console.log(
       `   Products: ${orderData.products
-        .map((p) => `${p.quantity}x ${p.name}`)
+        .map((p: any) => `${p.quantity}x ${p.name}`)
         .join(", ")}`
     );
     console.log(`   Total: RM${orderData.totalPaid}`);

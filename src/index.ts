@@ -1,11 +1,11 @@
 import express from "express";
 import dotenv from "dotenv";
-import trackRouter from "../routes/track";
+import trackRouter from "./routes/track";
 import path from "path";
-import syncRouter from "../routes/sync";
-import twilioRouter from "../routes/twilio";
-import inboxRouter from "../routes/inbox";
-import whatsappRouter from "../routes/whatsapp";
+import syncRouter from "./routes/sync";
+import twilioRouter from "./routes/twilio";
+import inboxRouter from "./routes/inbox";
+import whatsappRouter from "./routes/whatsapp";
 import { startDailyTrackingScheduler } from "./scheduler/trackingScheduler";
 
 dotenv.config({ path: path.resolve(__dirname, "../.env.local") });

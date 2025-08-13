@@ -5,10 +5,7 @@ import {
   getConversationWithLatestMessage,
   upsertConversation,
 } from "../database/supabaseOrders";
-import {
-  sendWhatsAppTextMessage,
-  sendWhatsAppTemplate,
-} from "../src/twilioClient";
+import { sendWhatsAppTemplate, sendWhatsAppTextMessage } from "../twilioClient";
 
 const inboxRouter = express.Router();
 

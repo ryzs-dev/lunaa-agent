@@ -3,8 +3,7 @@ import {
   getOrderByTracking,
   insertOrder,
 } from "../database/supabaseOrders";
-import { fetchSheetData } from "../src/googleSheet";
-
+import { fetchSheetData } from "../googleSheet";
 import { COLUMN_MAPPING } from "../types/database";
 
 /**
@@ -101,7 +100,7 @@ export async function syncSheetsToD1(
     const headers = rows[0];
 
     // Check required columns
-    const trackingCol = headers.findIndex((h) =>
+    const trackingCol = headers.findIndex((h: any) =>
       h.toLowerCase().includes("tracking number")
     );
 
@@ -167,7 +166,7 @@ export async function syncNewOrdersOnly(
     }
 
     const headers = rows[0];
-    const trackingCol = headers.findIndex((h) =>
+    const trackingCol = headers.findIndex((h: any) =>
       h.toLowerCase().includes("tracking number")
     );
 
@@ -247,7 +246,7 @@ export async function validateSheetStructure(
     const missingColumns: string[] = [];
 
     requiredColumns.forEach((col) => {
-      if (!headers.some((h) => h.includes(col))) {
+      if (!headers.some((h: any) => h.includes(col))) {
         missingColumns.push(col);
       }
     });
@@ -267,7 +266,7 @@ export async function validateSheetStructure(
     const missingRecommended: string[] = [];
 
     recommendedColumns.forEach((col) => {
-      if (!headers.some((h) => h.includes(col))) {
+      if (!headers.some((h: any) => h.includes(col))) {
         missingRecommended.push(col);
       }
     });

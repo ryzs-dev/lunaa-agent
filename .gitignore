@@ -102,4 +102,4 @@ temp/
 *.sw?
 
 # IMPORTANT: Comment out the dist/ line for production deployment
-# dist/
+dist/

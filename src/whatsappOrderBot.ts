@@ -1178,7 +1178,7 @@ export function createSheetRowData(
         rowData[index] = orderData.state || "";
         break;
       case "phone number":
-        rowData[index] = `+${orderData.phoneNumber}` || "";
+        rowData[index] = orderData.phoneNumber || "";
         break;
       case "tracking number":
         // Leave empty - to be filled later

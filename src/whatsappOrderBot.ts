@@ -976,7 +976,9 @@ export async function appendOrderToSheet(
 ): Promise<{ success: boolean; rowIndex?: number; error?: string }> {
   try {
     const spreadsheetId = process.env.GOOGLE_SHEET_ID!;
-    const sheetNames = ["Test", "Aug 25"]; // Write to both sheets
+    const sheetNames = JSON.parse(
+      process.env.SHEET_NAMES || "Test, Test Aug 25"
+    );
 
     console.log(
       `📊 Adding order to Google Sheets (${sheetNames.join(", ")})...`

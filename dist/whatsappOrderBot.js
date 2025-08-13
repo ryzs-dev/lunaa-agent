@@ -777,7 +777,7 @@ function appendOrderToSheet(orderData) {
     return __awaiter(this, void 0, void 0, function* () {
         try {
             const spreadsheetId = process.env.GOOGLE_SHEET_ID;
-            const sheetNames = ["Test", "Aug 25"]; // Write to both sheets
+            const sheetNames = JSON.parse(process.env.SHEET_NAMES || "Test, Test Aug 25");
             console.log(`📊 Adding order to Google Sheets (${sheetNames.join(", ")})...`);
             let results = [];
             for (const sheetName of sheetNames) {

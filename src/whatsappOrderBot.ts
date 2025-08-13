@@ -232,21 +232,28 @@ export function extractOrderFromMessage(
     console.log(`🔍 Processing line ${i + 1}: "${line}"`);
 
     // Check for standardized labeled fields
-    // Date: 13/8/25，rpt
+    // New standardized format: Date: 13/8/25 or Date: 13/8/25 Repeat
     if (
-      line.toLowerCase().startsWith("date:") ||
-      line.toLowerCase().startsWith("date：")
+      line.toLowerCase().startsWith("date") &&
+      (line.includes(":") || line.includes("："))
     ) {
-      const dateContent = line.replace(/^date[：:]\s*/i, "").trim();
-      const dateMatch = dateContent.match(
-        /^(\d{1,2}\/\d{1,2}\/(?:\d{2}|\d{4}))[，,]?\s*(rpt)?/i
+      const dateContent = line.replace(/^date\s*[：:]\s*/i, "").trim();
+
+      // Check for "Repeat" in the same line as date
+      const repeatInSameLine = dateContent.toLowerCase().includes("repeat");
+      if (repeatInSameLine) {
+        isRepeatCustomer = true;
+        console.log(`   ✅ Repeat customer detected in date line`);
+      }
+
+      // Extract just the date part (remove "Repeat" if present)
+      const cleanDateContent = dateContent.replace(/\s+repeat\s*$/i, "").trim();
+      const dateMatch = cleanDateContent.match(
+        /^(\d{1,2}\/\d{1,2}\/(?:\d{2}|\d{4}))$/i
       );
       if (dateMatch) {
         orderDate = formatDateToYYYYMMDD(dateMatch[1]);
-        isRepeatCustomer = Boolean(dateMatch[2]);
-        console.log(
-          `   ✅ Date (labeled): ${orderDate}, Repeat: ${isRepeatCustomer}`
-        );
+        console.log(`   ✅ Date (standardized): ${orderDate}`);
       }
       continue;
     }

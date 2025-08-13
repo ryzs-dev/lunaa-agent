@@ -14,7 +14,7 @@ const whatsapp_1 = __importDefault(require("./routes/whatsapp"));
 const trackingScheduler_1 = require("./scheduler/trackingScheduler");
 dotenv_1.default.config({ path: path_1.default.resolve(__dirname, "../.env.local") });
 const app = (0, express_1.default)();
-const port = process.env.PORT || 3001;
+const port = Number(process.env.PORT) || 3001;
 // IMPORTANT: Add these middleware to parse request bodies
 app.use(express_1.default.json({ limit: "10mb" })); // Parse JSON bodies
 app.use(express_1.default.urlencoded({ extended: true, limit: "10mb" })); // Parse URL-encoded bodies
@@ -30,8 +30,8 @@ app.get("/health", (req, res) => {
         timestamp: new Date().toISOString(),
     });
 });
-app.listen(port, () => {
-    console.log(`🚀 Server running on http://localhost:${port}`);
+app.listen(port, "0.0.0.0", () => {
+    console.log(`🚀 Server running on http://0.0.0.0:${port}`);
 });
 if (process.env.NODE_ENV === "production") {
     console.log("\n📅 Starting daily tracking automation...");

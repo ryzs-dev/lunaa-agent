@@ -11,7 +11,7 @@ import { startDailyTrackingScheduler } from "./scheduler/trackingScheduler";
 dotenv.config({ path: path.resolve(__dirname, "../.env.local") });
 
 const app = express();
-const port = process.env.PORT || 3001;
+const port = Number(process.env.PORT) || 3001;
 
 // IMPORTANT: Add these middleware to parse request bodies
 app.use(express.json({ limit: "10mb" })); // Parse JSON bodies
@@ -31,8 +31,8 @@ app.get("/health", (req, res) => {
   });
 });
 
-app.listen(port, () => {
-  console.log(`🚀 Server running on http://localhost:${port}`);
+app.listen(port, "0.0.0.0", () => {
+  console.log(`🚀 Server running on http://0.0.0.0:${port}`);
 });
 
 if (process.env.NODE_ENV === "production") {

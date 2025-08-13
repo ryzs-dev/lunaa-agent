@@ -97,7 +97,7 @@ function startDailyTrackingScheduler() {
 function runTrackingAutomation() {
     return __awaiter(this, void 0, void 0, function* () {
         var _a, _b, _c;
-        const sheetName = "LUNAA Order form  Test 1"; // Your actual sheet name
+        const sheetName = "Test"; // Your actual sheet name
         const spreadsheetId = process.env.GOOGLE_SHEET_ID;
         // Options for the automation
         const options = {

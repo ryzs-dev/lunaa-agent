@@ -77,7 +77,7 @@ async function runTrackingAutomation(): Promise<{
   failedCount: number;
   skippedCount: number;
 }> {
-  const sheetName = "LUNAA Order form  Test 1"; // Your actual sheet name
+  const sheetName = "Test"; // Your actual sheet name
   const spreadsheetId = process.env.GOOGLE_SHEET_ID!;
 
   // Options for the automation

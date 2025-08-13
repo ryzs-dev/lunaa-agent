@@ -281,9 +281,9 @@ export function extractOrderFromMessage(
         if (
           !paymentMethod &&
           (indicator === "cod" ||
-            indicator === "bank" ||
-            indicator === "cash" ||
-            indicator === "transfer")
+            indicator === "tng" ||
+            indicator === "stripe" ||
+            indicator === "bank transfer")
         ) {
           paymentMethod = indicator.toUpperCase();
           console.log(`   ✅ Payment method from name: ${paymentMethod}`);
@@ -1171,7 +1171,7 @@ export function createSheetRowData(
         rowData[index] = orderData.state || "";
         break;
       case "phone number":
-        rowData[index] = orderData.phoneNumber || "";
+        rowData[index] = `+${orderData.phoneNumber}` || "";
         break;
       case "tracking number":
         // Leave empty - to be filled later
@@ -1197,7 +1197,7 @@ export function createSheetRowData(
         rowData[index] = "MYR"; // Assume Malaysian Ringgit
         break;
       case "status":
-        rowData[index] = "pending"; // Default status for new orders
+        rowData[index] = ""; // Default status for new orders
         break;
       default:
         // Leave other columns empty

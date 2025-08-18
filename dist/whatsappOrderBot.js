@@ -131,6 +131,7 @@ function detectPaymentMethod(text) {
         { pattern: /\b(maya|paymaya)\b/i, method: "MAYA" },
         { pattern: /\b(gcash)\b/i, method: "GCASH" },
         { pattern: /\b(cash|tunai)\b/i, method: "CASH" },
+        { pattern: /\b(atome)\b/i, method: "ATOME" }, // ✅ Added Atome
     ];
     for (const { pattern, method } of paymentPatterns) {
         if (pattern.test(textLower)) {

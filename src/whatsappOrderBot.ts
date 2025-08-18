@@ -23,7 +23,7 @@ interface OrderData {
   postcode?: string;
   state?: string;
   totalPaid?: number;
-  productCode?: string; // Store the raw product code (e.g., "2f1w30ml")
+  productCode?: string;
   remark?: string;
   paymentMethod?: string;
   groupName?: string;
@@ -34,7 +34,7 @@ interface OrderData {
 interface ProductOrder {
   name: string;
   quantity: number;
-  type?: string; // e.g., "30ml", "10ml"
+  type?: string;
 }
 
 interface MessageContext {
@@ -45,8 +45,7 @@ interface MessageContext {
   timestamp?: string;
 }
 
-// Add authorized phone numbers configuration
-// You can also move this to environment variables for better security
+// Enhanced authorized phone numbers configuration
 const AUTHORIZED_PHONE_NUMBERS = process.env.AUTHORIZED_PHONE_NUMBERS
   ? process.env.AUTHORIZED_PHONE_NUMBERS.split(",").map((num) => num.trim())
   : [
@@ -56,126 +55,255 @@ const AUTHORIZED_PHONE_NUMBERS = process.env.AUTHORIZED_PHONE_NUMBERS
       "60127909921",
       "60164561361",
       "601158699901",
+      // Test numbers for testing
+      "60123456789",
+      "60126675705",
+      "60127370668",
+      "60191234567",
+      "60187654321",
     ];
 
 /**
- * Check if a phone number is authorized to place orders
+ * Enhanced phone number normalization for Malaysia (+60) and Singapore (+65)
+ */
+function normalizePhoneNumber(phoneNumber: string): string {
+  if (!phoneNumber) return "";
+
+  const digits = phoneNumber.replace(/\D/g, "");
+
+  // Handle Malaysian numbers (+60)
+  if (digits.startsWith("60")) {
+    return digits;
+  } else if (digits.startsWith("0")) {
+    return "60" + digits.substring(1);
+  } else if (
+    digits.length >= 9 &&
+    digits.length <= 11 &&
+    (digits.startsWith("1") ||
+      digits.startsWith("3") ||
+      digits.startsWith("4") ||
+      digits.startsWith("5") ||
+      digits.startsWith("6") ||
+      digits.startsWith("7") ||
+      digits.startsWith("8") ||
+      digits.startsWith("9"))
+  ) {
+    return "60" + digits;
+  }
+
+  // Handle Singaporean numbers (+65)
+  if (digits.startsWith("65")) {
+    return digits;
+  } else if (digits.length === 8 && /^[3689]/.test(digits)) {
+    return "65" + digits;
+  }
+
+  return digits;
+}
+
+/**
+ * Enhanced authorization check with better phone number matching
  */
 function isAuthorizedPhoneNumber(phoneNumber: string): boolean {
   if (!phoneNumber) return false;
 
-  // Clean the phone number (remove spaces, dashes, plus signs)
-  const cleanPhone = phoneNumber.replace(/[\s\-\+]/g, "");
+  const normalizedPhone = normalizePhoneNumber(phoneNumber);
 
-  // Check against authorized numbers (with and without country code)
   return AUTHORIZED_PHONE_NUMBERS.some((authorizedNumber) => {
-    const cleanAuthorized = authorizedNumber.replace(/[\s\-\+]/g, "");
+    const normalizedAuthorized = normalizePhoneNumber(authorizedNumber);
 
-    // Direct match
-    if (cleanPhone === cleanAuthorized) return true;
+    if (normalizedPhone === normalizedAuthorized) return true;
 
-    // Match without country code (60)
     if (
-      cleanPhone.startsWith("60") &&
-      cleanPhone.substring(2) === cleanAuthorized
-    )
-      return true;
-    if (
-      cleanAuthorized.startsWith("60") &&
-      cleanAuthorized.substring(2) === cleanPhone
-    )
-      return true;
+      normalizedPhone.startsWith("60") &&
+      normalizedAuthorized.startsWith("60")
+    ) {
+      return normalizedPhone.substring(2) === normalizedAuthorized.substring(2);
+    }
 
-    // Match with leading zero handling
     if (
-      cleanPhone.startsWith("0") &&
-      cleanAuthorized === "60" + cleanPhone.substring(1)
-    )
-      return true;
-    if (
-      cleanAuthorized.startsWith("0") &&
-      cleanPhone === "60" + cleanAuthorized.substring(1)
-    )
-      return true;
+      normalizedPhone.startsWith("65") &&
+      normalizedAuthorized.startsWith("65")
+    ) {
+      return normalizedPhone.substring(2) === normalizedAuthorized.substring(2);
+    }
 
     return false;
   });
 }
 
 /**
- * Add a phone number to the authorized list (for admin use)
+ * Enhanced payment method detection
  */
-export function addAuthorizedPhoneNumber(phoneNumber: string): boolean {
-  const cleanPhone = phoneNumber.replace(/[\s\-\+]/g, "");
+function detectPaymentMethod(text: string): string | null {
+  if (!text) return null;
 
-  if (!isAuthorizedPhoneNumber(cleanPhone)) {
-    AUTHORIZED_PHONE_NUMBERS.push(cleanPhone);
-    console.log(`✅ Added ${cleanPhone} to authorized numbers`);
-    return true;
+  const textLower = text.toLowerCase().trim();
+
+  const paymentPatterns = [
+    { pattern: /\b(cod|cash\s*on\s*delivery)\b/i, method: "COD" },
+    {
+      pattern: /\b(tng|touch\s*n\s*go|touchngo|touch\s*and\s*go)\b/i,
+      method: "TNG",
+    },
+    {
+      pattern: /\b(bank\s*transfer|bank\s*in|transfer|online\s*banking|fpx)\b/i,
+      method: "BANK TRANSFER",
+    },
+    {
+      pattern: /\b(card|credit\s*card|debit\s*card|stripe|visa|mastercard)\b/i,
+      method: "CARD",
+    },
+    { pattern: /\b(grab\s*pay|grabpay)\b/i, method: "GRABPAY" },
+    { pattern: /\b(boost)\b/i, method: "BOOST" },
+    { pattern: /\b(maya|paymaya)\b/i, method: "MAYA" },
+    { pattern: /\b(gcash)\b/i, method: "GCASH" },
+    { pattern: /\b(cash|tunai)\b/i, method: "CASH" },
+  ];
+
+  for (const { pattern, method } of paymentPatterns) {
+    if (pattern.test(textLower)) {
+      return method;
+    }
   }
 
-  console.log(`⚠️ ${cleanPhone} is already authorized`);
-  return false;
+  return null;
 }
 
 /**
- * Remove a phone number from the authorized list (for admin use)
+ * Enhanced repeat customer detection
  */
+function detectRepeatCustomer(text: string): boolean {
+  if (!text) return false;
+
+  const textLower = text.toLowerCase();
+
+  const repeatPatterns = [
+    /\b\.?rpt\b/i,
+    /\brepeat\b/i,
+    /\brepeating\b/i,
+    /\breturn\s*customer\b/i,
+    /\bregular\s*customer\b/i,
+    /\bexisting\s*customer\b/i,
+    /\bold\s*customer\b/i,
+    /\b重复\b/,
+    /\b老客户\b/,
+    /\b回头客\b/,
+  ];
+
+  return repeatPatterns.some((pattern) => pattern.test(textLower));
+}
+
+/**
+ * Enhanced phone number extraction
+ */
+function extractPhoneNumber(text: string): string | null {
+  if (!text) return null;
+
+  const phonePatterns = [
+    /\b(\+?60\s*1[0-9]\s*[0-9]{3,4}\s*[0-9]{4})\b/g,
+    /\b(01[0-9]\s*[0-9]{3,4}\s*[0-9]{4})\b/g,
+    /\b(\+?60\s*[3-9]\s*[0-9]{3,4}\s*[0-9]{4})\b/g,
+    /\b(0[3-9]\s*[0-9]{3,4}\s*[0-9]{4})\b/g,
+    /\b(\+?65\s*[689][0-9]{3}\s*[0-9]{4})\b/g,
+    /\b([689][0-9]{3}\s*[0-9]{4})\b/g,
+    /\b(\+?60\s*1[0-9]-[0-9]{3,4}-[0-9]{4})\b/g,
+    /\b(01[0-9]-[0-9]{3,4}-[0-9]{4})\b/g,
+    /\b(\+?65\s*[689][0-9]{3}-[0-9]{4})\b/g,
+  ];
+
+  for (const pattern of phonePatterns) {
+    const matches = text.match(pattern);
+    if (matches && matches.length > 0) {
+      return matches[0].replace(/\s+/g, "");
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Extract total amount from text
+ */
+function extractTotalAmount(text: string): number {
+  if (!text) return 0;
+
+  // Pattern 1: total：256 or total: 256 or Total: RM256
+  let totalMatch = text.match(/total\s*[：:]\s*(?:rm\s*)?(\d+)/i);
+
+  // Pattern 2: total 256 or Total RM256 (without colon)
+  if (!totalMatch) {
+    totalMatch = text.match(/total\s+(?:rm\s*)?(\d+)/i);
+  }
+
+  // Pattern 3: Just numbers after total (flexible)
+  if (!totalMatch) {
+    totalMatch = text.match(/total.*?(\d+)/i);
+  }
+
+  // Pattern 4: RM prefix
+  if (!totalMatch) {
+    totalMatch = text.match(/^rm\s*(\d+)$/i);
+  }
+
+  // Pattern 5: Amount with currency
+  if (!totalMatch) {
+    totalMatch = text.match(/(\d{2,4})\s*(ringgit|dollar|myr|sgd)/i);
+  }
+
+  // Pattern 6: Standalone amount (if reasonable range)
+  if (!totalMatch && text.match(/^\d{2,4}$/)) {
+    const amount = parseInt(text);
+    if (amount >= 20 && amount <= 9999) {
+      return amount;
+    }
+  }
+
+  return totalMatch ? parseInt(totalMatch[1]) : 0;
+}
+
+/**
+ * Admin functions
+ */
+export function addAuthorizedPhoneNumber(phoneNumber: string): boolean {
+  const normalizedPhone = normalizePhoneNumber(phoneNumber);
+
+  if (!isAuthorizedPhoneNumber(normalizedPhone)) {
+    AUTHORIZED_PHONE_NUMBERS.push(normalizedPhone);
+    console.log(`✅ Added ${normalizedPhone} to authorized numbers`);
+    return true;
+  }
+
+  console.log(`⚠️ ${normalizedPhone} is already authorized`);
+  return false;
+}
+
 export function removeAuthorizedPhoneNumber(phoneNumber: string): boolean {
-  const cleanPhone = phoneNumber.replace(/[\s\-\+]/g, "");
+  const normalizedPhone = normalizePhoneNumber(phoneNumber);
   const index = AUTHORIZED_PHONE_NUMBERS.findIndex(
-    (num) => num.replace(/[\s\-\+]/g, "") === cleanPhone
+    (num) => normalizePhoneNumber(num) === normalizedPhone
   );
 
   if (index !== -1) {
     AUTHORIZED_PHONE_NUMBERS.splice(index, 1);
-    console.log(`✅ Removed ${cleanPhone} from authorized numbers`);
+    console.log(`✅ Removed ${normalizedPhone} from authorized numbers`);
     return true;
   }
 
-  console.log(`⚠️ ${cleanPhone} was not found in authorized numbers`);
+  console.log(`⚠️ ${normalizedPhone} was not found in authorized numbers`);
   return false;
 }
 
-/**
- * Get list of all authorized phone numbers
- */
 export function getAuthorizedPhoneNumbers(): string[] {
   return [...AUTHORIZED_PHONE_NUMBERS];
 }
 
-/**
- * Send a response message for unauthorized users
- */
 export function getUnauthorizedMessage(): string {
   return "Sorry, your phone number is not authorized to place orders through this bot. Please contact the administrator if you believe this is an error.";
 }
 
 /**
- * Extract order information from WhatsApp message
- * Supports multiple formats:
- *
- * Format 1 (English multi-line):
- * 6/8/2025
- * total：256
- * THAN SIEW PHENG
- * 019-4419638
- * 6 Lorong Vila Indah 7,
- * 14300 Nibong Tebal,
- * Pulau Pinang.
- * 1w1f1s1w30ml
- *
- * Format 2 (Chinese multi-line):
- * 8/8/2025
- * total：198
- * 汇款人名字：CHOW MEI LING
- * 收件人名字：NICOLE CHOW
- * 电话号码：0126675705
- * 地址： C15-2-2, Bayan Villa, Jalan BS2/5, Taman Bukit Serdang, 43300 Seri Kembangan, Selangor.
- * 2f1w30ml
- *
- * Format 3 (Condensed single-line):
- * 8/8/25.rpt Cod rm278 Dorcas Koh (cod) 0127370668 28 jalan sagu 38,Taman daya 81100 jb 3f1w
+ * Enhanced order extraction with improved detection patterns
  */
 export function extractOrderFromMessage(
   messageBody: string,
@@ -199,7 +327,7 @@ export function extractOrderFromMessage(
     return extractCondensedOrder(messageBody, context);
   }
 
-  // Handle multi-line formats (existing logic with improvements)
+  // Handle multi-line formats with enhanced detection
   const lines = messageBody
     .split("\n")
     .map((line) => line.trim())
@@ -223,6 +351,17 @@ export function extractOrderFromMessage(
   let paymentMethod = "";
   let isRepeatCustomer = false;
 
+  // First pass: detect repeat customer from any line
+  const fullText = messageBody.toLowerCase();
+  isRepeatCustomer = detectRepeatCustomer(fullText);
+  console.log(`🔄 Repeat customer detected: ${isRepeatCustomer}`);
+
+  // Second pass: detect payment method from any line
+  paymentMethod = detectPaymentMethod(messageBody) || "";
+  if (paymentMethod) {
+    console.log(`💳 Payment method detected: ${paymentMethod}`);
+  }
+
   console.log(`📝 Processing ${lines.length} lines:`);
   lines.forEach((line, index) => {
     console.log(`   Line ${index + 1}: "${line}"`);
@@ -232,25 +371,34 @@ export function extractOrderFromMessage(
     const line = lines[i];
     console.log(`🔍 Processing line ${i + 1}: "${line}"`);
 
-    // Check for standardized labeled fields
-    // New standardized format: Date: 13/8/25 or Date: 13/8/25 Repeat
+    // Enhanced date detection - check if line looks like a date
+    if (line.match(/^\d{1,2}[\/\-]\d{1,2}[\/\-](\d{2}|\d{4})$/)) {
+      orderDate = formatDateToYYYYMMDD(line);
+      console.log(`   ✅ Date detected: ${orderDate}`);
+
+      // Check for repeat indicators in the same message
+      if (detectRepeatCustomer(messageBody)) {
+        isRepeatCustomer = true;
+        console.log(`   ✅ Repeat customer detected in message`);
+      }
+      continue;
+    }
     if (
       line.toLowerCase().startsWith("date") &&
       (line.includes(":") || line.includes("："))
     ) {
       const dateContent = line.replace(/^date\s*[：:]\s*/i, "").trim();
 
-      // Check for "Repeat" in the same line as date
-      const repeatInSameLine = dateContent.toLowerCase().includes("repeat");
-      if (repeatInSameLine) {
+      if (detectRepeatCustomer(dateContent)) {
         isRepeatCustomer = true;
         console.log(`   ✅ Repeat customer detected in date line`);
       }
 
-      // Extract just the date part (remove "Repeat" if present)
-      const cleanDateContent = dateContent.replace(/\s+repeat\s*$/i, "").trim();
+      const cleanDateContent = dateContent
+        .replace(/\s+(repeat|rpt).*$/i, "")
+        .trim();
       const dateMatch = cleanDateContent.match(
-        /^(\d{1,2}\/\d{1,2}\/(?:\d{2}|\d{4}))$/i
+        /^(\d{1,2}[\/\-]\d{1,2}[\/\-](?:\d{2}|\d{4}))$/i
       );
       if (dateMatch) {
         orderDate = formatDateToYYYYMMDD(dateMatch[1]);
@@ -259,67 +407,53 @@ export function extractOrderFromMessage(
       continue;
     }
 
-    // total：780 or Total: 780
-    if (
-      (line.toLowerCase().includes("total") &&
-        (line.includes("：") || line.includes(":"))) ||
-      line.toLowerCase().startsWith("total")
-    ) {
-      const totalMatch = line.match(/total[：:]\s*(\d+)/i);
-      if (totalMatch) {
-        totalPaid = parseInt(totalMatch[1]);
-        console.log(`   ✅ Total (labeled): ${totalPaid}`);
+    // Enhanced total detection
+    if (!totalPaid) {
+      const extractedTotal = extractTotalAmount(line);
+      if (extractedTotal > 0) {
+        totalPaid = extractedTotal;
+        console.log(`   ✅ Total detected: ${totalPaid}`);
+        continue;
       }
-      continue;
     }
 
-    // Name : Yong Pugy Wan or Name: Yong Pugy Wan
+    // Enhanced name detection
     if (
       line.toLowerCase().startsWith("name") &&
       (line.includes(":") || line.includes("："))
     ) {
       let nameContent = line.replace(/^name\s*[：:]\s*/i, "").trim();
 
-      // Extract payment method from name if present
-      const paymentIndicatorMatch = nameContent.match(
-        /\s*[\(（]([^)）]+)[\)）]\s*$/
-      );
-      if (paymentIndicatorMatch) {
-        const indicator = paymentIndicatorMatch[1].toLowerCase();
-        if (
-          !paymentMethod &&
-          (indicator === "cod" ||
-            indicator === "tng" ||
-            indicator === "stripe" ||
-            indicator === "bank transfer")
-        ) {
-          paymentMethod = indicator.toUpperCase();
-          console.log(`   ✅ Payment method from name: ${paymentMethod}`);
-        }
-        nameContent = nameContent
-          .replace(/\s*[\(（][^)）]*[\)）]\s*$/, "")
-          .trim();
+      const detectedPayment = detectPaymentMethod(nameContent);
+      if (detectedPayment && !paymentMethod) {
+        paymentMethod = detectedPayment;
+        console.log(`   ✅ Payment method from name: ${paymentMethod}`);
       }
+
+      nameContent = nameContent
+        .replace(/\s*[\(（]([^)）]*)[\)）]\s*$/g, "")
+        .trim();
 
       customerName = nameContent;
       console.log(`   ✅ Name (labeled): ${customerName}`);
       continue;
     }
 
-    // Contact : 011 29291699 or Contact: 011 29291699
+    // Enhanced contact detection
     if (
       line.toLowerCase().startsWith("contact") &&
       (line.includes(":") || line.includes("："))
     ) {
-      phoneNumber = line
-        .replace(/^contact\s*[：:]\s*/i, "")
-        .trim()
-        .replace(/[\s\-]/g, "");
-      console.log(`   ✅ Contact (labeled): ${phoneNumber}`);
+      const contactContent = line.replace(/^contact\s*[：:]\s*/i, "").trim();
+      const extractedPhone = extractPhoneNumber(contactContent);
+      if (extractedPhone) {
+        phoneNumber = normalizePhoneNumber(extractedPhone);
+        console.log(`   ✅ Contact (labeled): ${phoneNumber}`);
+      }
       continue;
     }
 
-    // Address: [address content] or Address : [address content]
+    // Enhanced address detection
     if (
       line.toLowerCase().startsWith("address") &&
       (line.includes(":") || line.includes("："))
@@ -329,46 +463,47 @@ export function extractOrderFromMessage(
       continue;
     }
 
-    // Payment: COD or Payment : Bank
+    // Enhanced payment detection
     if (
       line.toLowerCase().startsWith("payment") &&
       (line.includes(":") || line.includes("："))
     ) {
       const paymentContent = line.replace(/^payment\s*[：:]\s*/i, "").trim();
-      if (paymentContent.toLowerCase().match(/^(cod|bank|cash|transfer)$/i)) {
-        paymentMethod = paymentContent.toUpperCase();
+      const detectedPayment = detectPaymentMethod(paymentContent);
+      if (detectedPayment) {
+        paymentMethod = detectedPayment;
         console.log(`   ✅ Payment (labeled): ${paymentMethod}`);
       }
       continue;
     }
 
-    // Chinese format - 汇款人名字：CHOW MEI LING (Sender name)
+    // Chinese format handling
     if (line.includes("汇款人名字：")) {
       customerName = line.replace("汇款人名字：", "").trim();
       console.log(`   ✅ Sender name (汇款人): ${customerName}`);
       continue;
     }
 
-    // Chinese format - 收件人名字：NICOLE CHOW (Receiver name)
     if (line.includes("收件人名字：")) {
       receiverName = line.replace("收件人名字：", "").trim();
       console.log(`   ✅ Receiver name (收件人): ${receiverName}`);
       continue;
     }
 
-    // Chinese format - 电话号码：0126675705 (Phone number)
     if (line.includes("电话号码：")) {
-      phoneNumber = line.replace("电话号码：", "").trim().replace(/-/g, "");
-      console.log(`   ✅ Phone number (电话号码): ${phoneNumber}`);
+      const phoneContent = line.replace("电话号码：", "").trim();
+      const extractedPhone = extractPhoneNumber(phoneContent);
+      if (extractedPhone) {
+        phoneNumber = normalizePhoneNumber(extractedPhone);
+        console.log(`   ✅ Phone number (电话号码): ${phoneNumber}`);
+      }
       continue;
     }
 
-    // Chinese format - 地址：[address] (Address)
     if (line.includes("地址：")) {
       address = line.replace("地址：", "").trim();
       console.log(`   📍 Address (地址): ${address}`);
 
-      // Parse address components
       const addressComponents = parseAddress(address);
       city = addressComponents.city;
       postcode = addressComponents.postcode;
@@ -380,50 +515,40 @@ export function extractOrderFromMessage(
       continue;
     }
 
-    // Customer name - check for payment method indicators
-    if (!customerName && line.match(/^[A-Za-z\s\(\)（）]+$/)) {
+    // Enhanced phone number detection - prioritize this before address detection
+    if (!phoneNumber) {
+      const extractedPhone = extractPhoneNumber(line);
+      if (extractedPhone) {
+        phoneNumber = normalizePhoneNumber(extractedPhone);
+        console.log(`   ✅ Phone number detected: ${phoneNumber}`);
+        continue;
+      }
+    }
+
+    // Enhanced customer name detection with payment method extraction
+    if (
+      !customerName &&
+      line.match(/^[A-Za-z\s\(\)（）\-\.]+$/) &&
+      !extractPhoneNumber(line)
+    ) {
       let tempCustomerName = line.trim();
 
-      // Extract payment method from name (handle Chinese parentheses)
-      const paymentIndicatorMatch = tempCustomerName.match(
-        /\s*[\(（]([^)）]+)[\)）]\s*$/
-      );
-      if (paymentIndicatorMatch) {
-        const indicator = paymentIndicatorMatch[1].toLowerCase();
-        if (
-          !paymentMethod &&
-          (indicator === "cod" ||
-            indicator === "bank" ||
-            indicator === "cash" ||
-            indicator === "transfer")
-        ) {
-          paymentMethod = indicator.toUpperCase();
-          console.log(`   ✅ Payment method from name: ${paymentMethod}`);
-        }
-        // Remove the payment indicator from customer name
-        tempCustomerName = tempCustomerName
-          .replace(/\s*[\(（][^)）]*[\)）]\s*$/, "")
-          .trim();
+      const detectedPayment = detectPaymentMethod(tempCustomerName);
+      if (detectedPayment && !paymentMethod) {
+        paymentMethod = detectedPayment;
+        console.log(`   ✅ Payment method from name: ${paymentMethod}`);
       }
+
+      tempCustomerName = tempCustomerName
+        .replace(/\s*[\(（]([^)）]*)[\)）]\s*$/g, "")
+        .trim();
 
       customerName = tempCustomerName;
       console.log(`   ✅ Customer name: ${customerName}`);
       continue;
     }
 
-    // Phone number (019-4419638 or 03-98765432)
-    if (
-      !phoneNumber &&
-      (line.match(/^\d{3}-?\d{7,8}$/) ||
-        line.match(/^01\d-?\d{7,8}$/) ||
-        line.match(/^0\d-?\d{8}$/))
-    ) {
-      phoneNumber = line.replace(/-/g, ""); // Remove dashes
-      console.log(`   ✅ Phone number: ${phoneNumber}`);
-      continue;
-    }
-
-    // Product code - store as product code for remarks
+    // Product code detection
     const productCodePattern = /^(\d+[wfs](\d+ml)?)+$/i;
     const isProductCode = productCodePattern.test(line.trim());
     const looksLikeAddress =
@@ -431,91 +556,70 @@ export function extractOrderFromMessage(
       line.includes("Jalan") ||
       line.includes("Lorong") ||
       /^\d{5}/.test(line);
-    const looksLikePhone = /^\d{2,3}-?\d{7,8}$/.test(line.trim());
-
-    console.log(`   Product code check: "${line}"`);
-    console.log(
-      `     Matches pattern: ${productCodePattern.test(line.trim())}`
-    );
-    console.log(
-      `     Is product code: ${
-        isProductCode && !looksLikeAddress && !looksLikePhone
-      }`
-    );
+    const looksLikePhone = extractPhoneNumber(line) !== null;
 
     if (isProductCode && !looksLikeAddress && !looksLikePhone) {
-      productCode = line.trim(); // Store original format (e.g., "2f1w30ml")
+      productCode = line.trim();
       console.log(`   ✅ Product code found: ${productCode}`);
       break;
     }
 
-    // Address lines (anything that's not a product code and not processed above)
+    // Address lines handling - exclude lines that look like amounts
     if (
       !productCode &&
       line &&
       !isProductCode &&
       !line.includes("：") &&
-      !line.match(/^\d{1,2}\/\d{1,2}\/(\d{2}|\d{4})/i) &&
-      !line.match(/^(cod|bank|cash|transfer)\s+rm(\d+)$/i) &&
-      !line.toLowerCase().includes("total")
+      !line.match(/^\d{1,2}[\/\-]\d{1,2}[\/\-](\d{2}|\d{4})/i) &&
+      !detectPaymentMethod(line) &&
+      !line.toLowerCase().includes("total") &&
+      !line.match(/^(?:rm\s*)?\d{2,4}$/i) &&
+      !extractPhoneNumber(line)
     ) {
       address += (address ? ", " : "") + line;
       console.log(`   📍 Address line added: ${line}`);
 
-      // Check if this line contains Malaysian state
-      const malayStates = [
-        "selangor",
-        "kuala lumpur",
-        "penang",
-        "johor",
-        "perak",
-        "kedah",
-        "kelantan",
-        "terengganu",
-        "pahang",
-        "negeri sembilan",
-        "melaka",
-        "perlis",
-        "sabah",
-        "sarawak",
-        "putrajaya",
-        "labuan",
-        "pulau pinang",
-        "jb", // Johor Bahru abbreviation
-        "sel", // Selangor abbreviation
-        "kl", // Kuala Lumpur abbreviation
-      ];
-      const lineHasState = malayStates.some((state) =>
-        line.toLowerCase().includes(state)
-      );
-
-      if (lineHasState) {
-        state = extractState(line);
-        console.log(`   🏛️ State found: ${state}`);
-        // Extract postcode from address
-        const postcodeMatch = address.match(/(\d{5})/);
-        if (postcodeMatch) {
-          postcode = postcodeMatch[1];
-          console.log(`   📮 Postcode found: ${postcode}`);
-        }
-        // Extract city using improved parsing
-        const addressComponents = parseAddress(address);
+      const addressComponents = parseAddress(address);
+      if (addressComponents.state) {
+        state = addressComponents.state;
+        postcode = addressComponents.postcode;
         city = addressComponents.city;
+        console.log(`   🏛️ State found: ${state}`);
+        console.log(`   📮 Postcode found: ${postcode}`);
         console.log(`   🏙️ City found: ${city}`);
       }
       continue;
     }
   }
 
-  // Use receiver name if available (Chinese format), otherwise use customer name
+  // Final pass: If no total found, try to extract from any line
+  if (!totalPaid) {
+    console.log(`🔍 Final pass: searching for total amount...`);
+    for (const line of lines) {
+      if (
+        line.match(/\d{2,4}/) &&
+        !extractPhoneNumber(line) &&
+        !line.match(/^\d{1,2}[\/\-]\d{1,2}[\/\-]/)
+      ) {
+        const extractedTotal = extractTotalAmount(line);
+        if (extractedTotal > 0) {
+          totalPaid = extractedTotal;
+          console.log(
+            `   ✅ Total found in final pass: ${totalPaid} (from line: "${line}")`
+          );
+          break;
+        }
+      }
+    }
+  }
+
   const finalCustomerName =
     receiverName || customerName || context.customerName || "WhatsApp Customer";
 
-  // Create remark with product code
   const baseRemark = `Order from WhatsApp${
     context.groupName ? ` (Group: ${context.groupName})` : ""
   }${receiverName && customerName ? ` (Sender: ${customerName})` : ""}${
-    isRepeatCustomer ? " (Repeat Customer)" : ""
+    isRepeatCustomer ? " (Repeat Customer)" : " (New Customer)"
   }`;
   const remarkWithProductCode = productCode
     ? `${baseRemark} - ${productCode}`
@@ -524,7 +628,7 @@ export function extractOrderFromMessage(
   console.log(`✅ Extracted order:`, {
     orderDate,
     customerName: finalCustomerName,
-    phoneNumber,
+    phoneNumber: phoneNumber || context.customerPhone,
     totalPaid,
     productCode,
     address: address.trim(),
@@ -540,7 +644,7 @@ export function extractOrderFromMessage(
     orderDate: orderDate || new Date().toISOString().split("T")[0],
     customerName: finalCustomerName,
     phoneNumber: phoneNumber || context.customerPhone,
-    products: parseProductCode(productCode), // Parse the product code into individual products
+    products: parseProductCode(productCode),
     address: address.trim(),
     city,
     postcode,
@@ -557,19 +661,14 @@ export function extractOrderFromMessage(
 
 /**
  * Check if the message is in condensed single-line format
- * Pattern: Date.rpt? PaymentMethod rmAmount CustomerName PhoneNumber Address ProductCode
  */
 function isCondensedFormat(messageBody: string): boolean {
   const trimmed = messageBody.trim();
-
-  // Check for date pattern at the beginning (DD/MM/YY or DD/MM/YYYY)
-  const hasDateAtStart = /^\d{1,2}\/\d{1,2}\/(\d{2}|\d{4})/.test(trimmed);
-
-  // Check if it's a single line (no newlines or very few)
+  const hasDateAtStart = /^\d{1,2}[\/\-]\d{1,2}[\/\-](\d{2}|\d{4})/.test(
+    trimmed
+  );
   const lineCount = trimmed.split("\n").filter((line) => line.trim()).length;
   const isSingleLine = lineCount <= 2;
-
-  // Check for product code pattern at the end
   const hasProductCodeAtEnd =
     /\s+\d+[wfs](\d+ml)?(\d+[wfs](\d+ml)?)*\s*$/i.test(trimmed);
 
@@ -581,8 +680,7 @@ function isCondensedFormat(messageBody: string): boolean {
 }
 
 /**
- * Extract order from condensed format
- * Example: "8/8/25.rpt Cod rm278 Dorcas Koh (cod) 0127370668 28 jalan sagu 38,Taman daya 81100 jb 3f1w"
+ * Enhanced condensed order extraction
  */
 function extractCondensedOrder(
   messageBody: string,
@@ -592,9 +690,8 @@ function extractCondensedOrder(
 
   const trimmed = messageBody.trim();
 
-  // Extract date (with optional .rpt)
   const dateMatch = trimmed.match(
-    /^(\d{1,2}\/\d{1,2}\/(?:\d{2}|\d{4}))(\.rpt)?/i
+    /^(\d{1,2}[\/\-]\d{1,2}[\/\-](?:\d{2}|\d{4}))(\.?rpt|\.?repeat)?/i
   );
   if (!dateMatch) {
     console.log(`❌ No date found at start`);
@@ -602,27 +699,40 @@ function extractCondensedOrder(
   }
 
   const dateStr = dateMatch[1];
-  const isRepeat = Boolean(dateMatch[2]);
+  const isRepeat = Boolean(dateMatch[2]) || detectRepeatCustomer(trimmed);
   const orderDate = formatDateToYYYYMMDD(dateStr);
 
   console.log(`   ✅ Date: ${orderDate}, Repeat: ${isRepeat}`);
 
-  // Remove the date part and continue parsing
   let remaining = trimmed.substring(dateMatch[0].length).trim();
 
-  // Extract payment method and amount (e.g., "Cod rm278" or "Bank rm150")
-  let paymentMethod = "";
+  let paymentMethod = detectPaymentMethod(remaining) || "";
   let totalPaid = 0;
 
-  const paymentMatch = remaining.match(/^(cod|bank|cash|transfer)\s+rm(\d+)/i);
+  // Pattern 1: Payment method with amount (cod rm278, bank rm150, tng rm200)
+  const paymentMatch = remaining.match(
+    /^(cod|bank|cash|transfer|tng|grabpay|boost)\s+rm\s*(\d+)/i
+  );
   if (paymentMatch) {
-    paymentMethod = paymentMatch[1].toUpperCase();
+    if (!paymentMethod) {
+      paymentMethod =
+        detectPaymentMethod(paymentMatch[1]) || paymentMatch[1].toUpperCase();
+    }
     totalPaid = parseInt(paymentMatch[2]);
     remaining = remaining.substring(paymentMatch[0].length).trim();
-    console.log(`   ✅ Payment: ${paymentMethod}, Amount: ${totalPaid}`);
+    console.log(
+      `   ✅ Payment & Amount: ${paymentMethod}, Amount: ${totalPaid}`
+    );
+  } else {
+    // Pattern 2: Just amount without payment method (rm278, 278)
+    const amountMatch = remaining.match(/^(?:rm\s*)?(\d{2,4})\s+/i);
+    if (amountMatch) {
+      totalPaid = parseInt(amountMatch[1]);
+      remaining = remaining.substring(amountMatch[0].length).trim();
+      console.log(`   ✅ Amount only: ${totalPaid}`);
+    }
   }
 
-  // Extract product code from the end
   const productCodeMatch = remaining.match(
     /\s+(\d+[wfs](\d+ml)?(\d+[wfs](\d+ml)?)*)\s*$/i
   );
@@ -637,56 +747,39 @@ function extractCondensedOrder(
     .trim();
   console.log(`   ✅ Product code: ${productCode}`);
 
-  // Now we have customer name, phone, and address in the remaining string
-  // Strategy: Find phone number first (it's a clear pattern), then split around it
-  const phoneMatch = remaining.match(
-    /(^.*?)\s+(01\d{8,9}|\d{2,3}-?\d{7,8})\s+(.*$)/
-  );
-  if (!phoneMatch) {
-    console.log(`❌ Could not parse customer name, phone, and address`);
+  const extractedPhone = extractPhoneNumber(remaining);
+  if (!extractedPhone) {
+    console.log(`❌ Could not extract phone number`);
     return null;
   }
 
-  let customerName = phoneMatch[1].trim();
-  const phoneNumber = phoneMatch[2].replace(/-/g, "");
-  const addressString = phoneMatch[3].trim();
+  const phoneNumber = normalizePhoneNumber(extractedPhone);
 
-  // Clean up customer name - remove payment method indicators and extract payment method
-  // Handle both regular parentheses () and Chinese parentheses （）
-  const paymentIndicatorMatch = customerName.match(
-    /\s*[\(（]([^)）]+)[\)）]\s*$/
-  );
-  if (paymentIndicatorMatch) {
-    const indicator = paymentIndicatorMatch[1].toLowerCase();
-    if (
-      indicator === "cod" ||
-      indicator === "bank" ||
-      indicator === "cash" ||
-      indicator === "transfer"
-    ) {
-      if (!paymentMethod) {
-        // Only set if not already extracted from amount section
-        paymentMethod = indicator.toUpperCase();
-        console.log(`   ✅ Payment method from name: ${paymentMethod}`);
-      }
-    }
-    // Remove the payment indicator from customer name (handle both parentheses types)
-    customerName = customerName
-      .replace(/\s*[\(（][^)）]*[\)）]\s*$/, "")
-      .trim();
+  const phoneIndex = remaining.indexOf(extractedPhone);
+  let customerName = remaining.substring(0, phoneIndex).trim();
+  const addressString = remaining
+    .substring(phoneIndex + extractedPhone.length)
+    .trim();
+
+  const detectedPaymentFromName = detectPaymentMethod(customerName);
+  if (detectedPaymentFromName && !paymentMethod) {
+    paymentMethod = detectedPaymentFromName;
+    console.log(`   ✅ Payment method from name: ${paymentMethod}`);
   }
+
+  customerName = customerName
+    .replace(/\s*[\(（]([^)）]*)[\)）]\s*$/g, "")
+    .trim();
 
   console.log(`   ✅ Customer: ${customerName}`);
   console.log(`   ✅ Phone: ${phoneNumber}`);
   console.log(`   📍 Address: ${addressString}`);
 
-  // Parse address components
   const addressComponents = parseAddress(addressString);
 
-  // Create remark
   const baseRemark = `Order from WhatsApp${
     context.groupName ? ` (Group: ${context.groupName})` : ""
-  }${isRepeat ? " (Repeat Customer)" : ""}`;
+  }${isRepeat ? " (Repeat Customer)" : " (New Customer)"}`;
   const remarkWithProductCode = `${baseRemark} - ${productCode}`;
 
   const orderData: OrderData = {
@@ -712,35 +805,22 @@ function extractCondensedOrder(
 }
 
 /**
- * Parse product code like "1w1f1s1w30ml" or "3f1w" into individual products
- * Mapping:
- * W = wash (regular)
- * F = femlift 30ml (default)
- * S = spray
- * W30ml = wash 30ml (小瓶wash)
- * F10ml = femlift 10ml (小瓶femlift)
+ * Parse product code
  */
 function parseProductCode(productCode: string): ProductOrder[] {
   if (!productCode) return [];
 
   const products: ProductOrder[] = [];
-
   console.log(`🔍 Parsing product code: "${productCode}"`);
 
-  // Remove any spaces and convert to lowercase
   let remaining = productCode.replace(/\s/g, "").toLowerCase();
 
   while (remaining.length > 0) {
     console.log(`   Processing remaining: "${remaining}"`);
 
-    // Try to match patterns in order of specificity:
-    // 1. Number + letter + "30ml" or "10ml" (e.g., "1w30ml", "1f10ml")
-    // 2. Number + letter (e.g., "1w", "1f", "1s")
-
     let match = remaining.match(/^(\d+)([wfs])(30ml|10ml)/i);
 
     if (!match) {
-      // Try without ml specification
       match = remaining.match(/^(\d+)([wfs])/i);
     }
 
@@ -755,35 +835,28 @@ function parseProductCode(productCode: string): ProductOrder[] {
 
     console.log(`   ✅ Found: ${quantity}${productLetter}${size}`);
 
-    // Map according to your specification
     switch (productLetter) {
       case "w":
         if (size === "30ml") {
-          // W30ml = 小瓶wash = Wash 30ml column
           products.push({ name: "wash_30ml", quantity, type: "30ml" });
         } else {
-          // W = wash = wash column
           products.push({ name: "wash", quantity, type: "" });
         }
         break;
       case "f":
         if (size === "10ml") {
-          // F10ml = 小瓶femlift = Femlift 10ml column
           products.push({ name: "femlift_10ml", quantity, type: "10ml" });
         } else {
-          // F = femlift = Femlift 30ml column (default)
           products.push({ name: "femlift_30ml", quantity, type: "30ml" });
         }
         break;
       case "s":
-        // S = spray = Spray column
         products.push({ name: "spray", quantity, type: "" });
         break;
       default:
         console.log(`⚠️ Unknown product letter: ${productLetter}`);
     }
 
-    // Remove the matched part and continue
     remaining = remaining.substring(match[0].length);
   }
 
@@ -792,16 +865,15 @@ function parseProductCode(productCode: string): ProductOrder[] {
 }
 
 /**
- * Format date from DD/MM/YYYY or DD/MM/YY to YYYY-MM-DD
+ * Enhanced date formatting with support for different separators
  */
 function formatDateToYYYYMMDD(dateStr: string): string {
-  const parts = dateStr.split("/");
+  const parts = dateStr.split(/[\/\-]/);
   if (parts.length === 3) {
     const day = parts[0].padStart(2, "0");
     const month = parts[1].padStart(2, "0");
     let year = parts[2];
 
-    // Handle 2-digit years (assume 20xx if YY < 50, else 19xx)
     if (year.length === 2) {
       const yearNum = parseInt(year);
       year = yearNum < 50 ? `20${year}` : `19${year}`;
@@ -809,11 +881,11 @@ function formatDateToYYYYMMDD(dateStr: string): string {
 
     return `${year}-${month}-${day}`;
   }
-  return new Date().toISOString().split("T")[0]; // Fallback to today
+  return new Date().toISOString().split("T")[0];
 }
 
 /**
- * Parse address components from a single address line
+ * Enhanced address parsing with better postcode detection
  */
 function parseAddress(addressLine: string): {
   city: string;
@@ -824,34 +896,87 @@ function parseAddress(addressLine: string): {
   let postcode = "";
   let state = "";
 
-  // Extract postcode (5-digit number)
-  const postcodeMatch = addressLine.match(/(\d{5})/);
-  if (postcodeMatch) {
-    postcode = postcodeMatch[1];
+  // Extract postcode (5-digit number for Malaysia, 6-digit for Singapore)
+  // But exclude phone numbers by checking context
+  const postcodeMatches = addressLine.match(/\b(\d{5})\b/g);
+  if (postcodeMatches) {
+    // Filter out phone number parts
+    for (const match of postcodeMatches) {
+      // Check if this 5-digit number is part of a phone number
+      const phonePattern = /\b\d{2,3}[\s\-]?\d{3,4}[\s\-]?\d{4}\b/;
+      const surroundingText = addressLine.substring(
+        Math.max(0, addressLine.indexOf(match) - 10),
+        addressLine.indexOf(match) + match.length + 10
+      );
+
+      if (!phonePattern.test(surroundingText)) {
+        postcode = match;
+        break;
+      }
+    }
   }
 
-  // Extract state (common abbreviations and full names)
-  const malayStates = [
-    { name: "Selangor", variants: ["selangor", "sel"] },
-    { name: "Kuala Lumpur", variants: ["kuala lumpur", "kl"] },
-    { name: "Penang", variants: ["penang", "pulau pinang", "pg"] },
-    { name: "Johor", variants: ["johor", "jb", "johor bahru"] },
-    { name: "Perak", variants: ["perak"] },
-    { name: "Kedah", variants: ["kedah"] },
-    { name: "Kelantan", variants: ["kelantan"] },
-    { name: "Terengganu", variants: ["terengganu"] },
-    { name: "Pahang", variants: ["pahang"] },
-    { name: "Negeri Sembilan", variants: ["negeri sembilan", "n9", "ns"] },
-    { name: "Melaka", variants: ["melaka", "malacca"] },
-    { name: "Perlis", variants: ["perlis"] },
-    { name: "Sabah", variants: ["sabah"] },
-    { name: "Sarawak", variants: ["sarawak"] },
-    { name: "Putrajaya", variants: ["putrajaya"] },
+  // Try 6-digit for Singapore if no 5-digit found
+  if (!postcode) {
+    const postcodeMatch6 = addressLine.match(/\b(\d{6})\b/);
+    if (postcodeMatch6) {
+      const surroundingText = addressLine.substring(
+        Math.max(0, addressLine.indexOf(postcodeMatch6[1]) - 10),
+        addressLine.indexOf(postcodeMatch6[1]) + postcodeMatch6[1].length + 10
+      );
+      const phonePattern = /\b\d{2,3}[\s\-]?\d{3,4}[\s\-]?\d{4}\b/;
+
+      if (!phonePattern.test(surroundingText)) {
+        postcode = postcodeMatch6[1];
+      }
+    }
+  }
+
+  const locationStates = [
+    {
+      name: "Selangor",
+      variants: [
+        "selangor",
+        "sel",
+        "shah alam",
+        "petaling jaya",
+        "pj",
+        "subang",
+        "klang",
+      ],
+    },
+    { name: "Kuala Lumpur", variants: ["kuala lumpur", "kl", "k.l", "k l"] },
+    {
+      name: "Penang",
+      variants: ["penang", "pulau pinang", "pg", "georgetown", "george town"],
+    },
+    {
+      name: "Johor",
+      variants: ["johor", "jb", "johor bahru", "johor baru", "skudai", "masai"],
+    },
+    { name: "Perak", variants: ["perak", "ipoh", "taiping", "teluk intan"] },
+    { name: "Kedah", variants: ["kedah", "alor setar", "sungai petani"] },
+    { name: "Kelantan", variants: ["kelantan", "kota bharu", "kota bahru"] },
+    { name: "Terengganu", variants: ["terengganu", "kuala terengganu"] },
+    { name: "Pahang", variants: ["pahang", "kuantan", "temerloh"] },
+    {
+      name: "Negeri Sembilan",
+      variants: ["negeri sembilan", "n9", "ns", "seremban", "port dickson"],
+    },
+    { name: "Melaka", variants: ["melaka", "malacca", "melaka tengah"] },
+    { name: "Perlis", variants: ["perlis", "kangar"] },
+    {
+      name: "Sabah",
+      variants: ["sabah", "kota kinabalu", "sandakan", "tawau"],
+    },
+    { name: "Sarawak", variants: ["sarawak", "kuching", "miri", "sibu"] },
+    { name: "Putrajaya", variants: ["putrajaya", "cyberjaya"] },
     { name: "Labuan", variants: ["labuan"] },
+    { name: "Singapore", variants: ["singapore", "sg", "republik singapura"] },
   ];
 
   const addressLower = addressLine.toLowerCase();
-  for (const stateInfo of malayStates) {
+  for (const stateInfo of locationStates) {
     for (const variant of stateInfo.variants) {
       if (addressLower.includes(variant)) {
         state = stateInfo.name;
@@ -861,43 +986,58 @@ function parseAddress(addressLine: string): {
     if (state) break;
   }
 
-  // Extract city - split by comma and look for the part containing "Taman", "Bandar", etc.
-  // For "28 jalan sagu 38,Taman daya 81100 jb" -> City should be "Taman daya"
   const parts = addressLine.split(",").map((part) => part.trim());
-
-  // Look for common city/area prefixes in Malaysian addresses
   const cityPrefixes = [
     "taman",
     "bandar",
     "kampung",
     "kg",
+    "pekan",
+    "town",
     "shah alam",
     "petaling jaya",
     "pj",
-    "seri kembangan",
     "subang jaya",
+    "seri kembangan",
+    "puchong",
+    "cheras",
+    "ampang",
+    "damansara",
+    "mont kiara",
+    "ttdi",
+    "bangsar",
+    "mid valley",
+    "kl sentral",
+    "bukit bintang",
+    "georgetown",
+    "george town",
+    "bayan lepas",
+    "butterworth",
+    "bukit mertajam",
+    "nibong tebal",
   ];
 
   for (const part of parts) {
     const partLower = part.toLowerCase();
-
-    // Check if this part contains common city prefixes
     for (const prefix of cityPrefixes) {
       if (partLower.includes(prefix)) {
-        // Extract just the city name part, removing postcode and state
-        city = part.replace(/\d{5}.*$/, "").trim(); // Remove postcode and everything after
+        city = part.replace(/\d{5,6}.*$/, "").trim();
         if (state) {
-          city = city.replace(new RegExp(state, "gi"), "").trim(); // Remove state name
+          city = city.replace(new RegExp(state, "gi"), "").trim();
         }
         return { city, postcode, state };
       }
     }
   }
 
-  // Special handling for multi-word cities like "seri kembangan"
-  const addressLowerWords = addressLine.toLowerCase().split(/\s+/);
-  for (let i = 0; i < addressLowerWords.length - 1; i++) {
-    const twoWordCombo = `${addressLowerWords[i]} ${addressLowerWords[i + 1]}`;
+  const addressWords = addressLine.toLowerCase().split(/\s+/);
+  for (let i = 0; i < addressWords.length - 1; i++) {
+    const twoWordCombo = `${addressWords[i]} ${addressWords[i + 1]}`;
+    const threeWordCombo =
+      i < addressWords.length - 2
+        ? `${addressWords[i]} ${addressWords[i + 1]} ${addressWords[i + 2]}`
+        : "";
+
     const multiWordCities = [
       "seri kembangan",
       "petaling jaya",
@@ -905,25 +1045,41 @@ function parseAddress(addressLine: string): {
       "subang jaya",
       "bandar baru",
       "taman desa",
+      "mont kiara",
+      "bukit bintang",
+      "kl sentral",
+      "mid valley",
+      "george town",
+      "bayan lepas",
+      "bukit mertajam",
+      "nibong tebal",
+      "johor bahru",
+      "kota kinabalu",
     ];
 
     if (multiWordCities.includes(twoWordCombo)) {
-      // Get the original case version
       const originalWords = addressLine.split(/\s+/);
       city = `${originalWords[i]} ${originalWords[i + 1]}`;
       return { city, postcode, state };
     }
+
+    if (threeWordCombo && multiWordCities.includes(threeWordCombo)) {
+      const originalWords = addressLine.split(/\s+/);
+      city = `${originalWords[i]} ${originalWords[i + 1]} ${
+        originalWords[i + 2]
+      }`;
+      return { city, postcode, state };
+    }
   }
 
-  // Fallback: look for the part that contains the postcode, the previous part is likely the city
   for (let i = 0; i < parts.length; i++) {
-    if (/\d{5}/.test(parts[i])) {
+    if (postcode && /\d{5,6}/.test(parts[i]) && parts[i].includes(postcode)) {
       if (i > 0) {
-        // Previous part is likely the city
         city = parts[i - 1].trim();
       } else {
-        // Postcode is in the first part, extract city from before the postcode
-        const beforePostcode = parts[i].replace(/\d{5}.*$/, "").trim();
+        const beforePostcode = parts[i]
+          .replace(new RegExp(postcode + ".*$"), "")
+          .trim();
         if (beforePostcode) {
           city = beforePostcode;
         }
@@ -932,8 +1088,7 @@ function parseAddress(addressLine: string): {
     }
   }
 
-  // Clean up city name - remove any remaining numbers or state references
-  city = city.replace(/\d{5}/, "").trim().replace(/\.$/, "");
+  city = city.replace(new RegExp(postcode), "").trim().replace(/\.$/, "");
   if (state) {
     city = city.replace(new RegExp(state, "gi"), "").trim();
   }
@@ -942,42 +1097,7 @@ function parseAddress(addressLine: string): {
 }
 
 /**
- * Extract state from address line (for English format backward compatibility)
- */
-function extractState(line: string): string {
-  const malayStates = [
-    { name: "Selangor", variants: ["selangor", "sel"] },
-    { name: "Kuala Lumpur", variants: ["kuala lumpur", "kl"] },
-    { name: "Penang", variants: ["penang", "pulau pinang", "pg"] },
-    { name: "Johor", variants: ["johor", "jb", "johor bahru"] },
-    { name: "Perak", variants: ["perak"] },
-    { name: "Kedah", variants: ["kedah"] },
-    { name: "Kelantan", variants: ["kelantan"] },
-    { name: "Terengganu", variants: ["terengganu"] },
-    { name: "Pahang", variants: ["pahang"] },
-    { name: "Negeri Sembilan", variants: ["negeri sembilan", "n9", "ns"] },
-    { name: "Melaka", variants: ["melaka", "malacca"] },
-    { name: "Perlis", variants: ["perlis"] },
-    { name: "Sabah", variants: ["sabah"] },
-    { name: "Sarawak", variants: ["sarawak"] },
-    { name: "Putrajaya", variants: ["putrajaya"] },
-    { name: "Labuan", variants: ["labuan"] },
-  ];
-
-  const lineLower = line.toLowerCase();
-  for (const state of malayStates) {
-    for (const variant of state.variants) {
-      if (lineLower.includes(variant)) {
-        return state.name;
-      }
-    }
-  }
-
-  return line.trim(); // Return original if no match
-}
-
-/**
- * Append order to Google Sheets - writes to both 'Test' and 'Aug 25' sheets
+ * Sheet operations
  */
 export async function appendOrderToSheet(
   orderData: OrderData
@@ -985,7 +1105,7 @@ export async function appendOrderToSheet(
   try {
     const spreadsheetId = process.env.GOOGLE_SHEET_ID!;
     const sheetNames = JSON.parse(
-      process.env.SHEET_NAMES || "Test, Test Aug 25"
+      process.env.SHEET_NAMES || '["Test", "Test Aug 25"]'
     );
 
     console.log(
@@ -996,7 +1116,6 @@ export async function appendOrderToSheet(
 
     for (const sheetName of sheetNames) {
       try {
-        // Get current sheet data to determine next row
         const response = await sheets.spreadsheets.values.get({
           spreadsheetId,
           range: `${sheetName}!A:AC`,
@@ -1016,7 +1135,6 @@ export async function appendOrderToSheet(
           headers
         );
 
-        // Create row data based on your sheet structure
         const rowData = createSheetRowData(orderData, headers);
 
         console.log(
@@ -1028,7 +1146,6 @@ export async function appendOrderToSheet(
             .filter(Boolean)
         );
 
-        // Append the new row
         await sheets.spreadsheets.values.append({
           spreadsheetId,
           range: `${sheetName}!A:AC`,
@@ -1056,7 +1173,6 @@ export async function appendOrderToSheet(
       }
     }
 
-    // Return success if at least one sheet was updated successfully
     const successfulSheets = results.filter((r) => r.success);
     if (successfulSheets.length > 0) {
       return {
@@ -1084,29 +1200,23 @@ export async function appendOrderToSheet(
   }
 }
 
-/**
- * Create row data array based on sheet headers
- * Headers: No, Order Date, fbname, Name, Payment method, wash, Femlift 30ml, Femlift 10ml, Wash 30ml, Spray, remark, package (rm), Postage (rm), Website/shopee charges (rm), TOTAL PAID (rm), shipment description, address, city, postcode, state, phone number, tracking number, courires company, new/repeat, cash sale receipt, Agent by / under, sql system, currency, status
- */
 export function createSheetRowData(
   orderData: OrderData,
   headers: string[]
 ): any[] {
   const rowData = new Array(headers.length).fill("");
 
-  // Map data to correct columns based on headers
   headers.forEach((header, index) => {
     const headerLower = header.toLowerCase().trim();
 
     switch (headerLower) {
       case "no":
-        // Leave empty - will be auto-numbered or handled by sheets
         break;
       case "order date":
         rowData[index] = orderData.orderDate;
         break;
       case "fbname":
-        // Could map to customer name if needed
+        rowData[index] = orderData.groupName || "";
         break;
       case "name":
         rowData[index] = orderData.customerName;
@@ -1146,24 +1256,18 @@ export function createSheetRowData(
         break;
       case "remark":
       case "remarks":
-        // Include the product code in remarks
-        const remarkText = orderData.remark || "";
-        rowData[index] = remarkText;
+        rowData[index] = orderData.remark || "";
         break;
       case "package (rm)":
-        // Could be calculated from products or left empty
         break;
       case "postage (rm)":
-        // Could be calculated or left empty
         break;
       case "website/shopee charges (rm)":
-        // Leave empty for WhatsApp orders
         break;
       case "total paid (rm)":
         rowData[index] = orderData.totalPaid || "";
         break;
       case "shipment description":
-        // Just use the product code as-is for shipment description
         rowData[index] = orderData.productCode || "";
         break;
       case "address":
@@ -1179,36 +1283,35 @@ export function createSheetRowData(
         rowData[index] = orderData.state || "";
         break;
       case "phone number":
-        rowData[index] = `+${orderData.phoneNumber}` || "";
+        rowData[index] = orderData.phoneNumber || "";
         break;
       case "tracking number":
-        // Leave empty - to be filled later
         break;
       case "courires company":
       case "courier company":
-        // Leave empty - to be filled later
         break;
       case "new/repeat":
-        // Use the isRepeatCustomer flag from the order data
         rowData[index] = orderData.isRepeatCustomer ? "repeat" : "new";
         break;
       case "cash sale receipt":
-        // Leave empty
         break;
       case "agent by / under":
         rowData[index] = "WhatsApp Bot";
         break;
       case "sql system":
-        // Leave empty or add system identifier
         break;
       case "currency":
-        rowData[index] = "MYR"; // Assume Malaysian Ringgit
+        const phone = orderData.phoneNumber || "";
+        if (phone.startsWith("65")) {
+          rowData[index] = "SGD";
+        } else {
+          rowData[index] = "MYR";
+        }
         break;
       case "status":
-        rowData[index] = ""; // Default status for new orders
+        rowData[index] = "Pending";
         break;
       default:
-        // Leave other columns empty
         break;
     }
   });

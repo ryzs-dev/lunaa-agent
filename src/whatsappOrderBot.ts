@@ -55,21 +55,26 @@ const AUTHORIZED_PHONE_NUMBERS = process.env.AUTHORIZED_PHONE_NUMBERS
       "60127909921",
       "60164561361",
       "601158699901",
-      // Test numbers for testing
-      "60123456789",
-      "60126675705",
-      "60127370668",
-      "60191234567",
-      "60187654321",
     ];
 
 /**
- * Enhanced phone number normalization for Malaysia (+60) and Singapore (+65)
+ * FIXED: Phone number normalization for Malaysia (+60) and Singapore (+65)
+ * Key fix: Handle Singapore numbers BEFORE Malaysian numbers to prevent
+ * Singapore numbers like "6597719389" from getting "60" prefix
  */
 function normalizePhoneNumber(phoneNumber: string): string {
   if (!phoneNumber) return "";
 
   const digits = phoneNumber.replace(/\D/g, "");
+
+  // Handle Singaporean numbers first (+65)
+  if (digits.startsWith("65")) {
+    return digits;
+  } else if (digits.length === 8 && /^[3689]/.test(digits)) {
+    // Singapore mobile numbers: 8xxx-xxxx, 9xxx-xxxx
+    // Singapore landlines: 6xxx-xxxx, 3xxx-xxxx
+    return "65" + digits;
+  }
 
   // Handle Malaysian numbers (+60)
   if (digits.startsWith("60")) {
@@ -83,19 +88,16 @@ function normalizePhoneNumber(phoneNumber: string): string {
       digits.startsWith("3") ||
       digits.startsWith("4") ||
       digits.startsWith("5") ||
-      digits.startsWith("6") ||
       digits.startsWith("7") ||
       digits.startsWith("8") ||
       digits.startsWith("9"))
   ) {
+    // Only add 60 prefix if it doesn't look like a Singapore number
+    // Singapore numbers starting with 6 are 8 digits long
+    if (digits.startsWith("6") && digits.length === 8) {
+      return "65" + digits;
+    }
     return "60" + digits;
-  }
-
-  // Handle Singaporean numbers (+65)
-  if (digits.startsWith("65")) {
-    return digits;
-  } else if (digits.length === 8 && /^[3689]/.test(digits)) {
-    return "65" + digits;
   }
 
   return digits;
@@ -196,21 +198,24 @@ function detectRepeatCustomer(text: string): boolean {
 }
 
 /**
- * Enhanced phone number extraction
+ * Enhanced phone number extraction with better Singapore/Malaysia detection
  */
 function extractPhoneNumber(text: string): string | null {
   if (!text) return null;
 
   const phonePatterns = [
+    // Singapore patterns first (to avoid false Malaysian matches)
+    /\b(\+?65\s*[689][0-9]{3}\s*[0-9]{4})\b/g,
+    /\b([689][0-9]{3}\s*[0-9]{4})\b/g,
+    /\b(\+?65\s*[689][0-9]{3}-[0-9]{4})\b/g,
+
+    // Malaysian patterns
     /\b(\+?60\s*1[0-9]\s*[0-9]{3,4}\s*[0-9]{4})\b/g,
     /\b(01[0-9]\s*[0-9]{3,4}\s*[0-9]{4})\b/g,
     /\b(\+?60\s*[3-9]\s*[0-9]{3,4}\s*[0-9]{4})\b/g,
     /\b(0[3-9]\s*[0-9]{3,4}\s*[0-9]{4})\b/g,
-    /\b(\+?65\s*[689][0-9]{3}\s*[0-9]{4})\b/g,
-    /\b([689][0-9]{3}\s*[0-9]{4})\b/g,
     /\b(\+?60\s*1[0-9]-[0-9]{3,4}-[0-9]{4})\b/g,
     /\b(01[0-9]-[0-9]{3,4}-[0-9]{4})\b/g,
-    /\b(\+?65\s*[689][0-9]{3}-[0-9]{4})\b/g,
   ];
 
   for (const pattern of phonePatterns) {
@@ -886,18 +891,17 @@ function formatDateToYYYYMMDD(dateStr: string): string {
 }
 
 /**
- * Enhanced address parsing with better postcode detection
+ * Simplified and flexible address parsing - focuses only on postcode and state
+ * Removes hardcoded city extraction as requested
  */
-
 type ParsedAddress = {
   address: string; // keep full address
-  city: string;
+  city: string; // always empty as requested
   postcode: string;
   state: string;
 };
 
 function parseAddress(addressLine: string): ParsedAddress {
-  let city = "";
   let postcode = "";
   let state = "";
 
@@ -911,12 +915,16 @@ function parseAddress(addressLine: string): ParsedAddress {
   function extractPostcode(regex: RegExp): string {
     const matches = address.match(regex);
     if (!matches) return "";
+
+    // Find the first postcode that's not part of a phone number
     for (const match of matches) {
       const idx = address.indexOf(match);
       const surroundingText = address.substring(
-        Math.max(0, idx - 10),
-        idx + match.length + 10
+        Math.max(0, idx - 15),
+        idx + match.length + 15
       );
+
+      // Skip if it looks like part of a phone number
       if (!phonePattern.test(surroundingText)) {
         return match;
       }
@@ -924,142 +932,85 @@ function parseAddress(addressLine: string): ParsedAddress {
     return "";
   }
 
-  postcode = extractPostcode(/\b\d{5}\b/g); // Malaysia
+  // Try Malaysian postcode first (5 digits)
+  postcode = extractPostcode(/\b\d{5}\b/g);
+
+  // If no Malaysian postcode found, try Singapore (6 digits)
   if (!postcode) {
-    postcode = extractPostcode(/\b\d{6}\b/g); // Singapore
+    postcode = extractPostcode(/\b\d{6}\b/g);
   }
 
-  // --- Step 2: Detect state/region ---
+  // --- Step 2: Flexible state/region detection using a more comprehensive list ---
   const locationStates = [
-    {
-      name: "Selangor",
-      variants: ["selangor", "sel", "shah alam", "pj", "subang", "klang"],
-    },
+    // Malaysia
+    { name: "Selangor", variants: ["selangor", "sel"] },
     { name: "Kuala Lumpur", variants: ["kuala lumpur", "kl", "k.l", "k l"] },
-    {
-      name: "Penang",
-      variants: ["penang", "pulau pinang", "pg", "georgetown", "george town"],
-    },
-    {
-      name: "Johor",
-      variants: [
-        "johor",
-        "jb",
-        "johor bahru",
-        "johor baru",
-        "skudai",
-        "masai",
-        "iskandar puteri",
-      ],
-    },
-    { name: "Perak", variants: ["perak", "ipoh", "taiping", "teluk intan"] },
-    { name: "Kedah", variants: ["kedah", "alor setar", "sungai petani"] },
-    { name: "Kelantan", variants: ["kelantan", "kota bharu", "kota bahru"] },
-    { name: "Terengganu", variants: ["terengganu", "kuala terengganu"] },
-    { name: "Pahang", variants: ["pahang", "kuantan", "temerloh"] },
-    {
-      name: "Negeri Sembilan",
-      variants: ["negeri sembilan", "n9", "ns", "seremban", "port dickson"],
-    },
+    { name: "Penang", variants: ["penang", "pulau pinang", "pg"] },
+    { name: "Johor", variants: ["johor", "jb"] },
+    { name: "Perak", variants: ["perak"] },
+    { name: "Kedah", variants: ["kedah"] },
+    { name: "Kelantan", variants: ["kelantan"] },
+    { name: "Terengganu", variants: ["terengganu"] },
+    { name: "Pahang", variants: ["pahang"] },
+    { name: "Negeri Sembilan", variants: ["negeri sembilan", "n9", "ns"] },
     { name: "Melaka", variants: ["melaka", "malacca"] },
-    { name: "Perlis", variants: ["perlis", "kangar"] },
-    {
-      name: "Sabah",
-      variants: ["sabah", "kota kinabalu", "sandakan", "tawau"],
-    },
-    { name: "Sarawak", variants: ["sarawak", "kuching", "miri", "sibu"] },
-    { name: "Putrajaya", variants: ["putrajaya", "cyberjaya"] },
+    { name: "Perlis", variants: ["perlis"] },
+    { name: "Sabah", variants: ["sabah"] },
+    { name: "Sarawak", variants: ["sarawak"] },
+    { name: "Putrajaya", variants: ["putrajaya"] },
     { name: "Labuan", variants: ["labuan"] },
-    { name: "Singapore", variants: ["singapore", "sg", "republik singapura"] },
+
+    // Singapore
+    { name: "Singapore", variants: ["singapore", "sg"] },
   ];
 
+  // Find state by checking if any variant appears in the address
   for (const stateInfo of locationStates) {
-    if (stateInfo.variants.some((v) => addressLower.includes(v))) {
+    if (stateInfo.variants.some((variant) => addressLower.includes(variant))) {
       state = stateInfo.name;
       break;
     }
   }
 
-  // --- Step 3: Detect city ---
-  const parts = address
-    .split(/[,|\n]/)
-    .map((p) => p.trim())
-    .filter(Boolean);
+  // --- Special handling for specific postcode ranges ---
+  if (!state && postcode) {
+    const postcodeNum = parseInt(postcode);
 
-  const cityKeywords = [
-    "taman",
-    "bandar",
-    "kampung",
-    "kg",
-    "pekan",
-    "town",
-    "shah alam",
-    "petaling jaya",
-    "pj",
-    "subang jaya",
-    "seri kembangan",
-    "puchong",
-    "cheras",
-    "ampang",
-    "damansara",
-    "mont kiara",
-    "ttdi",
-    "bangsar",
-    "mid valley",
-    "kl sentral",
-    "bukit bintang",
-    "georgetown",
-    "george town",
-    "bayan lepas",
-    "butterworth",
-    "bukit mertajam",
-    "nibong tebal",
-    "johor bahru",
-    "iskandar puteri",
-    "kota kinabalu",
-  ];
-
-  function findCity(): string {
-    // 1. Look for keywords
-    for (const part of parts) {
-      const lower = part.toLowerCase();
-      if (cityKeywords.some((kw) => lower.includes(kw))) {
-        return part.replace(/\d{5,6}.*$/, "").trim();
-      }
+    // Malaysia postcode ranges (simplified)
+    if (postcode.length === 5) {
+      if (postcodeNum >= 40000 && postcodeNum <= 48999) state = "Selangor";
+      else if (postcodeNum >= 50000 && postcodeNum <= 60999)
+        state = "Kuala Lumpur";
+      else if (postcodeNum >= 10000 && postcodeNum <= 14999) state = "Penang";
+      else if (postcodeNum >= 79000 && postcodeNum <= 86999) state = "Johor";
+      else if (postcodeNum >= 30000 && postcodeNum <= 36999) state = "Perak";
+      else if (postcodeNum >= 5000 && postcodeNum <= 9999) state = "Kedah";
+      else if (postcodeNum >= 15000 && postcodeNum <= 18999) state = "Kelantan";
+      else if (postcodeNum >= 20000 && postcodeNum <= 24999)
+        state = "Terengganu";
+      else if (postcodeNum >= 25000 && postcodeNum <= 29999) state = "Pahang";
+      else if (postcodeNum >= 70000 && postcodeNum <= 73999)
+        state = "Negeri Sembilan";
+      else if (postcodeNum >= 75000 && postcodeNum <= 78999) state = "Melaka";
+      else if (postcodeNum >= 1000 && postcodeNum <= 2999) state = "Perlis";
+      else if (postcodeNum >= 87000 && postcodeNum <= 91999) state = "Sabah";
+      else if (postcodeNum >= 93000 && postcodeNum <= 98999) state = "Sarawak";
+      else if (postcodeNum >= 62000 && postcodeNum <= 62999)
+        state = "Putrajaya";
+      else if (postcodeNum >= 87000 && postcodeNum <= 87999) state = "Labuan";
     }
-
-    // 2. Look around postcode
-    if (postcode) {
-      for (let i = 0; i < parts.length; i++) {
-        if (parts[i].includes(postcode)) {
-          // next part is usually city
-          if (i + 1 < parts.length) return parts[i + 1];
-          // or previous part
-          if (i > 0) return parts[i - 1];
-        }
-      }
+    // Singapore postcode (6 digits)
+    else if (postcode.length === 6) {
+      state = "Singapore";
     }
-
-    // 3. If state is found, city is often just before it
-    if (state) {
-      for (let i = 0; i < parts.length; i++) {
-        if (parts[i].toLowerCase().includes(state.toLowerCase()) && i > 0) {
-          return parts[i - 1];
-        }
-      }
-    }
-
-    return "";
   }
 
-  city = findCity();
-
-  // --- Step 4: Clean up city ---
-  if (postcode) city = city.replace(new RegExp(postcode, "g"), "").trim();
-  if (state) city = city.replace(new RegExp(state, "gi"), "").trim();
-  city = city.replace(/\.$/, "").trim();
-
-  return { address, city, postcode, state };
+  return {
+    address,
+    city: "", // Always empty as requested - no city extraction
+    postcode,
+    state,
+  };
 }
 
 /**

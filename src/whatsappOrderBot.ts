@@ -229,7 +229,7 @@ function extractTotalAmount(text: string): number {
   if (!text) return 0;
 
   // Pattern 1: total：256 or total: 256 or Total: RM256
-  let totalMatch = text.match(/total\s*[：:]\s*(?:rm\s*)?(\d+)/i);
+  let totalMatch = text.match(/total\s*[：:]\s*(?:rm)?\s*(\d+)/i);
 
   // Pattern 2: total 256 or Total RM256 (without colon)
   if (!totalMatch) {
@@ -887,63 +887,50 @@ function formatDateToYYYYMMDD(dateStr: string): string {
 /**
  * Enhanced address parsing with better postcode detection
  */
-function parseAddress(addressLine: string): {
+
+type ParsedAddress = {
   city: string;
   postcode: string;
   state: string;
-} {
+};
+
+function parseAddress(addressLine: string): ParsedAddress {
   let city = "";
   let postcode = "";
   let state = "";
 
-  // Extract postcode (5-digit number for Malaysia, 6-digit for Singapore)
-  // But exclude phone numbers by checking context
-  const postcodeMatches = addressLine.match(/\b(\d{5})\b/g);
-  if (postcodeMatches) {
-    // Filter out phone number parts
-    for (const match of postcodeMatches) {
-      // Check if this 5-digit number is part of a phone number
-      const phonePattern = /\b\d{2,3}[\s\-]?\d{3,4}[\s\-]?\d{4}\b/;
-      const surroundingText = addressLine.substring(
-        Math.max(0, addressLine.indexOf(match) - 10),
-        addressLine.indexOf(match) + match.length + 10
-      );
+  const addressLower = addressLine.toLowerCase();
 
+  // --- Utility regex ---
+  const phonePattern = /\b\d{2,3}[\s\-]?\d{3,4}[\s\-]?\d{4}\b/;
+
+  // --- Step 1: Extract postcode (MY: 5 digits, SG: 6 digits) ---
+  function extractPostcode(regex: RegExp): string {
+    const matches = addressLine.match(regex);
+    if (!matches) return "";
+    for (const match of matches) {
+      const idx = addressLine.indexOf(match);
+      const surroundingText = addressLine.substring(
+        Math.max(0, idx - 10),
+        idx + match.length + 10
+      );
       if (!phonePattern.test(surroundingText)) {
-        postcode = match;
-        break;
+        return match;
       }
     }
+    return "";
   }
 
-  // Try 6-digit for Singapore if no 5-digit found
+  postcode = extractPostcode(/\b\d{5}\b/g); // Malaysia
   if (!postcode) {
-    const postcodeMatch6 = addressLine.match(/\b(\d{6})\b/);
-    if (postcodeMatch6) {
-      const surroundingText = addressLine.substring(
-        Math.max(0, addressLine.indexOf(postcodeMatch6[1]) - 10),
-        addressLine.indexOf(postcodeMatch6[1]) + postcodeMatch6[1].length + 10
-      );
-      const phonePattern = /\b\d{2,3}[\s\-]?\d{3,4}[\s\-]?\d{4}\b/;
-
-      if (!phonePattern.test(surroundingText)) {
-        postcode = postcodeMatch6[1];
-      }
-    }
+    postcode = extractPostcode(/\b\d{6}\b/g); // Singapore
   }
 
+  // --- Step 2: Detect state/region ---
   const locationStates = [
     {
       name: "Selangor",
-      variants: [
-        "selangor",
-        "sel",
-        "shah alam",
-        "petaling jaya",
-        "pj",
-        "subang",
-        "klang",
-      ],
+      variants: ["selangor", "sel", "shah alam", "pj", "subang", "klang"],
     },
     { name: "Kuala Lumpur", variants: ["kuala lumpur", "kl", "k.l", "k l"] },
     {
@@ -963,7 +950,7 @@ function parseAddress(addressLine: string): {
       name: "Negeri Sembilan",
       variants: ["negeri sembilan", "n9", "ns", "seremban", "port dickson"],
     },
-    { name: "Melaka", variants: ["melaka", "malacca", "melaka tengah"] },
+    { name: "Melaka", variants: ["melaka", "malacca"] },
     { name: "Perlis", variants: ["perlis", "kangar"] },
     {
       name: "Sabah",
@@ -975,19 +962,17 @@ function parseAddress(addressLine: string): {
     { name: "Singapore", variants: ["singapore", "sg", "republik singapura"] },
   ];
 
-  const addressLower = addressLine.toLowerCase();
   for (const stateInfo of locationStates) {
-    for (const variant of stateInfo.variants) {
-      if (addressLower.includes(variant)) {
-        state = stateInfo.name;
-        break;
-      }
+    if (stateInfo.variants.some((v) => addressLower.includes(v))) {
+      state = stateInfo.name;
+      break;
     }
-    if (state) break;
   }
 
-  const parts = addressLine.split(",").map((part) => part.trim());
-  const cityPrefixes = [
+  // --- Step 3: Detect city ---
+  const parts = addressLine.split(",").map((p) => p.trim());
+
+  const cityKeywords = [
     "taman",
     "bandar",
     "kampung",
@@ -1015,83 +1000,37 @@ function parseAddress(addressLine: string): {
     "butterworth",
     "bukit mertajam",
     "nibong tebal",
+    "johor bahru",
+    "kota kinabalu",
   ];
 
-  for (const part of parts) {
-    const partLower = part.toLowerCase();
-    for (const prefix of cityPrefixes) {
-      if (partLower.includes(prefix)) {
-        city = part.replace(/\d{5,6}.*$/, "").trim();
-        if (state) {
-          city = city.replace(new RegExp(state, "gi"), "").trim();
-        }
-        return { city, postcode, state };
+  function findCity(): string {
+    // 1. Check parts by keywords
+    for (const part of parts) {
+      const lower = part.toLowerCase();
+      if (cityKeywords.some((kw) => lower.includes(kw))) {
+        return part.replace(/\d{5,6}.*$/, "").trim();
       }
     }
-  }
 
-  const addressWords = addressLine.toLowerCase().split(/\s+/);
-  for (let i = 0; i < addressWords.length - 1; i++) {
-    const twoWordCombo = `${addressWords[i]} ${addressWords[i + 1]}`;
-    const threeWordCombo =
-      i < addressWords.length - 2
-        ? `${addressWords[i]} ${addressWords[i + 1]} ${addressWords[i + 2]}`
-        : "";
-
-    const multiWordCities = [
-      "seri kembangan",
-      "petaling jaya",
-      "shah alam",
-      "subang jaya",
-      "bandar baru",
-      "taman desa",
-      "mont kiara",
-      "bukit bintang",
-      "kl sentral",
-      "mid valley",
-      "george town",
-      "bayan lepas",
-      "bukit mertajam",
-      "nibong tebal",
-      "johor bahru",
-      "kota kinabalu",
-    ];
-
-    if (multiWordCities.includes(twoWordCombo)) {
-      const originalWords = addressLine.split(/\s+/);
-      city = `${originalWords[i]} ${originalWords[i + 1]}`;
-      return { city, postcode, state };
-    }
-
-    if (threeWordCombo && multiWordCities.includes(threeWordCombo)) {
-      const originalWords = addressLine.split(/\s+/);
-      city = `${originalWords[i]} ${originalWords[i + 1]} ${
-        originalWords[i + 2]
-      }`;
-      return { city, postcode, state };
-    }
-  }
-
-  for (let i = 0; i < parts.length; i++) {
-    if (postcode && /\d{5,6}/.test(parts[i]) && parts[i].includes(postcode)) {
-      if (i > 0) {
-        city = parts[i - 1].trim();
-      } else {
-        const beforePostcode = parts[i]
-          .replace(new RegExp(postcode + ".*$"), "")
-          .trim();
-        if (beforePostcode) {
-          city = beforePostcode;
+    // 2. Fallback: detect before postcode
+    if (postcode) {
+      for (let i = 0; i < parts.length; i++) {
+        if (parts[i].includes(postcode) && i > 0) {
+          return parts[i - 1];
         }
       }
-      break;
     }
+
+    return "";
   }
 
-  city = city.replace(new RegExp(postcode), "").trim().replace(/\.$/, "");
-  if (state) {
-    city = city.replace(new RegExp(state, "gi"), "").trim();
-  }
+  city = findCity();
+
+  // --- Step 4: Clean up city ---
+  if (postcode) city = city.replace(new RegExp(postcode, "g"), "").trim();
+  if (state) city = city.replace(new RegExp(state, "gi"), "").trim();
+  city = city.replace(/\.$/, "").trim();
 
   return { city, postcode, state };
 }

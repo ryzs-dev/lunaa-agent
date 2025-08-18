@@ -55,6 +55,7 @@ const AUTHORIZED_PHONE_NUMBERS = process.env.AUTHORIZED_PHONE_NUMBERS
       "60164525013",
       "60127909921",
       "60164561361",
+      "601158699901",
     ];
 
 /**

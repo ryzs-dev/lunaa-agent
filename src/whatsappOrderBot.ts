@@ -889,6 +889,7 @@ function formatDateToYYYYMMDD(dateStr: string): string {
  */
 
 type ParsedAddress = {
+  address: string; // keep full address
   city: string;
   postcode: string;
   state: string;
@@ -899,18 +900,19 @@ function parseAddress(addressLine: string): ParsedAddress {
   let postcode = "";
   let state = "";
 
-  const addressLower = addressLine.toLowerCase();
+  const address = addressLine.trim();
+  const addressLower = address.toLowerCase();
 
   // --- Utility regex ---
   const phonePattern = /\b\d{2,3}[\s\-]?\d{3,4}[\s\-]?\d{4}\b/;
 
   // --- Step 1: Extract postcode (MY: 5 digits, SG: 6 digits) ---
   function extractPostcode(regex: RegExp): string {
-    const matches = addressLine.match(regex);
+    const matches = address.match(regex);
     if (!matches) return "";
     for (const match of matches) {
-      const idx = addressLine.indexOf(match);
-      const surroundingText = addressLine.substring(
+      const idx = address.indexOf(match);
+      const surroundingText = address.substring(
         Math.max(0, idx - 10),
         idx + match.length + 10
       );
@@ -939,7 +941,15 @@ function parseAddress(addressLine: string): ParsedAddress {
     },
     {
       name: "Johor",
-      variants: ["johor", "jb", "johor bahru", "johor baru", "skudai", "masai"],
+      variants: [
+        "johor",
+        "jb",
+        "johor bahru",
+        "johor baru",
+        "skudai",
+        "masai",
+        "iskandar puteri",
+      ],
     },
     { name: "Perak", variants: ["perak", "ipoh", "taiping", "teluk intan"] },
     { name: "Kedah", variants: ["kedah", "alor setar", "sungai petani"] },
@@ -970,7 +980,10 @@ function parseAddress(addressLine: string): ParsedAddress {
   }
 
   // --- Step 3: Detect city ---
-  const parts = addressLine.split(",").map((p) => p.trim());
+  const parts = address
+    .split(/[,|\n]/)
+    .map((p) => p.trim())
+    .filter(Boolean);
 
   const cityKeywords = [
     "taman",
@@ -1001,11 +1014,12 @@ function parseAddress(addressLine: string): ParsedAddress {
     "bukit mertajam",
     "nibong tebal",
     "johor bahru",
+    "iskandar puteri",
     "kota kinabalu",
   ];
 
   function findCity(): string {
-    // 1. Check parts by keywords
+    // 1. Look for keywords
     for (const part of parts) {
       const lower = part.toLowerCase();
       if (cityKeywords.some((kw) => lower.includes(kw))) {
@@ -1013,10 +1027,22 @@ function parseAddress(addressLine: string): ParsedAddress {
       }
     }
 
-    // 2. Fallback: detect before postcode
+    // 2. Look around postcode
     if (postcode) {
       for (let i = 0; i < parts.length; i++) {
-        if (parts[i].includes(postcode) && i > 0) {
+        if (parts[i].includes(postcode)) {
+          // next part is usually city
+          if (i + 1 < parts.length) return parts[i + 1];
+          // or previous part
+          if (i > 0) return parts[i - 1];
+        }
+      }
+    }
+
+    // 3. If state is found, city is often just before it
+    if (state) {
+      for (let i = 0; i < parts.length; i++) {
+        if (parts[i].toLowerCase().includes(state.toLowerCase()) && i > 0) {
           return parts[i - 1];
         }
       }
@@ -1032,7 +1058,7 @@ function parseAddress(addressLine: string): ParsedAddress {
   if (state) city = city.replace(new RegExp(state, "gi"), "").trim();
   city = city.replace(/\.$/, "").trim();
 
-  return { city, postcode, state };
+  return { address, city, postcode, state };
 }
 
 /**

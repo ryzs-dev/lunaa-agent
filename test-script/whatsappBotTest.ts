@@ -1,19 +1,38 @@
 // test/whatsappBotTest.ts
 import path from "path";
 import dotenv from "dotenv";
+import assert from "assert";
 
 // Load environment variables
 dotenv.config({ path: path.resolve(__dirname, "../.env.local") });
 
-import { extractOrderFromMessage } from "../src/whatsappOrderBot";
+import {
+  extractOrderFromMessage,
+  createSheetRowData,
+} from "../src/whatsappOrderBot";
 
-/**
- * Test function to verify message parsing
- */
+function logExtracted(result: any) {
+  console.log("📋 Extracted data:");
+  console.log(`   Order Date: ${result.orderDate}`);
+  console.log(`   Customer: ${result.customerName}`);
+  console.log(`   Phone: ${result.phoneNumber}`);
+  console.log(`   Total Paid: RM${result.totalPaid}`);
+  console.log(`   Products:`);
+  result.products.forEach((product: any) => {
+    console.log(`     - ${product.quantity}x ${product.name} ${product.type}`);
+  });
+  console.log(`   Address: ${result.address}`);
+  console.log(`   City: ${result.city}`);
+  console.log(`   Postcode: ${result.postcode}`);
+  console.log(`   State: ${result.state}`);
+  console.log(`   Remark: ${result.remark}`);
+}
+
 export function testWhatsAppOrderExtraction() {
   console.log("🧪 Testing WhatsApp order extraction...\n");
 
-  const testMessage = `6/8/2025
+  // === Test 1: Standard order ===
+  const msg1 = `6/8/2025
 total：256
 THAN SIEW PHENG 
 019-4419638 
@@ -22,42 +41,20 @@ THAN SIEW PHENG
 Pulau Pinang.
 1w1f1s1w30ml`;
 
-  const context = {
-    customerPhone: "60194419638",
+  const result1 = extractOrderFromMessage(msg1, {
+    customerPhone: "601126470411",
     customerName: "THAN SIEW PHENG",
-    groupName: "Test Group",
-    messageId: "test_msg_123",
-    timestamp: new Date().toISOString(),
-  };
+  });
 
-  const result = extractOrderFromMessage(testMessage, context);
+  assert(result1, "Extraction failed for Test 1");
+  assert.strictEqual(result1?.postcode, "14300", "Postcode mismatch in Test 1");
+  assert.strictEqual(result1?.state, "Penang", "State mismatch in Test 1");
 
-  if (result) {
-    console.log("✅ Extraction successful!");
-    console.log("📋 Extracted data:");
-    console.log(`   Order Date: ${result.orderDate}`);
-    console.log(`   Customer: ${result.customerName}`);
-    console.log(`   Phone: ${result.phoneNumber}`);
-    console.log(`   Total Paid: RM${result.totalPaid}`);
-    console.log(`   Products:`);
-    result.products.forEach((product) => {
-      console.log(
-        `     - ${product.quantity}x ${product.name} ${product.type}`
-      );
-    });
-    console.log(`   Address: ${result.address}`);
-    console.log(`   City: ${result.city}`);
-    console.log(`   Postcode: ${result.postcode}`);
-    console.log(`   State: ${result.state}`);
-    console.log(`   Remark: ${result.remark}`);
-  } else {
-    console.log("❌ Extraction failed!");
-  }
+  console.log("✅ Test 1 passed!");
+  logExtracted(result1);
 
-  // Test Chinese format message
-  console.log("\n🧪 Testing Chinese format message...\n");
-
-  const chineseMessage = `8/8/2025
+  // === Test 2: Chinese format ===
+  const msg2 = `8/8/2025
 total：198
 汇款人名字：CHOW MEI LING
 收件人名字：NICOLE CHOW
@@ -65,57 +62,40 @@ total：198
 地址： C15-2-2, Bayan Villa, Jalan BS2/5, Taman Bukit Serdang, 43300 Seri Kembangan, Selangor.
 2f1w30ml`;
 
-  const chineseContext = {
-    customerPhone: "60126675705",
+  const result2 = extractOrderFromMessage(msg2, {
+    customerPhone: "601126470411",
     customerName: "NICOLE CHOW",
-    groupName: "Test Group",
-    messageId: "test_msg_chinese",
-    timestamp: new Date().toISOString(),
-  };
-
-  const chineseResult = extractOrderFromMessage(chineseMessage, chineseContext);
-
-  if (chineseResult) {
-    console.log("✅ Chinese format extraction successful!");
-    console.log("📋 Extracted data:");
-    console.log(`   Order Date: ${chineseResult.orderDate}`);
-    console.log(`   Customer (Receiver): ${chineseResult.customerName}`);
-    console.log(`   Phone: ${chineseResult.phoneNumber}`);
-    console.log(`   Total Paid: RM${chineseResult.totalPaid}`);
-    console.log(`   Products:`);
-    chineseResult.products.forEach((product) => {
-      console.log(
-        `     - ${product.quantity}x ${product.name} ${product.type}`
-      );
-    });
-    console.log(`   Address: ${chineseResult.address}`);
-    console.log(`   City: ${chineseResult.city}`);
-    console.log(`   Postcode: ${chineseResult.postcode}`);
-    console.log(`   State: ${chineseResult.state}`);
-    console.log(`   Remark: ${chineseResult.remark}`);
-  } else {
-    console.log("❌ Chinese format extraction failed!");
-  }
-
-  const edgeCase1 = `7/8/2025
-total：150
-AHMAD BIN ALI
-012-3456789
-123 Jalan Main,
-50000 Kuala Lumpur.
-2w1f`;
-
-  const result2 = extractOrderFromMessage(edgeCase1, {
-    customerPhone: "60123456789",
-    customerName: "AHMAD BIN ALI",
   });
 
-  console.log(
-    "Edge Case 1 (no spray, no 30ml):",
-    result2 ? "✅ Success" : "❌ Failed"
-  );
+  assert(result2, "Extraction failed for Chinese format");
+  assert.strictEqual(result2?.postcode, "43300");
+  assert.strictEqual(result2?.city, "Seri Kembangan");
 
-  const edgeCase2 = `8/8/2025
+  console.log("✅ Test 2 (Chinese format) passed!");
+  logExtracted(result2);
+
+  // === Test 3: No commas in address ===
+  const msg3 = `7/8/2025
+total: 120
+ALI BIN ABU
+0139988777
+No 12 Jalan Aman Taman Indah 43000 Kajang Selangor
+1w`;
+
+  const result3 = extractOrderFromMessage(msg3, {
+    customerPhone: "601126470411",
+    customerName: "ALI BIN ABU",
+  });
+
+  assert(result3, "Extraction failed for no-comma address");
+  assert.strictEqual(result3?.postcode, "43000");
+  assert.strictEqual(result3?.city, "Kajang");
+
+  console.log("✅ Test 3 (no commas) passed!");
+  logExtracted(result3);
+
+  // === Test 4: Landline number ===
+  const msg4 = `8/8/2025
 total：300
 LEE WEI MING
 03-98765432
@@ -124,24 +104,22 @@ LEE WEI MING
 Selangor.
 3w2f2s`;
 
-  const result3 = extractOrderFromMessage(edgeCase2, {
-    customerPhone: "60398765432",
+  const result4 = extractOrderFromMessage(msg4, {
+    customerPhone: "601126470411",
     customerName: "LEE WEI MING",
   });
 
-  console.log(
-    "Edge Case 2 (landline, different state):",
-    result3 ? "✅ Success" : "❌ Failed"
-  );
+  assert(result4, "Extraction failed for landline");
+  assert.strictEqual(result4?.postcode, "47500");
+  assert.strictEqual(result4?.city, "Subang Jaya");
+
+  console.log("✅ Test 4 (landline) passed!");
+  logExtracted(result4);
 }
 
-/**
- * Test the Google Sheets row creation
- */
 export function testSheetRowCreation() {
   console.log("\n🧪 Testing Google Sheets row creation...\n");
 
-  // Mock headers based on your sheet structure
   const headers = [
     "No",
     "Order Date",
@@ -174,10 +152,10 @@ export function testSheetRowCreation() {
     "status",
   ];
 
-  const mockOrderData = {
+  const mockOrder = {
     orderDate: "2025-08-06",
     customerName: "THAN SIEW PHENG",
-    phoneNumber: "60194419638",
+    phoneNumber: "601126470411",
     totalPaid: 256,
     products: [
       { name: "wash", quantity: 1, type: "" },
@@ -185,30 +163,30 @@ export function testSheetRowCreation() {
       { name: "spray", quantity: 1, type: "" },
       { name: "wash_30ml", quantity: 1, type: "30ml" },
     ],
-    address: "6 Lorong Vila Indah 7,\n14300 Nibong Tebal,\nPulau Pinang.",
+    address: "6 Lorong Vila Indah 7, 14300 Nibong Tebal, Pulau Pinang.",
     city: "Nibong Tebal",
     postcode: "14300",
     state: "Penang",
-    remark: "Order from WhatsApp (Group: Test Group)",
+    remark: "Order from WhatsApp",
   };
 
-  // Import and test the createSheetRowData function
-  const { createSheetRowData } = require("../src/whatsappOrderBot");
-  const rowData = createSheetRowData(mockOrderData, headers);
+  const rowData = createSheetRowData(mockOrder, headers);
 
-  console.log("✅ Sheet row creation test:");
-  console.log("Headers count:", headers.length);
-  console.log("Row data count:", rowData.length);
-  console.log("\nMapped data:");
+  assert.strictEqual(rowData.length, headers.length, "Row length mismatch");
+  assert.strictEqual(rowData[1], mockOrder.orderDate);
+  assert.strictEqual(rowData[3], mockOrder.customerName);
+  assert.strictEqual(rowData[14], mockOrder.totalPaid);
 
-  headers.forEach((header, index) => {
-    if (rowData[index] !== "") {
-      console.log(`   ${header}: ${rowData[index]}`);
+  console.log("✅ Sheet row creation passed!");
+  console.log("📋 Row preview:");
+  headers.forEach((header, i) => {
+    if (rowData[i]) {
+      console.log(`   ${header}: ${rowData[i]}`);
     }
   });
 }
 
-// Run tests if this file is executed directly
+// Run tests if executed directly
 if (require.main === module) {
   testWhatsAppOrderExtraction();
   testSheetRowCreation();

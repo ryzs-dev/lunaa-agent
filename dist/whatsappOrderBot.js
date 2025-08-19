@@ -505,7 +505,7 @@ function extractOrderFromMessage(messageBody, context) {
     console.log(`✅ Extracted order:`, {
         orderDate,
         customerName: finalCustomerName,
-        phoneNumber: phoneNumber || context.customerPhone,
+        phoneNumber: phoneNumber || "Not provided",
         totalPaid,
         productCode,
         address: address.trim(),
@@ -516,10 +516,15 @@ function extractOrderFromMessage(messageBody, context) {
         paymentMethod,
         isRepeatCustomer,
     });
+    if (!phoneNumber) {
+        console.log(`❌ No customer phone number found in message content`);
+        console.log(`❌ Cannot use sender's phone (${context.customerPhone}) as customer phone`);
+        return null; // Or handle this case appropriately
+    }
     return {
         orderDate: orderDate || new Date().toISOString().split("T")[0],
         customerName: finalCustomerName,
-        phoneNumber: phoneNumber || context.customerPhone,
+        phoneNumber: phoneNumber || "Not provided", // ✅ Only use extracted customer phone
         products: parseProductCode(productCode),
         address: address.trim(),
         city,
@@ -529,7 +534,6 @@ function extractOrderFromMessage(messageBody, context) {
         productCode,
         remark: remarkWithProductCode,
         paymentMethod: paymentMethod || undefined,
-        groupName: context.groupName,
         messageId: context.messageId,
         isRepeatCustomer: isRepeatCustomer,
     };
@@ -600,6 +604,13 @@ function extractCondensedOrder(messageBody, context) {
         return null;
     }
     const phoneNumber = normalizePhoneNumber(extractedPhone);
+    // Add this validation after phone extraction:
+    if (phoneNumber &&
+        normalizePhoneNumber(phoneNumber) ===
+            normalizePhoneNumber(context.customerPhone)) {
+        console.log(`⚠️ Warning: Customer phone matches sender phone - this might be incorrect`);
+        return null; // Use a placeholder if phone matches sender's phone
+    }
     const phoneIndex = remaining.indexOf(extractedPhone);
     let customerName = remaining.substring(0, phoneIndex).trim();
     const addressString = remaining

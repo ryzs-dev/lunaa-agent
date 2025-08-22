@@ -11,6 +11,8 @@ const sync_1 = __importDefault(require("./routes/sync"));
 const twilio_1 = __importDefault(require("./routes/twilio"));
 const inbox_1 = __importDefault(require("./routes/inbox"));
 const whatsapp_1 = __importDefault(require("./routes/whatsapp"));
+const supabase_1 = __importDefault(require("./routes/supabase"));
+const import_1 = __importDefault(require("./routes/import"));
 const trackingScheduler_1 = require("./scheduler/trackingScheduler");
 dotenv_1.default.config({ path: path_1.default.resolve(__dirname, "../.env.local") });
 const app = (0, express_1.default)();
@@ -18,12 +20,26 @@ const port = Number(process.env.PORT) || 3001;
 // IMPORTANT: Add these middleware to parse request bodies
 app.use(express_1.default.json({ limit: "10mb" })); // Parse JSON bodies
 app.use(express_1.default.urlencoded({ extended: true, limit: "10mb" })); // Parse URL-encoded bodies
+// Enable CORS for frontend
+app.use((req, res, next) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Content-Length, X-Requested-With');
+    if (req.method === 'OPTIONS') {
+        res.sendStatus(200);
+    }
+    else {
+        next();
+    }
+});
 // Mount the routes
 app.use("/api", track_1.default);
 app.use("/api", twilio_1.default);
 app.use("/api/inbox", inbox_1.default);
 app.use("/sync", sync_1.default);
 app.use("/api", whatsapp_1.default);
+app.use("/api/supabase", supabase_1.default);
+app.use("/api/import", import_1.default);
 app.get("/health", (req, res) => {
     res.json({
         status: "ok",

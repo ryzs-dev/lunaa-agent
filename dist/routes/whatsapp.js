@@ -26,9 +26,13 @@ whatsappRouter.post("/whatsapp/incoming", (req, res) => __awaiter(void 0, void 0
     console.log(`   Message: ${Body}`);
     // Only process messages that look like orders
     const looksLikeOrder = Body &&
-        (Body.includes("total：") ||
+        (Body.includes("total：") || // Chinese colon
+            Body.includes("total:") || // Regular colon  ← ADD THIS
             Body.includes("汇款人名字：") ||
-            /\d+[wfs]/.test(Body));
+            Body.includes("Name:") || // ← ADD THIS
+            Body.includes("Contact:") || // ← ADD THIS
+            Body.includes("Address:") || // ← ADD THIS
+            /\d+[wfs]/.test(Body)); // Product codes
     if (!looksLikeOrder) {
         console.log(`⏭️ Message doesn't look like an order, skipping`);
         return res.status(200).end();

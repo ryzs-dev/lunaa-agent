@@ -159,12 +159,12 @@ function parseExcel(buffer: Buffer): any[] {
     
     // Convert to objects with headers
     const headers = jsonData[0] as string[];
-    const data = jsonData.slice(1).map((row: any[]) => {
-      const obj: any = {};
-      headers.forEach((header, index) => {
-        obj[header.trim()] = row[index] || '';
-      });
-      return obj;
+    const data = jsonData.slice(1).map((row) => {
+        const obj: Record<string, string | number | null> = {};
+        headers.forEach((header, index) => {
+          obj[header.trim()] = (row as any[])[index] ?? '';
+        });
+        return obj;
     });
     
     return data;

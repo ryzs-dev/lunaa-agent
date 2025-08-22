@@ -103,3 +103,6 @@ temp/
 
 # IMPORTANT: Comment out the dist/ line for production deployment
 # dist
+
+# Test Script
+test-script

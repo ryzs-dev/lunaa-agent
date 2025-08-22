@@ -22,14 +22,19 @@
     "dotenv": "^17.2.0",
     "express": "^5.1.0",
     "googleapis": "^153.0.0",
+    "multer": "^2.0.2",
     "node-cron": "^4.2.1",
+    "papaparse": "^5.5.3",
     "ts-node": "^10.9.2",
     "twilio": "^5.7.3",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@types/express": "^5.0.3",
+    "@types/multer": "^2.0.0",
     "@types/node": "^24.1.0",
+    "@types/papaparse": "^5.3.16",
     "ts-node-dev": "^2.0.0",
     "wrangler": "^4.25.1"
   }

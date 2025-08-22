@@ -6,6 +6,9 @@ import syncRouter from "./routes/sync";
 import twilioRouter from "./routes/twilio";
 import inboxRouter from "./routes/inbox";
 import whatsappRouter from "./routes/whatsapp";
+import supabaseRouter from "./routes/supabase";
+import importRouter from "./routes/import";
+
 import { startDailyTrackingScheduler } from "./scheduler/trackingScheduler";
 
 dotenv.config({ path: path.resolve(__dirname, "../.env.local") });
@@ -17,12 +20,28 @@ const port = Number(process.env.PORT) || 3001;
 app.use(express.json({ limit: "10mb" })); // Parse JSON bodies
 app.use(express.urlencoded({ extended: true, limit: "10mb" })); // Parse URL-encoded bodies
 
+// Enable CORS for frontend
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Content-Length, X-Requested-With');
+  
+  if (req.method === 'OPTIONS') {
+    res.sendStatus(200);
+  } else {
+    next();
+  }
+});
+
 // Mount the routes
 app.use("/api", trackRouter);
 app.use("/api", twilioRouter);
 app.use("/api/inbox", inboxRouter);
 app.use("/sync", syncRouter);
 app.use("/api", whatsappRouter);
+app.use("/api/supabase", supabaseRouter)
+app.use("/api/import", importRouter);
+
 
 app.get("/health", (req, res) => {
   res.json({

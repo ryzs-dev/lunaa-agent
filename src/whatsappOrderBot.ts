@@ -68,7 +68,7 @@ const sheets = google.sheets({ version: "v4", auth });
 // PHONE NUMBER UTILITIES
 // ============================================================================
 
-class PhoneNumberUtil {
+export class PhoneNumberUtil {
   static normalize(phoneNumber: string): string {
     if (!phoneNumber) return "";
     const digits = phoneNumber.replace(/\D/g, "");

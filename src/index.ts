@@ -10,6 +10,9 @@ import supabaseRouter from "./routes/supabase";
 import importRouter from "./routes/import";
 
 import { startDailyTrackingScheduler } from "./scheduler/trackingScheduler";
+import productsRouter from "./routes/products";
+import packagesRouter from "./routes/packages";
+import metaRouter from "./routes/meta";
 
 dotenv.config({ path: path.resolve(__dirname, "../.env.local") });
 
@@ -22,11 +25,14 @@ app.use(express.urlencoded({ extended: true, limit: "10mb" })); // Parse URL-enc
 
 // Enable CORS for frontend
 app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Content-Length, X-Requested-With');
-  
-  if (req.method === 'OPTIONS') {
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Methods", "GET,PUT,POST,DELETE,OPTIONS");
+  res.header(
+    "Access-Control-Allow-Headers",
+    "Content-Type, Authorization, Content-Length, X-Requested-With"
+  );
+
+  if (req.method === "OPTIONS") {
     res.sendStatus(200);
   } else {
     next();
@@ -39,9 +45,11 @@ app.use("/api", twilioRouter);
 app.use("/api/inbox", inboxRouter);
 app.use("/sync", syncRouter);
 app.use("/api", whatsappRouter);
-app.use("/api/supabase", supabaseRouter)
+app.use("/api/supabase", supabaseRouter);
 app.use("/api/import", importRouter);
-
+app.use("/api/products", productsRouter);
+app.use("/api/packages", packagesRouter);
+app.use("/api/meta", metaRouter);
 
 app.get("/health", (req, res) => {
   res.json({

@@ -1,538 +1,611 @@
-// src/routes/import.ts - New backend routes for file imports
+// src/routes/import.ts - Updated Import System for Historical Data
 import express from "express";
 import multer from "multer";
-import * as XLSX from "xlsx";
 import Papa from "papaparse";
-import { bulkInsertOrders, supabase } from "../database/supabaseOrders";
-import { Order } from "../types/database";
+import { createOrderWithItems, supabase } from "../database/supabaseNormalized";
 
 const importRouter = express.Router();
 
-// Configure multer for file uploads (memory storage for processing)
+// Configure multer for file uploads
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 10 * 1024 * 1024, // 10MB limit
+    fileSize: 50 * 1024 * 1024, // 50MB limit for large historical files
   },
   fileFilter: (req, file, cb) => {
-    // Accept CSV and Excel files
     const allowedTypes = [
-      'text/csv',
-      'application/vnd.ms-excel',
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      'application/csv'
+      "text/csv",
+      "application/csv",
+      "application/vnd.ms-excel",
     ];
-    
-    if (allowedTypes.includes(file.mimetype) || 
-        file.originalname.endsWith('.csv') || 
-        file.originalname.endsWith('.xlsx') || 
-        file.originalname.endsWith('.xls')) {
+
+    if (
+      allowedTypes.includes(file.mimetype) ||
+      file.originalname.endsWith(".csv")
+    ) {
       cb(null, true);
     } else {
-      cb(new Error('Only CSV and Excel files are allowed'));
+      cb(new Error("Only CSV files are allowed"));
     }
-  }
+  },
 });
 
-// Interface for import validation results
-interface ImportValidation {
-  isValid: boolean;
-  errors: string[];
-  warnings: string[];
-  preview: any[];
-  totalRows: number;
-  validRows: number;
+// ============================================================================
+// CSV FIELD MAPPING FOR YOUR DATA FORMAT
+// ============================================================================
+
+interface LegacyCSVRow {
+  No: string;
+  "Order Date": string;
+  fbname: string;
+  Name: string;
+  "Payment method": string;
+  wash: string;
+  "Femlift 30ml": string;
+  "Femlift 10ml": string;
+  "Wash 30ml": string;
+  Spray: string;
+  remark: string;
+  "package (rm)": string;
+  "Postage (rm)": string;
+  "Website/shopee charges (rm)": string;
+  "TOTAL PAID (rm)": string;
+  "shipment description": string;
+  address: string;
+  city: string;
+  postcode: string;
+  state: string;
+  "phone number": string;
+  "tracking number": string;
+  "courires company": string;
+  "new/repeat": string;
+  "cash sale receipt": string;
+  "Agent by / under": string;
+  "sql system": string;
+  currency: string;
+  status: string;
 }
 
-// Interface for import results
-interface ImportResult {
-  success: boolean;
-  totalProcessed: number;
-  successfulInserts: number;
-  failedInserts: number;
-  errors: any[];
-  duplicatesSkipped?: number;
-}
+// ============================================================================
+// DATA TRANSFORMATION FUNCTIONS
+// ============================================================================
 
-// Field mapping configuration
-const FIELD_MAPPINGS: Record<string, string[]> = {
-  customer_name: ['customer_name', 'name', 'customer', 'client_name', 'buyer_name', 'fb_name'],
-  phone_number: ['phone_number', 'phone', 'mobile', 'contact', 'tel', 'telephone'],
-  total_paid: ['total_paid', 'total', 'amount', 'price', 'payment_amount'],
-  order_date: ['order_date', 'date', 'order_datetime', 'created_date', 'purchase_date'],
-  currency: ['currency', 'curr', 'money_type'],
-  payment_method: ['payment_method', 'payment_type', 'payment', 'method'],
-  tracking_number: ['tracking_number', 'tracking', 'track_no', 'tracking_no', 'awb'],
-  courier_company: ['courier_company', 'courier', 'shipping_company', 'delivery_company'],
-  status: ['status', 'order_status', 'state'],
-  new_or_repeat: ['new_or_repeat', 'customer_type', 'type', 'customerType'],
-  agent_name: ['agent_name', 'agent', 'sales_agent', 'representative'],
-  remark: ['remark', 'remarks', 'comment', 'comments', 'note', 'notes'],
-  // Product quantities
-  wash_qty: ['wash_qty', 'wash120ml', 'wash_120ml', 'wash'],
-  femlift_30ml_qty: ['femlift_30ml_qty', 'femlift30ml', 'femlift_30ml'],
-  femlift_10ml_qty: ['femlift_10ml_qty', 'femlift10ml', 'femlift_10ml'],
-  wash_30ml_qty: ['wash_30ml_qty', 'wash30ml', 'wash_30ml'],
-  spray_qty: ['spray_qty', 'spray', 'spray_quantity'],
-  package_price: ['package_price', 'packageAmount', 'package_amount'],
-  postage: ['postage', 'shipping_cost', 'delivery_fee'],
-  cash_sale_receipt: ['cash_sale_receipt', 'cashSaleReceipt', 'receipt_no']
-};
+function parseDate(dateStr: string): string {
+  if (!dateStr) return new Date().toISOString();
 
-// Function to auto-map CSV headers to database fields
-function mapHeaders(headers: string[]): Record<string, number> {
-  const mapping: Record<string, number> = {};
-  
-  // Normalize headers for comparison
-  const normalizedHeaders = headers.map(h => h.toLowerCase().trim().replace(/[^a-z0-9_]/g, '_'));
-  
-  // Try to map each database field to a CSV column
-  Object.entries(FIELD_MAPPINGS).forEach(([dbField, possibleNames]) => {
-    for (const possibleName of possibleNames) {
-      const normalizedPossible = possibleName.toLowerCase().replace(/[^a-z0-9_]/g, '_');
-      const index = normalizedHeaders.findIndex(h => 
-        h === normalizedPossible || 
-        h.includes(normalizedPossible) || 
-        normalizedPossible.includes(h)
-      );
-      
-      if (index !== -1) {
-        mapping[dbField] = index;
-        break;
-      }
-    }
-  });
-  
-  return mapping;
-}
-
-// Function to parse CSV data
-function parseCSV(buffer: Buffer): Promise<any[]> {
-  return new Promise((resolve, reject) => {
-    const csvText = buffer.toString('utf8');
-    
-    Papa.parse(csvText, {
-      header: true,
-      skipEmptyLines: true,
-      dynamicTyping: true,
-      transformHeader: (header: string) => header.trim(),
-      complete: (results) => {
-        if (results.errors.length > 0) {
-          console.warn('CSV parsing warnings:', results.errors);
-        }
-        resolve(results.data);
-      },
-      error: (error: { message: any; }) => {
-        reject(new Error(`CSV parsing failed: ${error.message}`));
-      }
-    });
-  });
-}
-
-// Function to parse Excel data
-function parseExcel(buffer: Buffer): any[] {
   try {
-    const workbook = XLSX.read(buffer, { 
-      type: 'buffer',
-      cellDates: true,
-      cellNF: true,
-      cellText: false
-    });
-    
-    // Use the first sheet
-    const sheetName = workbook.SheetNames[0];
-    if (!sheetName) {
-      throw new Error('No sheets found in Excel file');
+    // Handle formats like "1/8/25" (day/month/year)
+    const parts = dateStr.split("/");
+    if (parts.length === 3) {
+      const day = parseInt(parts[0]);
+      const month = parseInt(parts[1]) - 1; // JS months are 0-based
+      let year = parseInt(parts[2]);
+
+      // Handle 2-digit years
+      if (year < 100) {
+        year += year > 50 ? 1900 : 2000;
+      }
+
+      return new Date(year, month, day).toISOString();
     }
-    
-    const worksheet = workbook.Sheets[sheetName];
-    const jsonData = XLSX.utils.sheet_to_json(worksheet, {
-      header: 1,
-      defval: '',
-      raw: false,
-      dateNF: 'yyyy-mm-dd'
-    });
-    
-    if (jsonData.length < 2) {
-      throw new Error('Excel file must contain at least a header row and one data row');
-    }
-    
-    // Convert to objects with headers
-    const headers = jsonData[0] as string[];
-    const data = jsonData.slice(1).map((row) => {
-        const obj: Record<string, string | number | null> = {};
-        headers.forEach((header, index) => {
-          obj[header.trim()] = (row as any[])[index] ?? '';
-        });
-        return obj;
-    });
-    
-    return data;
+
+    // Try parsing as-is
+    return new Date(dateStr).toISOString();
   } catch (error) {
-    throw new Error(`Excel parsing failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    console.warn(`Failed to parse date: ${dateStr}, using current date`);
+    return new Date().toISOString();
   }
 }
 
-// Function to transform and validate data
-function transformToOrder(row: any, headerMapping: Record<string, number>, originalHeaders: string[]): Partial<Order> | null {
-  try {
-    const order: Partial<Order> = {};
-    
-    // Map fields using the header mapping
-    Object.entries(headerMapping).forEach(([dbField, columnIndex]) => {
-      const header = originalHeaders[columnIndex];
-      let value = row[header];
-      
-      // Skip empty values
-      if (value === null || value === undefined || value === '') {
-        return;
-      }
-      
-      // Type conversions based on field
-      switch (dbField) {
-        case 'total_paid':
-        case 'package_price':
-        case 'postage':
-          const numValue = parseFloat(String(value).replace(/[^0-9.-]/g, ''));
-          if (!isNaN(numValue)) {
-            (order as any)[dbField] = numValue;
-          }
-          break;
-          
-        case 'wash_qty':
-        case 'femlift_30ml_qty':
-        case 'femlift_10ml_qty':
-        case 'wash_30ml_qty':
-        case 'spray_qty':
-          const intValue = parseInt(String(value));
-          if (!isNaN(intValue)) {
-            (order as any)[dbField] = intValue;
-          }
-          break;
-          
-        case 'order_date':
-          // Handle various date formats
-          const dateValue = new Date(value);
-          if (!isNaN(dateValue.getTime())) {
-            order.order_date = dateValue.toISOString();
-          }
-          break;
-          
-        case 'new_or_repeat':
-          const typeValue = String(value).toLowerCase();
-          if (typeValue.includes('new')) {
-            order.new_or_repeat = 'new';
-          } else if (typeValue.includes('repeat')) {
-            order.new_or_repeat = 'repeat';
-          }
-          break;
-          
-        default:
-          // String fields
-          (order as any)[dbField] = String(value).trim();
-      }
-    });
-    
-    // Set defaults
-    if (!order.order_date) {
-      order.order_date = new Date().toISOString();
-    }
-    
-    if (!order.currency) {
-      order.currency = 'MYR';
-    }
-    
-    if (!order.status) {
-      order.status = 'completed';
-    }
-    
-    // Add timestamps
-    order.created_at = new Date().toISOString();
-    order.updated_at = new Date().toISOString();
-    
-    return order;
-  } catch (error) {
-    console.error('Error transforming row:', error, row);
-    return null;
+function parsePhoneNumber(phone: string): string {
+  if (!phone) return "";
+
+  // Clean up phone number
+  let cleaned = phone.replace(/\s+/g, "").replace(/[^\d+]/g, "");
+
+  // Add country code if missing
+  if (cleaned.startsWith("01") || cleaned.startsWith("11")) {
+    cleaned = "+60" + cleaned;
+  } else if (cleaned.startsWith("60")) {
+    cleaned = "+" + cleaned;
+  } else if (!cleaned.startsWith("+")) {
+    cleaned = "+60" + cleaned;
   }
+
+  return cleaned;
 }
 
-// Validation function
-function validateImportData(data: any[], headerMapping: Record<string, number>, originalHeaders: string[]): ImportValidation {
-  const errors: string[] = [];
-  const warnings: string[] = [];
-  const preview: any[] = [];
-  let validRows = 0;
-  
-  // Check if required fields are mapped
-  const requiredFields = ['customer_name', 'phone_number'];
-  const missingRequired = requiredFields.filter(field => !(field in headerMapping));
-  
-  if (missingRequired.length > 0) {
-    errors.push(`Missing required columns: ${missingRequired.join(', ')}`);
-  }
-  
-  // Validate sample of data
-  const sampleSize = Math.min(data.length, 5);
-  for (let i = 0; i < sampleSize; i++) {
-    const row = data[i];
-    const transformed = transformToOrder(row, headerMapping, originalHeaders);
-    
-    if (transformed) {
-      preview.push({
-        original: row,
-        transformed,
-        rowNumber: i + 1
-      });
-      validRows++;
-    } else {
-      warnings.push(`Row ${i + 1}: Could not transform data`);
-    }
-  }
-  
-  // Count total valid rows
-  for (let i = sampleSize; i < data.length; i++) {
-    const row = data[i];
-    const transformed = transformToOrder(row, headerMapping, originalHeaders);
-    if (transformed) {
-      validRows++;
-    }
-  }
-  
+function parseAddress(
+  addressStr: string,
+  city?: string,
+  postcode?: string,
+  state?: string
+): {
+  address_line_1: string;
+  city?: string;
+  postcode?: string;
+  state?: string;
+} {
+  if (!addressStr) return { address_line_1: "" };
+
+  // Clean up address
+  let cleaned = addressStr.replace(/\t/g, "").replace(/\r/g, "").trim();
+
+  // Try to extract city, postcode, state from address if not provided separately
+  const addressParts = cleaned.split(",").map((part) => part.trim());
+
   return {
-    isValid: errors.length === 0 && validRows > 0,
-    errors,
-    warnings,
-    preview,
-    totalRows: data.length,
-    validRows
+    address_line_1: cleaned,
+    city: city?.trim() || extractFromAddress(addressParts, "city"),
+    postcode: postcode?.trim() || extractFromAddress(addressParts, "postcode"),
+    state: state?.trim() || extractFromAddress(addressParts, "state"),
   };
 }
 
-// POST /api/import/validate - Validate uploaded file without importing
-importRouter.post('/validate', upload.single('file'), async (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({
-        success: false,
-        error: 'No file uploaded'
-      });
+function extractFromAddress(
+  parts: string[],
+  type: "city" | "postcode" | "state"
+): string | undefined {
+  if (type === "postcode") {
+    // Look for 5-digit postcodes
+    for (const part of parts) {
+      const match = part.match(/\b\d{5}\b/);
+      if (match) return match[0];
     }
-    
-    console.log(`📁 Validating file: ${req.file.originalname} (${req.file.size} bytes)`);
-    
-    let data: any[];
-    
-    // Parse based on file type
-    if (req.file.originalname.endsWith('.csv') || req.file.mimetype === 'text/csv') {
-      data = await parseCSV(req.file.buffer);
-    } else {
-      data = parseExcel(req.file.buffer);
-    }
-    
-    if (data.length === 0) {
-      return res.status(400).json({
-        success: false,
-        error: 'No data found in file'
-      });
-    }
-    
-    // Get headers and create mapping
-    const originalHeaders = Object.keys(data[0]);
-    const headerMapping = mapHeaders(originalHeaders);
-    
-    console.log('📋 Detected headers:', originalHeaders);
-    console.log('🔗 Field mapping:', headerMapping);
-    
-    // Validate the data
-    const validation = validateImportData(data, headerMapping, originalHeaders);
-    
-    res.json({
-      success: true,
-      data: {
-        filename: req.file.originalname,
-        fileSize: req.file.size,
-        detectedHeaders: originalHeaders,
-        fieldMapping: headerMapping,
-        validation,
-        summary: {
-          totalRows: data.length,
-          validRows: validation.validRows,
-          mappedFields: Object.keys(headerMapping).length,
-          requiredFieldsMapped: ['customer_name', 'phone_number'].filter(f => f in headerMapping).length
+  }
+
+  if (type === "state") {
+    // Common Malaysian states
+    const states = [
+      "Johor",
+      "Kedah",
+      "Kelantan",
+      "Melaka",
+      "Negeri Sembilan",
+      "Pahang",
+      "Penang",
+      "Perak",
+      "Perlis",
+      "Sabah",
+      "Sarawak",
+      "Selangor",
+      "Terengganu",
+    ];
+    for (const part of parts) {
+      for (const state of states) {
+        if (part.toLowerCase().includes(state.toLowerCase())) {
+          return state;
         }
       }
-    });
-    
-  } catch (error) {
-    console.error('❌ File validation failed:', error);
-    res.status(500).json({
-      success: false,
-      error: 'File validation failed',
-      details: error instanceof Error ? error.message : String(error)
-    });
+    }
   }
-});
 
-// POST /api/import/execute - Execute the import after validation
-importRouter.post('/execute', upload.single('file'), async (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({
-        success: false,
-        error: 'No file uploaded'
+  return undefined;
+}
+
+function determineCustomerType(
+  newRepeat: string,
+  customerName: string,
+  fbName: string
+): "new" | "repeat" {
+  if (
+    newRepeat?.toLowerCase().includes("repeat") ||
+    newRepeat?.toLowerCase().includes("r")
+  ) {
+    return "repeat";
+  }
+  if (
+    newRepeat?.toLowerCase().includes("new") ||
+    newRepeat?.toLowerCase().includes("n")
+  ) {
+    return "new";
+  }
+  // Default to new for historical data
+  return "new";
+}
+
+function mapOrderStatus(status: string, paymentMethod: string): string {
+  if (!status) {
+    // Infer status from payment method for historical data
+    if (
+      paymentMethod?.toLowerCase().includes("shopee") ||
+      paymentMethod?.toLowerCase().includes("lazada")
+    ) {
+      return "delivered"; // Marketplace orders are usually completed
+    }
+    return "completed"; // Default for historical data
+  }
+
+  const statusLower = status.toLowerCase();
+  if (
+    statusLower.includes("complete") ||
+    statusLower.includes("done") ||
+    statusLower.includes("deliver")
+  ) {
+    return "delivered";
+  }
+  if (statusLower.includes("ship")) return "shipped";
+  if (statusLower.includes("process")) return "processing";
+  if (statusLower.includes("confirm")) return "confirmed";
+  if (statusLower.includes("pending")) return "pending";
+  if (statusLower.includes("cancel")) return "cancelled";
+
+  return "delivered"; // Default for historical data
+}
+
+function transformLegacyRow(row: LegacyCSVRow) {
+  // Parse address
+  const addressInfo = parseAddress(
+    row.address,
+    row.city,
+    row.postcode,
+    row.state
+  );
+
+  // Parse amounts
+  const totalPaid = parseFloat(row["TOTAL PAID (rm)"]) || 0;
+  const packagePrice = parseFloat(row["package (rm)"]) || 0;
+  const postage = parseFloat(row["Postage (rm)"]) || 0;
+  const websiteCharges = parseFloat(row["Website/shopee charges (rm)"]) || 0;
+
+  // Product quantities
+  const washQty = parseInt(row.wash) || 0;
+  const femlift30Qty = parseInt(row["Femlift 30ml"]) || 0;
+  const femlift10Qty = parseInt(row["Femlift 10ml"]) || 0;
+  const wash30Qty = parseInt(row["Wash 30ml"]) || 0;
+  const sprayQty = parseInt(row.Spray) || 0;
+
+  return {
+    // Order data
+    order: {
+      order_date: parseDate(row["Order Date"]),
+      customer_name: (row.Name || row.fbname || "Unknown Customer")
+        .replace(/\r/g, "")
+        .trim(),
+      phone_number: parsePhoneNumber(row["phone number"]),
+      fb_name: row.fbname?.trim() || undefined,
+      payment_method: row["Payment method"]?.trim() || "Unknown",
+      source: getSource(row["Payment method"]),
+      agent_name: row["Agent by / under"]?.trim() || undefined,
+      notes: row.remark?.trim() || undefined,
+      address: addressInfo.address_line_1,
+      city: addressInfo.city,
+      postcode: addressInfo.postcode,
+      state: addressInfo.state,
+      tracking_number: row["tracking number"]?.trim() || undefined,
+      courier_company: row["courires company"]?.trim() || undefined,
+      status: mapOrderStatus(row.status, row["Payment method"]),
+      currency: row.currency?.trim() || "MYR",
+      cash_sale_receipt: row["cash sale receipt"]?.trim() || undefined,
+      customer_type: determineCustomerType(
+        row["new/repeat"],
+        row.Name,
+        row.fbname
+      ),
+      shipment_description: row["shipment description"]?.trim() || undefined,
+    },
+    // Financial data
+    amounts: {
+      total_amount: totalPaid,
+      package_price: packagePrice,
+      postage: postage,
+      website_charges: websiteCharges,
+      subtotal: totalPaid - postage - websiteCharges,
+    },
+    // Product quantities (for future order items)
+    products: {
+      wash_120ml: washQty,
+      femlift_30ml: femlift30Qty,
+      femlift_10ml: femlift10Qty,
+      wash_30ml: wash30Qty,
+      spray: sprayQty,
+    },
+    // Original row number for tracking
+    originalRowNo: row.No,
+  };
+}
+
+function getSource(paymentMethod: string): string {
+  if (!paymentMethod) return "manual_import";
+
+  const method = paymentMethod.toLowerCase();
+  if (method.includes("shopee")) return "shopee";
+  if (method.includes("lazada")) return "lazada";
+  if (method.includes("bank")) return "bank_transfer";
+  if (method.includes("cash")) return "cash";
+  if (method.includes("card")) return "card";
+
+  return "manual_import";
+}
+
+// ============================================================================
+// IMPORT ROUTES
+// ============================================================================
+
+// POST /api/import/historical-csv - Import historical CSV data
+importRouter.post(
+  "/historical-csv",
+  upload.single("csvFile"),
+  async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({
+          success: false,
+          error: "No CSV file uploaded",
+        });
+      }
+
+      const {
+        dryRun = "false",
+        batchSize = "50",
+        skipDuplicates = "true",
+      } = req.body;
+
+      console.log(
+        `📊 Starting historical CSV import: ${req.file.originalname}`
+      );
+      console.log(
+        `📋 Dry run: ${dryRun}, Batch size: ${batchSize}, Skip duplicates: ${skipDuplicates}`
+      );
+
+      // Parse CSV
+      const csvContent = req.file.buffer.toString("utf8");
+      const parsed = Papa.parse(csvContent, {
+        header: true,
+        skipEmptyLines: true,
+        transformHeader: (header) => header.trim(),
+        transform: (value) => value?.trim() || "",
       });
-    }
-    
-    const { 
-      skipDuplicates = true,
-      batchSize = 100,
-      validateOnly = false
-    } = req.body;
-    
-    console.log(`📥 Importing file: ${req.file.originalname}`);
-    console.log(`⚙️ Options: skipDuplicates=${skipDuplicates}, batchSize=${batchSize}`);
-    
-    let data: any[];
-    
-    // Parse file
-    if (req.file.originalname.endsWith('.csv') || req.file.mimetype === 'text/csv') {
-      data = await parseCSV(req.file.buffer);
-    } else {
-      data = parseExcel(req.file.buffer);
-    }
-    
-    const originalHeaders = Object.keys(data[0]);
-    const headerMapping = mapHeaders(originalHeaders);
-    
-    // Validate first
-    const validation = validateImportData(data, headerMapping, originalHeaders);
-    if (!validation.isValid) {
-      return res.status(400).json({
-        success: false,
-        error: 'Validation failed',
-        details: validation.errors
-      });
-    }
-    
-    if (validateOnly) {
-      return res.json({
+
+      if (parsed.errors.length > 0) {
+        console.error("CSV parsing errors:", parsed.errors);
+        return res.status(400).json({
+          success: false,
+          error: "CSV parsing failed",
+          details: parsed.errors,
+        });
+      }
+
+      console.log(`📝 Parsed ${parsed.data.length} rows from CSV`);
+
+      // Transform data
+      const transformedOrders = [];
+      const errors = [];
+      let skippedRows = 0;
+
+      for (let i = 0; i < parsed.data.length; i++) {
+        try {
+          const row = parsed.data[i] as LegacyCSVRow;
+
+          // Skip rows without essential data
+          if (
+            !row["Order Date"] ||
+            !row["TOTAL PAID (rm)"] ||
+            parseFloat(row["TOTAL PAID (rm)"]) <= 0
+          ) {
+            skippedRows++;
+            continue;
+          }
+
+          const transformed = transformLegacyRow(row);
+          transformedOrders.push(transformed);
+        } catch (error) {
+          errors.push({
+            row: i + 1,
+            error: error instanceof Error ? error.message : String(error),
+            data: parsed.data[i],
+          });
+        }
+      }
+
+      console.log(
+        `✅ Transformed ${transformedOrders.length} orders, ${skippedRows} skipped, ${errors.length} errors`
+      );
+
+      // If dry run, return preview
+      if (dryRun === "true") {
+        return res.json({
+          success: true,
+          dryRun: true,
+          summary: {
+            totalRows: parsed.data.length,
+            validOrders: transformedOrders.length,
+            skippedRows,
+            errors: errors.length,
+          },
+          preview: transformedOrders.slice(0, 5), // First 5 for preview
+          errors: errors.slice(0, 10), // First 10 errors
+          message:
+            "Dry run completed. Use dryRun=false to actually import data.",
+        });
+      }
+
+      // Actual import
+      let successCount = 0;
+      let duplicateCount = 0;
+      let errorCount = 0;
+      const importErrors = [];
+
+      // Process in batches
+      const batchSizeNum = parseInt(batchSize);
+      for (let i = 0; i < transformedOrders.length; i += batchSizeNum) {
+        const batch = transformedOrders.slice(i, i + batchSizeNum);
+        console.log(
+          `📦 Processing batch ${Math.floor(i / batchSizeNum) + 1}/${Math.ceil(
+            transformedOrders.length / batchSizeNum
+          )}`
+        );
+
+        for (const orderData of batch) {
+          try {
+            // Check for duplicates if enabled
+            if (skipDuplicates === "true") {
+              const existingOrder = await supabase
+                .from("orders")
+                .select("id")
+                .eq("total_amount", orderData.amounts.total_amount)
+                .ilike("customers.customer_name", orderData.order.customer_name)
+                .single();
+
+              if (existingOrder.data) {
+                duplicateCount++;
+                continue;
+              }
+            }
+
+            // Create order using normalized schema
+            await createSimpleOrderFromLegacy(orderData);
+            successCount++;
+          } catch (error) {
+            errorCount++;
+            importErrors.push({
+              originalRowNo: orderData.originalRowNo,
+              customerName: orderData.order.customer_name,
+              error: error instanceof Error ? error.message : String(error),
+            });
+
+            if (importErrors.length >= 20) break; // Limit error collection
+          }
+        }
+      }
+
+      console.log(
+        `✅ Import completed: ${successCount} success, ${duplicateCount} duplicates, ${errorCount} errors`
+      );
+
+      res.json({
         success: true,
-        message: 'Validation passed - ready for import',
-        validation
+        summary: {
+          totalProcessed: transformedOrders.length,
+          successfulImports: successCount,
+          duplicatesSkipped: duplicateCount,
+          errors: errorCount,
+          transformationErrors: errors.length,
+          skippedRows,
+        },
+        errors: importErrors,
+        message: `Successfully imported ${successCount} orders from ${req.file.originalname}`,
       });
-    }
-    
-    // Transform all data
-    const orders: Order[] = [];
-    const transformErrors: any[] = [];
-    
-    for (let i = 0; i < data.length; i++) {
-      const transformed = transformToOrder(data[i], headerMapping, originalHeaders);
-      if (transformed) {
-        orders.push(transformed as Order);
-      } else {
-        transformErrors.push({
-          row: i + 1,
-          data: data[i],
-          error: 'Failed to transform row'
-        });
-      }
-    }
-    
-    if (orders.length === 0) {
-      return res.status(400).json({
+    } catch (error) {
+      console.error("❌ Historical import failed:", error);
+      res.status(500).json({
         success: false,
-        error: 'No valid orders found after transformation'
+        error: "Import failed",
+        details: error instanceof Error ? error.message : String(error),
       });
     }
-    
-    // Check for duplicates if enabled
-    let duplicatesSkipped = 0;
-    let ordersToInsert = orders;
-    
-    if (skipDuplicates) {
-      console.log('🔍 Checking for duplicate phone numbers...');
-      
-      const phoneNumbers = orders.map(o => o.phone_number).filter(Boolean);
-      const { data: existingOrders } = await supabase
-        .from('orders')
-        .select('phone_number')
-        .in('phone_number', phoneNumbers);
-      
-      const existingPhones = new Set(existingOrders?.map(o => o.phone_number) || []);
-      
-      ordersToInsert = orders.filter(order => {
-        if (order.phone_number && existingPhones.has(order.phone_number)) {
-          duplicatesSkipped++;
-          return false;
-        }
-        return true;
-      });
-      
-      console.log(`📋 Found ${duplicatesSkipped} duplicates to skip`);
-    }
-    
-    // Import in batches
-    let successfulInserts = 0;
-    let failedInserts = 0;
-    const importErrors: any[] = [];
-    
-    for (let i = 0; i < ordersToInsert.length; i += batchSize) {
-      const batch = ordersToInsert.slice(i, i + batchSize);
-      
-      try {
-        console.log(`📦 Importing batch ${Math.floor(i / batchSize) + 1} (${batch.length} orders)...`);
-        await bulkInsertOrders(batch);
-        successfulInserts += batch.length;
-      } catch (error) {
-        console.error(`❌ Batch import failed:`, error);
-        failedInserts += batch.length;
-        importErrors.push({
-          batch: Math.floor(i / batchSize) + 1,
-          size: batch.length,
-          error: error instanceof Error ? error.message : String(error)
-        });
-      }
-    }
-    
-    const result: ImportResult = {
-      success: successfulInserts > 0,
-      totalProcessed: data.length,
-      successfulInserts,
-      failedInserts,
-      errors: [...transformErrors, ...importErrors],
-      duplicatesSkipped: skipDuplicates ? duplicatesSkipped : undefined
-    };
-    
-    console.log(`✅ Import completed:`, result);
-    
-    res.json({
-      success: true,
-      data: result,
-      message: `Import completed. ${successfulInserts} orders imported successfully.`
-    });
-    
-  } catch (error) {
-    console.error('❌ Import failed:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Import failed',
-      details: error instanceof Error ? error.message : String(error)
-    });
   }
-});
+);
 
-// GET /api/import/template - Download a CSV template
-importRouter.get('/template', (req, res) => {
-  const template = [
-    'customer_name,phone_number,total_paid,order_date,currency,payment_method,wash_qty,femlift_30ml_qty,femlift_10ml_qty,wash_30ml_qty,spray_qty,tracking_number,courier_company,status,new_or_repeat,agent_name,remark',
-    'John Doe,+60123456789,150.00,2024-08-01,MYR,Credit Card,1,1,0,0,1,TN123456,PosLaju,completed,new,Agent 1,Sample order',
-    'Jane Smith,+60987654321,200.00,2024-08-02,MYR,Bank Transfer,0,2,1,1,0,TN123457,Ninja Van,completed,repeat,Agent 2,Repeat customer'
-  ].join('\n');
-  
-  res.setHeader('Content-Type', 'text/csv');
-  res.setHeader('Content-Disposition', 'attachment; filename="order_import_template.csv"');
+// Helper function to create simple order from legacy data
+async function createSimpleOrderFromLegacy(orderData: any) {
+  const { order, amounts } = orderData;
+
+  // Use the existing createSimpleOrder function but add the additional fields
+  const createdOrder = await supabase
+    .from("orders")
+    .insert({
+      order_number: `HIST-${Date.now()}-${Math.random()
+        .toString(36)
+        .substr(2, 9)}`,
+      customer_id: await getOrCreateCustomerId(order),
+      shipping_address_id: order.address
+        ? await getOrCreateAddressId(order)
+        : undefined,
+      order_date: order.order_date,
+      total_amount: amounts.total_amount,
+      subtotal: amounts.subtotal,
+      postage: amounts.postage,
+      website_charges: amounts.website_charges,
+      payment_method: order.payment_method,
+      payment_status: "paid", // Historical orders are assumed paid
+      source: order.source,
+      agent_name: order.agent_name,
+      notes: order.notes,
+      status: order.status,
+      currency: order.currency,
+      tracking_number: order.tracking_number,
+      courier_company: order.courier_company,
+      cash_sale_receipt: order.cash_sale_receipt,
+      shipment_description: order.shipment_description,
+      created_at: order.order_date, // Use order date as created date for historical data
+      updated_at: new Date().toISOString(),
+    })
+    .select()
+    .single();
+
+  if (createdOrder.error) throw createdOrder.error;
+  return createdOrder.data;
+}
+
+async function getOrCreateCustomerId(orderData: any): Promise<number> {
+  // Try to find existing customer
+  let customer = await supabase
+    .from("customers")
+    .select("id")
+    .eq("phone_number", orderData.phone_number)
+    .maybeSingle();
+
+  if (customer.data) {
+    return customer.data.id;
+  }
+
+  // Create new customer
+  const newCustomer = await supabase
+    .from("customers")
+    .insert({
+      customer_name: orderData.customer_name,
+      phone_number: orderData.phone_number,
+      fb_name: orderData.fb_name,
+      customer_type: orderData.customer_type,
+      created_at: orderData.order_date,
+      updated_at: new Date().toISOString(),
+    })
+    .select("id")
+    .single();
+
+  if (newCustomer.error) throw newCustomer.error;
+  return newCustomer.data.id;
+}
+
+async function getOrCreateAddressId(
+  orderData: any
+): Promise<number | undefined> {
+  if (!orderData.address) return undefined;
+
+  const customerId = await getOrCreateCustomerId(orderData);
+
+  // Create address
+  const newAddress = await supabase
+    .from("addresses")
+    .insert({
+      customer_id: customerId,
+      address_line_1: orderData.address,
+      city: orderData.city,
+      postcode: orderData.postcode,
+      state: orderData.state,
+      address_type: "shipping",
+      is_default: true,
+      created_at: orderData.order_date,
+      updated_at: new Date().toISOString(),
+    })
+    .select("id")
+    .single();
+
+  if (newAddress.error) throw newAddress.error;
+  return newAddress.data.id;
+}
+
+// GET /api/import/template - Download CSV template
+importRouter.get("/template", (req, res) => {
+  const template = `No,Order Date,fbname,Name,Payment method,wash,Femlift 30ml,Femlift 10ml,Wash 30ml,Spray,remark,package (rm),Postage (rm),Website/shopee charges (rm),TOTAL PAID (rm),shipment description,address,city,postcode,state,phone number,tracking number,courires company,new/repeat,cash sale receipt,Agent by / under,sql system,currency,status
+1,1/8/25,facebook_name,Customer Name,Bank Transfer,1,1,0,0,1,Customer notes,150,10,5,165,Product description,123 Main St,Kuala Lumpur,50000,Selangor,+60123456789,TRK123456,J&T Express,new,CSR001,Agent Name,,MYR,completed`;
+
+  res.setHeader("Content-Type", "text/csv");
+  res.setHeader(
+    "Content-Disposition",
+    "attachment; filename=lunaa_import_template.csv"
+  );
   res.send(template);
 });
 

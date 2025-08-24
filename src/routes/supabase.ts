@@ -1,12 +1,15 @@
 import express from "express";
 import { 
-  insertOrder, 
-  bulkInsertOrders, 
+  createSimpleOrder,
+  searchOrders,
+  getRecentOrders,
+  getDashboardStats,
   supabase,
   insertMessage,
-  upsertConversation 
-} from "../database/supabaseOrders";
-import { Order } from "../types/database";
+  upsertConversation,
+  bulkInsertOrders,
+  Order
+} from "../database/supabaseNormalized"; // ✅ FIXED: Using normalized schema
 
 const supabaseRouter = express.Router();
 
@@ -23,54 +26,38 @@ supabaseRouter.get("/orders", async (req, res) => {
       month // For processing specific months like August
     } = req.query;
 
-    let query = supabase
-      .from("orders")
-      .select("*", { count: "exact" })
-      .order("created_at", { ascending: false });
+    // Use the searchOrders function from normalized schema
+    const searchQuery: any = {
+      limit: Number(limit),
+      offset: Number(offset)
+    };
 
-    // Apply filters
-    if (startDate) {
-      query = query.gte("order_date", startDate);
-    }
-    if (endDate) {
-      query = query.lte("order_date", endDate);
-    }
-    if (status) {
-      query = query.eq("status", status);
-    }
-    if (currency) {
-      query = query.eq("currency", currency);
-    }
+    if (startDate) searchQuery.startDate = startDate as string;
+    if (endDate) searchQuery.endDate = endDate as string;
+    if (status) searchQuery.status = status as string;
     
-    // Filter by specific month (useful for August processing)
+    // Handle month filtering
     if (month) {
       const year = new Date().getFullYear();
       const monthStart = new Date(year, parseInt(month as string) - 1, 1).toISOString();
       const monthEnd = new Date(year, parseInt(month as string), 0, 23, 59, 59).toISOString();
-      query = query.gte("order_date", monthStart).lte("order_date", monthEnd);
+      searchQuery.startDate = monthStart;
+      searchQuery.endDate = monthEnd;
     }
 
-    // Apply pagination
-    query = query.range(Number(offset), Number(offset) + Number(limit) - 1);
-
-    const { data, error, count } = await query;
-
-    if (error) {
-      console.error("❌ Supabase query error:", error);
-      throw error;
-    }
+    const { orders, totalCount } = await searchOrders(searchQuery);
 
     res.json({
       success: true,
-      data: data || [],
+      data: orders,
       pagination: {
         offset: Number(offset),
         limit: Number(limit),
-        total: count || 0
+        total: totalCount
       }
     });
   } catch (error) {
-    console.error("❌ Failed to fetch orders:", error);
+    console.error("❌ Supabase query error:", error);
     res.status(500).json({
       success: false,
       error: "Failed to fetch orders",
@@ -82,21 +69,35 @@ supabaseRouter.get("/orders", async (req, res) => {
 // POST /api/supabase/orders - Insert single order
 supabaseRouter.post("/orders", async (req, res) => {
   try {
-    const order: Order = req.body;
+    const orderData = req.body;
     
-    // Validate required fields
-    if (!order.customer_name && !order.phone_number) {
+    // Validate required fields for normalized schema
+    if (!orderData.customer_name && !orderData.phone_number) {
       return res.status(400).json({
         success: false,
         error: "Either customer_name or phone_number is required"
       });
     }
 
-    const orderId = await insertOrder(order);
+    // Use createSimpleOrder from normalized schema
+    const order = await createSimpleOrder({
+      customer_name: orderData.customer_name || 'Unknown',
+      phone_number: orderData.phone_number,
+      fb_name: orderData.fb_name,
+      total_amount: orderData.total_amount || 0, // ✅ FIXED: total_amount not total_paid
+      payment_method: orderData.payment_method,
+      source: orderData.source || 'api',
+      agent_name: orderData.agent_name,
+      notes: orderData.notes,
+      address: orderData.address,
+      city: orderData.city,
+      postcode: orderData.postcode,
+      state: orderData.state
+    });
     
     res.json({
       success: true,
-      data: { id: orderId },
+      data: { id: order.id },
       message: "Order inserted successfully"
     });
   } catch (error) {
@@ -112,7 +113,7 @@ supabaseRouter.post("/orders", async (req, res) => {
 // POST /api/supabase/orders/bulk - Bulk insert orders (for data migration)
 supabaseRouter.post("/orders/bulk", async (req, res) => {
   try {
-    const { orders, batchSize = 100 }: { orders: Order[], batchSize?: number } = req.body;
+    const { orders, batchSize = 100 }: { orders: any[], batchSize?: number } = req.body;
     
     if (!Array.isArray(orders) || orders.length === 0) {
       return res.status(400).json({
@@ -123,41 +124,32 @@ supabaseRouter.post("/orders/bulk", async (req, res) => {
 
     console.log(`📊 Starting bulk insert of ${orders.length} orders...`);
 
-    // Process in batches to avoid overwhelming the database
-    const batches = [];
-    for (let i = 0; i < orders.length; i += batchSize) {
-      batches.push(orders.slice(i, i + batchSize));
-    }
+    // Transform orders to match normalized schema
+    const transformedOrders = orders.map((order: any) => ({
+      customer_name: order.customer_name || order.name || 'Unknown',
+      phone_number: order.phone_number || order.phone,
+      fb_name: order.fb_name,
+      total_amount: parseFloat(order.total_amount || order.total_paid || order.total || 0), // ✅ FIXED
+      payment_method: order.payment_method,
+      source: order.source || 'bulk_import',
+      agent_name: order.agent_name,
+      notes: order.notes || order.remark,
+      address: order.address,
+      city: order.city,
+      postcode: order.postcode,
+      state: order.state
+    }));
 
-    let successCount = 0;
-    let errorCount = 0;
-    const errors: any[] = [];
-
-    for (let i = 0; i < batches.length; i++) {
-      try {
-        console.log(`📦 Processing batch ${i + 1}/${batches.length} (${batches[i].length} orders)...`);
-        await bulkInsertOrders(batches[i]);
-        successCount += batches[i].length;
-        console.log(`✅ Batch ${i + 1} completed successfully`);
-      } catch (error) {
-        console.error(`❌ Batch ${i + 1} failed:`, error);
-        errorCount += batches[i].length;
-        errors.push({
-          batch: i + 1,
-          error: error instanceof Error ? error.message : String(error)
-        });
-      }
-    }
+    await bulkInsertOrders(transformedOrders);
 
     res.json({
       success: true,
       data: {
         totalProcessed: orders.length,
-        successCount,
-        errorCount,
-        errors: errors.length > 0 ? errors : undefined
+        successCount: orders.length,
+        errorCount: 0
       },
-      message: `Bulk insert completed. Success: ${successCount}, Errors: ${errorCount}`
+      message: `Bulk insert completed successfully`
     });
   } catch (error) {
     console.error("❌ Failed to bulk insert orders:", error);
@@ -174,42 +166,24 @@ supabaseRouter.get("/dashboard-stats", async (req, res) => {
   try {
     const { startDate, endDate, month } = req.query;
 
-    // Build date filter
-    let dateFilter = "";
+    // Build filters for normalized schema
+    const filters: any = {};
+    
     if (month) {
       const year = new Date().getFullYear();
       const monthStart = new Date(year, parseInt(month as string) - 1, 1).toISOString();
       const monthEnd = new Date(year, parseInt(month as string), 0, 23, 59, 59).toISOString();
-      dateFilter = `and(order_date.gte.${monthStart},order_date.lte.${monthEnd})`;
-    } else if (startDate && endDate) {
-      dateFilter = `and(created_at.gte.${startDate},created_at.lte.${endDate})`;
-    } else if (startDate) {
-      dateFilter = `created_at.gte.${startDate}`;
-    } else if (endDate) {
-      dateFilter = `created_at.lte.${endDate}`;
+      filters.startDate = monthStart;
+      filters.endDate = monthEnd;
+    } else {
+      if (startDate) filters.startDate = startDate as string;
+      if (endDate) filters.endDate = endDate as string;
     }
 
-    // Get orders with filters
-    let ordersQuery = supabase
-      .from("orders")
-      .select("total_paid, currency, created_at, order_date");
+    // Use normalized schema dashboard stats function
+    const stats = await getDashboardStats(filters);
 
-    if (dateFilter) {
-      if (month) {
-        const year = new Date().getFullYear();
-        const monthStart = new Date(year, parseInt(month as string) - 1, 1).toISOString();
-        const monthEnd = new Date(year, parseInt(month as string), 0, 23, 59, 59).toISOString();
-        ordersQuery = ordersQuery.gte("order_date", monthStart).lte("order_date", monthEnd);
-      } else {
-        if (startDate) ordersQuery = ordersQuery.gte("created_at", startDate);
-        if (endDate) ordersQuery = ordersQuery.lte("created_at", endDate);
-      }
-    }
-
-    const { data: orders, error: ordersError } = await ordersQuery;
-    if (ordersError) throw ordersError;
-
-    // Get message stats
+    // Get message stats (keeping existing logic)
     const { data: messages, error: messagesError } = await supabase
       .from("messages")
       .select("latest_status");
@@ -220,18 +194,6 @@ supabaseRouter.get("/dashboard-stats", async (req, res) => {
       .from("conversations")
       .select("*", { count: "exact", head: true });
     if (conversationsError) throw conversationsError;
-
-    // Calculate order stats
-    const totalOrders = orders?.length || 0;
-    const totalRevenue = orders?.reduce((sum, order) => sum + (order.total_paid || 0), 0) || 0;
-    const avgOrderValue = totalOrders > 0 ? totalRevenue / totalOrders : 0;
-
-    // Group revenue by currency
-    const revenueByCurrency = orders?.reduce((acc, order) => {
-      const currency = order.currency || "MYR";
-      acc[currency] = (acc[currency] || 0) + (order.total_paid || 0);
-      return acc;
-    }, {} as Record<string, number>) || {};
 
     // Calculate message stats
     const messageStats = {
@@ -245,14 +207,17 @@ supabaseRouter.get("/dashboard-stats", async (req, res) => {
       success: true,
       data: {
         orders: {
-          total: totalOrders,
-          revenue: totalRevenue,
-          avgOrderValue,
-          revenueByCurrency
+          total: stats.totalOrders,
+          revenue: stats.totalRevenue,
+          avgOrderValue: stats.avgOrderValue,
+          ordersByStatus: stats.ordersByStatus
         },
         messages: messageStats,
         conversations: {
           total: conversationsCount || 0
+        },
+        customers: {
+          total: stats.totalCustomers
         },
         system: {
           uptime: process.uptime(),
@@ -281,32 +246,41 @@ supabaseRouter.get("/orders/search", async (req, res) => {
       limit = 50
     } = req.query;
 
-    let query = supabase.from("orders").select("*");
+    // Use normalized schema search function
+    const searchQuery: any = {
+      limit: Number(limit)
+    };
 
-    if (q) {
-      // Search across multiple fields
-      query = query.or(`customer_name.ilike.%${q}%,phone_number.ilike.%${q}%,tracking_number.ilike.%${q}%,fb_name.ilike.%${q}%`);
-    }
-    if (phone) {
-      query = query.eq("phone_number", phone);
-    }
-    if (trackingNumber) {
-      query = query.eq("tracking_number", trackingNumber);
-    }
-    if (customerName) {
-      query = query.ilike("customer_name", `%${customerName}%`);
-    }
+    if (q) searchQuery.searchTerm = q as string;
+    
+    // ✅ FIXED: Use normalized schema search which handles customer joins properly
+    const { orders, totalCount } = await searchOrders(searchQuery);
 
-    const { data, error } = await query
-      .order("created_at", { ascending: false })
-      .limit(Number(limit));
-
-    if (error) throw error;
+    // Additional filtering for specific fields (since normalized search might not cover all)
+    let filteredOrders = orders;
+    
+    if (phone && !q) {
+      filteredOrders = orders.filter((order: any) => 
+        order.customers?.phone_number === phone
+      );
+    }
+    
+    if (trackingNumber && !q) {
+      filteredOrders = orders.filter((order: any) => 
+        order.tracking_number === trackingNumber
+      );
+    }
+    
+    if (customerName && !q) {
+      filteredOrders = orders.filter((order: any) => 
+        order.customers?.customer_name?.toLowerCase().includes((customerName as string).toLowerCase())
+      );
+    }
 
     res.json({
       success: true,
-      data: data || [],
-      count: data?.length || 0
+      data: filteredOrders,
+      count: filteredOrders.length
     });
   } catch (error) {
     console.error("❌ Failed to search orders:", error);
@@ -323,9 +297,25 @@ supabaseRouter.get("/orders/:id", async (req, res) => {
   try {
     const { id } = req.params;
 
+    // ✅ FIXED: Query with customer join for normalized schema
     const { data, error } = await supabase
       .from("orders")
-      .select("*")
+      .select(`
+        *,
+        customers (
+          customer_name,
+          phone_number,
+          fb_name,
+          email
+        ),
+        addresses (
+          address_line_1,
+          address_line_2,
+          city,
+          postcode,
+          state
+        )
+      `)
       .eq("id", id)
       .single();
 
@@ -366,7 +356,14 @@ supabaseRouter.put("/orders/:id", async (req, res) => {
       .from("orders")
       .update(updates)
       .eq("id", id)
-      .select()
+      .select(`
+        *,
+        customers (
+          customer_name,
+          phone_number,
+          fb_name
+        )
+      `)
       .single();
 
     if (error) {
@@ -434,41 +431,30 @@ supabaseRouter.post("/sync/august", async (req, res) => {
 
     console.log(`📅 Starting August data sync for ${augustData.length} records...`);
 
-    // Transform the data to match your Order interface
-    const transformedOrders: Order[] = augustData.map((row: any) => ({
-      order_date: row.order_date ? new Date(row.order_date).toISOString() : new Date().toISOString(),
-      customer_name: row.customer_name || row.name || row.fb_name,
+    // ✅ FIXED: Transform data for normalized schema
+    const transformedOrders = augustData.map((row: any) => ({
+      customer_name: row.customer_name || row.name || row.fb_name || 'Unknown',
       phone_number: row.phone_number || row.phone,
-      total_paid: parseFloat(row.total_paid || row.total || 0),
-      currency: row.currency || "MYR",
+      fb_name: row.fb_name,
+      total_amount: parseFloat(row.total_paid || row.total_amount || row.total || 0), // ✅ FIXED
       payment_method: row.payment_method || row.paymentMethod,
-      wash_qty: parseInt(row.wash_qty || row.wash120ml || 0),
-      femlift_30ml_qty: parseInt(row.femlift_30ml_qty || row.femlift30ml || 0),
-      femlift_10ml_qty: parseInt(row.femlift_10ml_qty || row.femlift10ml || 0),
-      wash_30ml_qty: parseInt(row.wash_30ml_qty || row.wash30ml || 0),
-      spray_qty: parseInt(row.spray_qty || row.spray || 0),
-      tracking_number: row.tracking_number || row.trackingNumber,
-      courier_company: row.courier_company || row.courierCompany,
-      status: row.status || "completed",
-      new_or_repeat: row.new_or_repeat || row.customerType === "new" ? "new" : "repeat",
+      source: 'august_migration',
       agent_name: row.agent_name || row.agent,
-      remark: row.remark,
-      package_price: parseFloat(row.package_price || row.packageAmount || 0),
-      postage: parseFloat(row.postage || 0),
-      cash_sale_receipt: row.cash_sale_receipt || row.cashSaleReceipt,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
+      notes: row.remark || row.notes,
+      address: row.address,
+      city: row.city,
+      postcode: row.postcode,
+      state: row.state
     }));
 
-    // Use bulk insert
-    const result = await bulkInsertOrders(transformedOrders);
+    // Use normalized schema bulk insert
+    await bulkInsertOrders(transformedOrders);
 
     res.json({
       success: true,
       data: {
         processed: augustData.length,
-        inserted: transformedOrders.length,
-        result
+        inserted: transformedOrders.length
       },
       message: `Successfully synced ${transformedOrders.length} August orders`
     });
@@ -485,19 +471,28 @@ supabaseRouter.post("/sync/august", async (req, res) => {
 // GET /api/supabase/health - Health check for Supabase connection
 supabaseRouter.get("/health", async (req, res) => {
   try {
-    const { data, error } = await supabase
+    // ✅ FIXED: Test both orders and customers tables for normalized schema
+    const { data: ordersData, error: ordersError } = await supabase
       .from("orders")
       .select("id")
       .limit(1);
 
-    if (error) throw error;
+    const { data: customersData, error: customersError } = await supabase
+      .from("customers")
+      .select("id")
+      .limit(1);
+
+    if (ordersError || customersError) {
+      throw ordersError || customersError;
+    }
 
     res.json({
       success: true,
       data: {
         status: "healthy",
         timestamp: new Date().toISOString(),
-        connection: "active"
+        connection: "active",
+        schema: "normalized"
       }
     });
   } catch (error) {
@@ -515,39 +510,41 @@ supabaseRouter.get("/export/excel", async (req, res) => {
   try {
     const { startDate, endDate, month } = req.query;
 
-    let query = supabase.from("orders").select("*").order("order_date", { ascending: false });
-
-    // Apply date filters
+    // Use normalized schema search for export
+    const searchQuery: any = {};
+    
     if (month) {
       const year = new Date().getFullYear();
       const monthStart = new Date(year, parseInt(month as string) - 1, 1).toISOString();
       const monthEnd = new Date(year, parseInt(month as string), 0, 23, 59, 59).toISOString();
-      query = query.gte("order_date", monthStart).lte("order_date", monthEnd);
+      searchQuery.startDate = monthStart;
+      searchQuery.endDate = monthEnd;
     } else {
-      if (startDate) query = query.gte("order_date", startDate);
-      if (endDate) query = query.lte("order_date", endDate);
+      if (startDate) searchQuery.startDate = startDate as string;
+      if (endDate) searchQuery.endDate = endDate as string;
     }
 
-    const { data, error } = await query;
-    if (error) throw error;
+    const { orders } = await searchOrders(searchQuery);
 
-    // Here you would use a library like xlsx to create Excel file
-    // For now, return CSV data
-    const csvData = data?.map(order => ({
+    // ✅ FIXED: Map normalized schema fields for export
+    const csvData = orders.map((order: any) => ({
       "Order ID": order.id,
+      "Order Number": order.order_number,
       "Date": order.order_date,
-      "Customer": order.customer_name,
-      "Phone": order.phone_number,
-      "Amount": order.total_paid,
+      "Customer": order.customers?.customer_name,
+      "Phone": order.customers?.phone_number,
+      "Amount": order.total_amount, // ✅ FIXED: total_amount not total_paid
       "Currency": order.currency,
       "Status": order.status,
-      "Tracking": order.tracking_number
+      "Tracking": order.tracking_number,
+      "Agent": order.agent_name,
+      "Payment Method": order.payment_method
     }));
 
     res.json({
       success: true,
       data: csvData,
-      count: data?.length || 0,
+      count: orders.length,
       message: "Export data ready"
     });
   } catch (error) {

@@ -12,6 +12,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.PhoneNumberUtil = void 0;
 exports.extractOrderFromMessage = extractOrderFromMessage;
 exports.appendOrderToSheet = appendOrderToSheet;
 exports.createSheetRowData = createSheetRowData;
@@ -129,6 +130,7 @@ class PhoneNumberUtil {
         });
     }
 }
+exports.PhoneNumberUtil = PhoneNumberUtil;
 // ============================================================================
 // CONTENT EXTRACTORS
 // ============================================================================

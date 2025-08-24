@@ -5,8 +5,8 @@ import {
   appendOrderToSheet,
   extractOrderFromMessage,
   getAuthorizedPhoneNumbers,
-  PhoneNumberUtil,
 } from "../whatsappOrderBot";
+import { PhoneNumberUtil } from "../whatsappOrderBot"; // Make sure this is exported
 
 const whatsappRouter = express.Router();
 
@@ -213,39 +213,94 @@ whatsappRouter.post("/whatsapp/incoming", async (req, res) => {
   console.log(`Is Authorized: ${isAuthorized}`);
   console.log(`Current Authorized Numbers:`, getAuthorizedPhoneNumbers());
 
-  // Enhanced order detection with date patterns
-  const looksLikeOrder =
-    Body &&
-    // Existing patterns
-    (Body.includes("total：") ||
-      Body.includes("total:") ||
-      Body.includes("Total") ||
-      Body.includes("汇款人名字：") ||
-      Body.includes("Name:") ||
-      Body.includes("Contact:") ||
-      Body.includes("Address:") ||
-      /\d+[wfs]/.test(Body) ||
-      // Enhanced patterns
-      /Order from WhatsApp/i.test(Body) ||
-      /New Customer/i.test(Body) ||
-      /Repeat Customer/i.test(Body) ||
-      /\d+w\d*f\d*s/i.test(Body) ||
-      /\d+ml/i.test(Body) ||
-      /rm\s*\d+/i.test(Body) ||
-      /total.*?\d+/i.test(Body) ||
-      Body.toLowerCase().includes("order") ||
-      /\d+.*?rm\s*\d+/i.test(Body) ||
-      // Date patterns
-      /^\d{1,2}[\/\-]\d{1,2}[\/\-](\d{2}|\d{4})/.test(Body) ||
-      /\b\d{1,2}[\/\-]\d{1,2}[\/\-](\d{2}|\d{4})\b/.test(Body) ||
-      /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s+\d{1,2}/i.test(
-        Body
-      ) ||
-      /\b\d{1,2}\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i.test(
-        Body
-      ) ||
-      /\b\d{4}-\d{2}-\d{2}\b/.test(Body) ||
-      /order\s+date/i.test(Body));
+  // Smart Scoring Order Detection
+  function smartOrderDetection(Body: string) {
+    if (!Body) return false;
+
+    let score = 0;
+    const text = Body.toLowerCase();
+
+    console.log(`🧠 === SMART ORDER DETECTION ===`);
+
+    // 1. Date at start (STRONG indicator) - Score: 3
+    if (/^\s*\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}/.test(Body.trim())) {
+      score += 3;
+      console.log(`   ✅ Date at start detected (+3) - Score: ${score}`);
+    }
+
+    // 2. Total with number (STRONG indicator) - Score: 3
+    if (/total.{0,10}\d+/i.test(Body)) {
+      score += 3;
+      console.log(`   ✅ Total with number detected (+3) - Score: ${score}`);
+    }
+
+    // 3. Name field (MEDIUM indicator) - Score: 2
+    if (/name.{0,10}[a-zA-Z\s]{2,}/i.test(Body)) {
+      score += 2;
+      console.log(`   ✅ Name field detected (+2) - Score: ${score}`);
+    }
+
+    // 4. Contact with numbers (MEDIUM indicator) - Score: 2
+    if (
+      /contact.{0,10}[\d\s\-+()]{7,}/i.test(Body) ||
+      /\b0\d{8,11}\b/.test(Body)
+    ) {
+      score += 2;
+      console.log(`   ✅ Contact/Phone detected (+2) - Score: ${score}`);
+    }
+
+    // 5. Address field (MEDIUM indicator) - Score: 2
+    if (/address.{0,15}[a-zA-Z0-9\s,.\-]{8,}/i.test(Body)) {
+      score += 2;
+      console.log(`   ✅ Address detected (+2) - Score: ${score}`);
+    }
+
+    // 6. Product codes (STRONG indicator) - Score: 3
+    if (/\d+[wfs](\d+ml)?/i.test(Body)) {
+      score += 3;
+      console.log(`   ✅ Product codes detected (+3) - Score: ${score}`);
+    }
+
+    // 7. Malaysian postcode (WEAK indicator) - Score: 1
+    if (/\b\d{5}\b/.test(Body)) {
+      score += 1;
+      console.log(`   ✅ Malaysian postcode detected (+1) - Score: ${score}`);
+    }
+
+    // 8. Contains "Order" keyword (MEDIUM indicator) - Score: 2
+    if (/order|订单/i.test(Body)) {
+      score += 2;
+      console.log(`   ✅ Order keyword detected (+2) - Score: ${score}`);
+    }
+
+    // 9. Multi-line structured format (WEAK indicator) - Score: 1
+    const lines = Body.split("\n").filter(
+      (line: string) => line.trim().length > 0
+    );
+    if (lines.length >= 4) {
+      score += 1;
+      console.log(
+        `   ✅ Multi-line format (${lines.length} lines) (+1) - Score: ${score}`
+      );
+    }
+
+    // 10. Contains price/money indicators (WEAK indicator) - Score: 1
+    if (/rm\s*\d+|\d+\s*ringgit|price|harga/i.test(Body)) {
+      score += 1;
+      console.log(
+        `   ✅ Price/money indicator detected (+1) - Score: ${score}`
+      );
+    }
+
+    console.log(`🧠 Final Score: ${score}/20 (Need 5+ to qualify as order)`);
+    console.log(`🧠 === END SMART DETECTION ===`);
+
+    // Need at least 5 points to be considered an order
+    return score >= 5;
+  }
+
+  // Use the smart scoring instead of the old logic
+  const looksLikeOrder = smartOrderDetection(Body);
 
   console.log(`Looks Like Order: ${looksLikeOrder}`);
   console.log(`Queue Status:`, getQueueStatus());

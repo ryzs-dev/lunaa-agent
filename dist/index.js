@@ -5,6 +5,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
 const dotenv_1 = __importDefault(require("dotenv"));
+const cors_1 = __importDefault(require("cors"));
 const track_1 = __importDefault(require("./routes/track"));
 const path_1 = __importDefault(require("path"));
 const sync_1 = __importDefault(require("./routes/sync"));
@@ -23,20 +24,7 @@ const port = Number(process.env.PORT) || 3001;
 // IMPORTANT: Add these middleware to parse request bodies
 app.use(express_1.default.json({ limit: "10mb" })); // Parse JSON bodies
 app.use(express_1.default.urlencoded({ extended: true, limit: "10mb" })); // Parse URL-encoded bodies
-// Enable CORS for frontend
-// app.use((req, res, next) => {
-//   res.header("Access-Control-Allow-Origin", "*");
-//   res.header("Access-Control-Allow-Methods", "GET,PUT,POST,DELETE,OPTIONS");
-//   res.header(
-//     "Access-Control-Allow-Headers",
-//     "Content-Type, Authorization, Content-Length, X-Requested-With"
-//   );
-//   if (req.method === "OPTIONS") {
-//     res.sendStatus(200);
-//   } else {
-//     next();
-//   }
-// });
+app.use((0, cors_1.default)());
 // Mount the routes
 app.use("/api", track_1.default);
 app.use("/api", twilio_1.default);

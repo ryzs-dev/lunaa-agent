@@ -131,11 +131,7 @@ function getQueueStatus() {
 // ============================================================================
 whatsappRouter.post("/whatsapp/incoming", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     const { MessageSid, From, To, Body, ProfileName, WaId, GroupId, GroupName, Timestamp, } = req.body;
-    // Immediately respond to Twilio to avoid timeout
-    res.status(200).json({
-        success: true,
-        message: "Message received and queued for processing",
-    });
+    res.status(200).send("OK");
     // ============================================================================
     // ENHANCED DEBUG LOGGING
     // ============================================================================

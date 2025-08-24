@@ -188,11 +188,7 @@ whatsappRouter.post("/whatsapp/incoming", async (req, res) => {
     Timestamp,
   } = req.body;
 
-  // Immediately respond to Twilio to avoid timeout
-  res.status(200).json({
-    success: true,
-    message: "Message received and queued for processing",
-  });
+  res.status(200).send("OK");
 
   // ============================================================================
   // ENHANCED DEBUG LOGGING

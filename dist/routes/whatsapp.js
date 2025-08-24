@@ -131,7 +131,7 @@ function getQueueStatus() {
 // ============================================================================
 whatsappRouter.post("/whatsapp/incoming", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     const { MessageSid, From, To, Body, ProfileName, WaId, GroupId, GroupName, Timestamp, } = req.body;
-    res.status(200).send("OK");
+    res.status(200).end();
     // ============================================================================
     // ENHANCED DEBUG LOGGING
     // ============================================================================

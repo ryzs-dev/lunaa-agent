@@ -152,32 +152,21 @@ whatsappRouter.post("/whatsapp/incoming", (req, res) => __awaiter(void 0, void 0
     console.log(`Is Authorized: ${isAuthorized}`);
     console.log(`Current Authorized Numbers:`, (0, whatsappOrderBot_1.getAuthorizedPhoneNumbers)());
     // Enhanced order detection with date patterns
-    const looksLikeOrder = Body &&
-        // Existing patterns
-        (Body.includes("total：") ||
-            Body.includes("total:") ||
-            Body.includes("汇款人名字：") ||
-            Body.includes("Name:") ||
-            Body.includes("Contact:") ||
-            Body.includes("Address:") ||
-            /\d+[wfs]/.test(Body) ||
-            // Enhanced patterns
-            /Order from WhatsApp/i.test(Body) ||
-            /New Customer/i.test(Body) ||
-            /Repeat Customer/i.test(Body) ||
-            /\d+w\d*f\d*s/i.test(Body) ||
-            /\d+ml/i.test(Body) ||
-            /rm\s*\d+/i.test(Body) ||
-            /total.*?\d+/i.test(Body) ||
-            Body.toLowerCase().includes("order") ||
-            /\d+.*?rm\s*\d+/i.test(Body) ||
-            // Date patterns
-            /^\d{1,2}[\/\-]\d{1,2}[\/\-](\d{2}|\d{4})/.test(Body) ||
-            /\b\d{1,2}[\/\-]\d{1,2}[\/\-](\d{2}|\d{4})\b/.test(Body) ||
-            /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s+\d{1,2}/i.test(Body) ||
-            /\b\d{1,2}\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i.test(Body) ||
-            /\b\d{4}-\d{2}-\d{2}\b/.test(Body) ||
-            /order\s+date/i.test(Body));
+    function normalizeText(text) {
+        return text
+            .replace(/：/g, ":") // Chinese colon → regular colon
+            .replace(/。/g, ".") // Chinese period → regular period
+            .replace(/\s*:\s*/g, ": ") // Fix spacing around colons
+            .toLowerCase()
+            .trim();
+    }
+    const looksLikeOrder = (Body) => {
+        const normalized = normalizeText(Body);
+        return (normalized.includes("total: ") ||
+            normalized.includes("name: ") ||
+            normalized.includes("contact: ") ||
+            /\d+[wfs]/.test(normalized));
+    };
     console.log(`Looks Like Order: ${looksLikeOrder}`);
     console.log(`Queue Status:`, getQueueStatus());
     console.log(`=== END DEBUG ===`);

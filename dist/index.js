@@ -18,6 +18,7 @@ const trackingScheduler_1 = require("./scheduler/trackingScheduler");
 const products_1 = __importDefault(require("./routes/products"));
 const packages_1 = __importDefault(require("./routes/packages"));
 const meta_1 = __importDefault(require("./routes/meta"));
+const customers_1 = __importDefault(require("./routes/customers"));
 dotenv_1.default.config({ path: path_1.default.resolve(__dirname, "../.env.local") });
 const app = (0, express_1.default)();
 const port = Number(process.env.PORT) || 3001;
@@ -36,6 +37,7 @@ app.use("/api/import", import_1.default);
 app.use("/api/products", products_1.default);
 app.use("/api/packages", packages_1.default);
 app.use("/api/meta", meta_1.default);
+app.use("/api/customers", customers_1.default);
 app.get("/health", (req, res) => {
     res.json({
         status: "ok",

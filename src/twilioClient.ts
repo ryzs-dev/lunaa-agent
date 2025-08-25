@@ -291,7 +291,7 @@ export async function sendProductUsageGuide(to: string): Promise<string> {
         process.env.TWILIO_MESSAGING_SERVICE_SID ||
         "MG8d0a3d7bfbafbbc2b04603198f64b71e",
       to: formattedTo,
-      contentSid: "HX6d7932af93415f8ec32b715fa1e15ceb",
+      contentSid: "HX6aae60cb15691a90ea698348ede9c40b",
     };
 
     if (webhookUrl) {

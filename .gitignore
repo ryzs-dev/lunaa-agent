@@ -1,5 +1,5 @@
 # Dependencies
-node_modules/
+/node_modules
 
 # Environment variables
 .env
@@ -105,4 +105,4 @@ temp/
 # dist
 
 # Test Script
-test-script
+/test-script

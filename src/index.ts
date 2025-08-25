@@ -14,6 +14,7 @@ import { startDailyTrackingScheduler } from "./scheduler/trackingScheduler";
 import productsRouter from "./routes/products";
 import packagesRouter from "./routes/packages";
 import metaRouter from "./routes/meta";
+import customersRouter from "./routes/customers";
 
 dotenv.config({ path: path.resolve(__dirname, "../.env.local") });
 
@@ -37,6 +38,7 @@ app.use("/api/import", importRouter);
 app.use("/api/products", productsRouter);
 app.use("/api/packages", packagesRouter);
 app.use("/api/meta", metaRouter);
+app.use("/api/customers", customersRouter);
 
 app.get("/health", (req, res) => {
   res.json({

@@ -2,7 +2,7 @@
 import express from "express";
 import multer from "multer";
 import Papa from "papaparse";
-import { createOrderWithItems, supabase } from "../database/supabaseNormalized";
+import {  createSimpleOrder, supabase } from "../database/supabaseNormalized";
 
 const importRouter = express.Router();
 
@@ -259,7 +259,7 @@ function transformLegacyRow(row: LegacyCSVRow) {
     // Order data
     order: {
       order_date: parseDate(row["Order Date"]),
-      customer_name: (row.Name || row.fbname || "Unknown Customer")
+      customer_name: (row.Name || "Unknown Customer")
         .replace(/\r/g, "")
         .trim(),
       phone_number: parsePhoneNumber(row["phone number"]),
@@ -514,6 +514,7 @@ async function createSimpleOrderFromLegacy(orderData: any) {
         : undefined,
       order_date: order.order_date,
       total_amount: amounts.total_amount,
+      phone_number: order.phone_number,
       subtotal: amounts.subtotal,
       postage: amounts.postage,
       website_charges: amounts.website_charges,
@@ -607,6 +608,389 @@ importRouter.get("/template", (req, res) => {
     "attachment; filename=lunaa_import_template.csv"
   );
   res.send(template);
+});
+
+// POST /api/import/validate - Corrected validation for LUNAA CSV
+importRouter.post("/validate", upload.single('file'), async (req, res) => {
+  try {
+    console.log("Validation started");
+    
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        error: "No file uploaded"
+      });
+    }
+
+    const fileContent = req.file.buffer.toString('utf-8');
+    console.log("File size:", fileContent.length, "characters");
+    
+    const parseResult = Papa.parse(fileContent, {
+      header: true,
+      skipEmptyLines: true,
+      transformHeader: (header: string, index: number) => {
+        const cleanHeader = header.trim();
+        return cleanHeader || `column_${index}`;
+      },
+      transform: (value: string) => {
+        return value ? value.toString().trim() : '';
+      }
+    });
+
+    console.log("Parse errors:", parseResult.errors);
+    console.log("Parsed data length:", parseResult.data.length);
+
+    const data = parseResult.data as any[];
+    
+    if (!data || data.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: "No data found in CSV",
+        details: "File appears to be empty or invalid"
+      });
+    }
+
+    const headers = Object.keys(data[0] || {});
+    console.log("Detected headers:", headers);
+    
+    // CORRECTED: Exact field mapping for LUNAA CSV
+    const fieldMapping: { [key: string]: string } = {};
+    const mappingConfig = [
+      { dbField: 'customer_name', possibleNames: ['Name'] }, // FIXED: Use 'Name' not 'fbname'
+      { dbField: 'phone_number', possibleNames: ['phone number'] },
+      { dbField: 'fb_name', possibleNames: ['fbname'] }, // Facebook name separate
+      { dbField: 'order_date', possibleNames: ['Order Date'] },
+      { dbField: 'payment_method', possibleNames: ['Payment method'] },
+      { dbField: 'total_amount', possibleNames: ['TOTAL PAID (rm)'] },
+      { dbField: 'subtotal', possibleNames: ['package (rm)'] },
+      { dbField: 'postage', possibleNames: ['Postage (rm)'] },
+      { dbField: 'website_charges', possibleNames: ['Website/shopee charges (rm)'] },
+      { dbField: 'address', possibleNames: ['address'] },
+      { dbField: 'city', possibleNames: ['city'] },
+      { dbField: 'postcode', possibleNames: ['postcode'] },
+      { dbField: 'state', possibleNames: ['state'] },
+      { dbField: 'shipment_description', possibleNames: ['shipment description'] }, // ADDED
+      { dbField: 'tracking_number', possibleNames: ['tracking number'] },
+      { dbField: 'courier_company', possibleNames: ['courires company'] },
+      { dbField: 'customer_type', possibleNames: ['new/repeat'] }, // FIXED
+      { dbField: 'currency', possibleNames: ['currency'] },
+      { dbField: 'status', possibleNames: ['status'] },
+      { dbField: 'notes', possibleNames: ['remark'] },
+      { dbField: 'agent_name', possibleNames: ['Agent by / under'] }, // ADDED
+      { dbField: 'cash_sale_receipt', possibleNames: ['cash sale receipt'] } // ADDED
+    ];
+
+    // Exact matching first
+    mappingConfig.forEach(config => {
+      const foundHeader = headers.find(header => 
+        config.possibleNames.includes(header)
+      );
+      if (foundHeader) {
+        fieldMapping[config.dbField] = foundHeader;
+      }
+    });
+
+    console.log("Field mapping:", fieldMapping);
+
+    // Only require total_amount - be more lenient
+    const essentialFields = ['total_amount'];
+    const missingEssential = essentialFields.filter(field => !fieldMapping[field]);
+    
+    if (missingEssential.length > 0) {
+      return res.status(400).json({
+        success: false,
+        error: "Missing essential columns",
+        details: `Could not find columns for: ${missingEssential.join(', ')}`
+      });
+    }
+
+    // Generate preview with proper data handling
+    const preview = data.slice(0, 10).map((row, index) => {
+      const transformed: any = {};
+      
+      Object.entries(fieldMapping).forEach(([dbField, csvHeader]) => {
+        let value = row[csvHeader];
+        
+        switch (dbField) {
+          case 'customer_name':
+            // Use Name column as primary customer name
+            transformed[dbField] = value || row[fieldMapping['fb_name']] || `Customer_${index + 1}`;
+            break;
+          case 'customer_type':
+            // Handle new/repeat mapping
+            const typeValue = value?.toString().toLowerCase().trim();
+            transformed[dbField] = typeValue === 'repeat' || typeValue === 'r' ? 'repeat' : 'new';
+            break;
+          case 'total_amount':
+          case 'subtotal':
+          case 'postage':
+          case 'website_charges':
+            transformed[dbField] = parseFloat(value) || 0;
+            break;
+          case 'phone_number':
+            // Handle phone number formatting
+            if (value) {
+              let phone = value.toString().trim();
+              if (phone && !phone.startsWith('+')) {
+                phone = '+60' + phone.replace(/^0+/, ''); // Remove leading zeros and add +60
+              }
+              transformed[dbField] = phone;
+            } else {
+              transformed[dbField] = `+60${Math.floor(Math.random() * 100000000)}`; // Generate if missing
+            }
+            break;
+          case 'postcode':
+            transformed[dbField] = value ? Math.floor(parseFloat(value)).toString() : '';
+            break;
+          default:
+            transformed[dbField] = value || '';
+        }
+      });
+
+      return {
+        rowNumber: index + 2, // +2 because row 1 is headers
+        original: row,
+        transformed
+      };
+    });
+
+    // Count valid rows - only check for positive total_amount
+    const validRows = data.filter(row => {
+      const amountField = fieldMapping['total_amount'];
+      return row[amountField] && parseFloat(row[amountField]) > 0;
+    }).length;
+
+    const warnings = [];
+    if (validRows < data.length) {
+      warnings.push(`${data.length - validRows} rows will be skipped due to missing or zero total_amount`);
+    }
+
+    const validation = {
+      isValid: validRows > 0,
+      errors: validRows === 0 ? ['No valid rows found with positive total_amount'] : [],
+      warnings,
+      preview,
+      validRows,
+      totalRows: data.length
+    };
+
+    console.log(`Validation completed: ${validRows} valid rows out of ${data.length} total rows`);
+
+    const responseData = {
+      success: true,
+      data: {
+        validation,
+        summary: {
+          totalRows: data.length,
+          validRows,
+          mappedFields: Object.keys(fieldMapping).length
+        },
+        detectedHeaders: headers,
+        fieldMapping
+      }
+    };
+
+    res.json(responseData);
+
+  } catch (error) {
+    console.error("Validation error:", error);
+    res.status(500).json({
+      success: false,
+      error: "Validation failed",
+      details: error instanceof Error ? error.message : String(error)
+    });
+  }
+});
+
+// POST /api/import/execute - Corrected execution for LUNAA CSV
+importRouter.post("/execute", upload.single('file'), async (req, res) => {
+  try {
+    console.log("Import execution started");
+    
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        error: "No file uploaded"
+      });
+    }
+
+    const batchSize = parseInt(req.body.batchSize) || 50;
+    const fileContent = req.file.buffer.toString('utf-8');
+    
+    const parseResult = Papa.parse(fileContent, {
+      header: true,
+      skipEmptyLines: true,
+      transformHeader: (header: string, index: number) => {
+        const cleanHeader = header.trim();
+        return cleanHeader || `column_${index}`;
+      },
+      transform: (value: string) => {
+        return value ? value.toString().trim() : '';
+      }
+    });
+
+    const data = parseResult.data as any[];
+    console.log(`Processing ${data.length} rows`);
+    
+    let successfulInserts = 0;
+    let failedInserts = 0;
+    const errors: any[] = [];
+
+    const headers = Object.keys(data[0] || {});
+    
+    // Same field mapping as validation
+    const fieldMapping: { [key: string]: string } = {};
+    const mappingConfig = [
+      { dbField: 'customer_name', possibleNames: ['Name'] },
+      { dbField: 'phone_number', possibleNames: ['phone number'] },
+      { dbField: 'fb_name', possibleNames: ['fbname'] },
+      { dbField: 'order_date', possibleNames: ['Order Date'] },
+      { dbField: 'payment_method', possibleNames: ['Payment method'] },
+      { dbField: 'total_amount', possibleNames: ['TOTAL PAID (rm)'] },
+      { dbField: 'subtotal', possibleNames: ['package (rm)'] },
+      { dbField: 'postage', possibleNames: ['Postage (rm)'] },
+      { dbField: 'website_charges', possibleNames: ['Website/shopee charges (rm)'] },
+      { dbField: 'address', possibleNames: ['address'] },
+      { dbField: 'city', possibleNames: ['city'] },
+      { dbField: 'postcode', possibleNames: ['postcode'] },
+      { dbField: 'state', possibleNames: ['state'] },
+      { dbField: 'shipment_description', possibleNames: ['shipment description'] },
+      { dbField: 'tracking_number', possibleNames: ['tracking number'] },
+      { dbField: 'courier_company', possibleNames: ['courires company'] },
+      { dbField: 'customer_type', possibleNames: ['new/repeat'] },
+      { dbField: 'currency', possibleNames: ['currency'] },
+      { dbField: 'status', possibleNames: ['status'] },
+      { dbField: 'notes', possibleNames: ['remark'] },
+      { dbField: 'agent_name', possibleNames: ['Agent by / under'] },
+      { dbField: 'cash_sale_receipt', possibleNames: ['cash sale receipt'] }
+    ];
+
+    mappingConfig.forEach(config => {
+      const foundHeader = headers.find(header => 
+        config.possibleNames.includes(header)
+      );
+      if (foundHeader) {
+        fieldMapping[config.dbField] = foundHeader;
+      }
+    });
+
+    // Process each row
+    for (let i = 0; i < data.length; i++) {
+      const row = data[i];
+      const rowNumber = i + 2; // +2 for header row and 0-based index
+      
+      try {
+        // Get total amount first
+        const totalAmount = parseFloat(row[fieldMapping['total_amount']]) || 0;
+        
+        if (totalAmount <= 0) {
+          console.log(`Skipping row ${rowNumber}: invalid total_amount (${totalAmount})`);
+          continue;
+        }
+
+        // Get customer name from Name column (FIXED - same logic as validation)
+        const customerName = row[fieldMapping['customer_name']]?.trim() || 
+                            `Customer_${rowNumber}`; // Don't use fbname as fallback
+        const fbName = row[fieldMapping['fb_name']]?.trim() || '';
+        
+        // Handle phone number
+        let phoneNumber = row[fieldMapping['phone_number']]?.toString().trim();
+
+        phoneNumber = phoneNumber
+          ? (phoneNumber.startsWith('+')
+              ? phoneNumber
+              : '+60' + phoneNumber.replace(/^0+/, ''))
+          : null;
+
+
+        // Handle customer type
+        const customerTypeRaw = row[fieldMapping['customer_type']]?.toString().toLowerCase().trim();
+        const customerType = customerTypeRaw === 'repeat' || customerTypeRaw === 'r' ? 'repeat' : 'new';
+
+        // Parse date
+        let orderDate = new Date().toISOString();
+        if (row[fieldMapping['order_date']]) {
+          try {
+            const dateParts = row[fieldMapping['order_date']].split('/');
+            if (dateParts.length === 3) {
+              const day = parseInt(dateParts[0]);
+              const month = parseInt(dateParts[1]) - 1;
+              let year = parseInt(dateParts[2]);
+              if (year < 100) {
+                year += year > 50 ? 1900 : 2000;
+              }
+              orderDate = new Date(year, month, day).toISOString();
+            }
+          } catch (dateError) {
+            console.log(`Date parsing error for row ${rowNumber}, using current date`);
+          }
+        }
+
+        console.log(`Processing row ${rowNumber}: ${customerName}, ${phoneNumber}, ${customerType}, amount: ${totalAmount}`);
+
+        const orderData = {
+          customer_name: customerName,
+          phone_number: phoneNumber,
+          fb_name: row[fieldMapping['fb_name']] || '',
+          total_amount: totalAmount,
+          subtotal: parseFloat(row[fieldMapping['subtotal']]) || totalAmount,
+          postage: parseFloat(row[fieldMapping['postage']]) || 0,
+          website_charges: parseFloat(row[fieldMapping['website_charges']]) || 0,
+          payment_method: row[fieldMapping['payment_method']] || 'cash',
+          source: 'csv_import',
+          agent_name: row[fieldMapping['agent_name']] || 'CSV Import',
+          notes: row[fieldMapping['notes']] || 'Imported from LUNAA CSV',
+          address_line_1: row[fieldMapping['address']] || '',
+          city: row[fieldMapping['city']] || '',
+          postcode: row[fieldMapping['postcode']] ? Math.floor(parseFloat(row[fieldMapping['postcode']])).toString() : '',
+          state: row[fieldMapping['state']] || '',
+          shipment_description: row[fieldMapping['shipment_description']] || '',
+          tracking_number: row[fieldMapping['tracking_number']] || '',
+          courier_company: row[fieldMapping['courier_company']] || '',
+          customer_type: customerType as 'repeat' | 'new',
+          currency: row[fieldMapping['currency']] || 'MYR',
+          status: row[fieldMapping['status']] || 'completed'
+        };
+
+        await createSimpleOrder(orderData);
+        successfulInserts++;
+        console.log(`✅ Successfully imported row ${rowNumber}: ${customerName}`);
+
+      } catch (error) {
+        failedInserts++;
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        errors.push({
+          row: rowNumber,
+          customer: row[fieldMapping['customer_name']] || 'Unknown',
+          error: errorMessage
+        });
+        
+        console.error(`❌ Failed to import row ${rowNumber}:`, errorMessage);
+      }
+    }
+
+    console.log(`Import completed: ${successfulInserts} success, ${failedInserts} failed`);
+
+    res.json({
+      success: true,
+      data: {
+        success: true,
+        totalProcessed: data.length,
+        successfulInserts,
+        failedInserts,
+        duplicatesSkipped: 0,
+        errors: errors.slice(0, 20)
+      }
+    });
+
+  } catch (error) {
+    console.error("Import execution error:", error);
+    res.status(500).json({
+      success: false,
+      error: "Import failed",
+      details: error instanceof Error ? error.message : String(error)
+    });
+  }
 });
 
 export default importRouter;

@@ -160,52 +160,142 @@ export async function upsertCustomer(customerData: {
   customer_type?: "new" | "repeat";
 }): Promise<Customer> {
   try {
-    const { data, error } = await supabase
+    console.log(`Upserting customer: phone=${customerData.phone_number}, name=${customerData.customer_name}`);
+    
+    // First, try to find existing customer by phone number
+    const { data: existingCustomer, error: findError } = await supabase
       .from("customers")
-      .upsert(
-        {
-          ...customerData,
-          updated_at: new Date().toISOString(),
-        },
-        {
-          onConflict: "phone_number",
-          ignoreDuplicates: false,
-        }
-      )
-      .select()
+      .select("*")
+      .eq("phone_number", customerData.phone_number)
       .single();
 
-    if (error) {
-      console.error("❌ Failed to upsert customer:", error);
-      throw error;
+    if (findError && findError.code !== 'PGRST116') {
+      throw findError;
     }
 
-    return data;
+    if (existingCustomer) {
+      // Customer exists - update their information and increment order count
+      console.log(`Found existing customer: id=${existingCustomer.id}, current_orders=${existingCustomer.total_orders || 0}`);
+      
+      // Determine if this should be marked as repeat customer
+      const isRepeatCustomer = (existingCustomer.total_orders || 0) > 0;
+      
+      const { data: updatedCustomer, error: updateError } = await supabase
+        .from("customers")
+        .update({
+          // Update name if the new one is more complete
+          customer_name: customerData.customer_name.length > (existingCustomer.customer_name?.length || 0) 
+            ? customerData.customer_name 
+            : existingCustomer.customer_name,
+          // Update fb_name if provided
+          fb_name: customerData.fb_name || existingCustomer.fb_name,
+          // Update email if provided
+          email: customerData.email || existingCustomer.email,
+          // Set as repeat customer if they have previous orders
+          customer_type: isRepeatCustomer ? 'repeat' : customerData.customer_type || existingCustomer.customer_type,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("phone_number", customerData.phone_number)
+        .select()
+        .single();
+
+      if (updateError) throw updateError;
+      
+      console.log(`Updated existing customer: id=${updatedCustomer.id}, name=${updatedCustomer.customer_name}, type=${updatedCustomer.customer_type}`);
+      return updatedCustomer;
+      
+    } else {
+      // Customer doesn't exist - create new one
+      const { data: newCustomer, error: insertError } = await supabase
+        .from("customers")
+        .insert({
+          ...customerData,
+          customer_type: 'new', // First-time customers are always 'new'
+          total_orders: 0,
+          total_spent: 0,
+          average_order_value: 0,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .select()
+        .single();
+
+      if (insertError) throw insertError;
+      
+      console.log(`Created new customer: id=${newCustomer.id}, phone=${newCustomer.phone_number}`);
+      return newCustomer;
+    }
+
   } catch (error) {
-    console.error("❌ Error in upsertCustomer:", error);
+    console.error("Error in upsertCustomer:", error);
     throw error;
   }
 }
 
-export async function getCustomerByPhone(
-  phoneNumber: string
-): Promise<Customer | null> {
+export async function updateCustomerStats(customerId: number, orderAmount: number): Promise<void> {
   try {
-    const { data, error } = await supabase
+    // Get current customer stats
+    const { data: customer, error: fetchError } = await supabase
       .from("customers")
-      .select("*")
-      .eq("phone_number", phoneNumber)
-      .maybeSingle();
+      .select("total_orders, total_spent, average_order_value")
+      .eq("id", customerId)
+      .single();
 
-    if (error) {
-      console.error("❌ Failed to get customer:", error);
-      throw error;
+    if (fetchError) throw fetchError;
+
+    const currentOrders = (customer.total_orders || 0) + 1;
+    const currentSpent = (customer.total_spent || 0) + orderAmount;
+    const newAverageOrderValue = currentSpent / currentOrders;
+
+    // Update customer stats
+    const { error: updateError } = await supabase
+      .from("customers")
+      .update({
+        total_orders: currentOrders,
+        total_spent: currentSpent,
+        average_order_value: newAverageOrderValue,
+        last_order_date: new Date().toISOString(),
+        // Update customer type to repeat if they now have multiple orders
+        customer_type: currentOrders > 1 ? 'repeat' : 'new',
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", customerId);
+
+    if (updateError) throw updateError;
+
+    console.log(`Updated customer stats: id=${customerId}, orders=${currentOrders}, spent=${currentSpent.toFixed(2)}, avg=${newAverageOrderValue.toFixed(2)}`);
+    
+  } catch (error) {
+    console.error("Error updating customer stats:", error);
+    throw error;
+  }
+}
+
+export async function getCustomerByPhone(req: any, res: any) {
+  try {
+    const { phoneNumber } = req.params;
+    
+    if (!phoneNumber) {
+      return res.status(400).json({
+        success: false,
+        error: "Phone number is required"
+      });
     }
 
-    return data;
+    const result = await getCustomerOrderHistory(phoneNumber);
+    
+    res.json({
+      success: true,
+      data: result
+    });
+
   } catch (error) {
-    console.error("❌ Error in getCustomerByPhone:", error);
-    throw error;
+    console.error("Error in getCustomerByPhoneEndpoint:", error);
+    res.status(500).json({
+      success: false,
+      error: "Failed to get customer data",
+      details: error instanceof Error ? error.message : String(error)
+    });
   }
 }
 
@@ -564,46 +654,64 @@ export async function createSimpleOrder(orderData: {
   phone_number: string;
   fb_name?: string;
   total_amount: number;
+  subtotal?: number;
+  postage?: number;
+  website_charges?: number;
   payment_method?: string;
+  payment_status?: string;
   source?: string;
   agent_name?: string;
   notes?: string;
-  address?: string;
+  address_line_1?: string;
+  address_line_2?: string;
   city?: string;
   postcode?: string;
   state?: string;
+  country?: string;
+  currency?: string;
+  shipment_description?: string;
+  tracking_number?: string;
+  courier_company?: string;
+  customer_type?: 'new' | 'repeat';
 }): Promise<Order> {
   try {
+    console.log(`Creating order: phone=${orderData.phone_number}, amount=${orderData.total_amount}`);
+
+    // 1. Upsert customer (handles phone number deduplication)
     const customer = await upsertCustomer({
       customer_name: orderData.customer_name,
       phone_number: orderData.phone_number,
       fb_name: orderData.fb_name,
-      customer_type: "new",
+      customer_type: orderData.customer_type || 'new',
     });
 
+    // 2. Create address if provided
     let addressId: number | undefined;
-    if (orderData.address) {
+    if (orderData.address_line_1) {
       try {
         const address = await upsertAddress({
           customer_id: customer.id!,
-          address_line_1: orderData.address,
+          address_line_1: orderData.address_line_1,
+          address_line_2: orderData.address_line_2,
           city: orderData.city,
           postcode: orderData.postcode,
           state: orderData.state,
+          country: orderData.country || 'Malaysia',
           address_type: "shipping",
           is_default: true,
         });
         addressId = address.id;
+        console.log(`Created/updated address: id=${addressId}`);
       } catch (addressError) {
-        console.log(
-          "⚠️ Could not create address, continuing without it:",
-          addressError
-        );
+        console.log("Could not create address:", addressError);
       }
     }
 
-    const orderNumber = await generateOrderNumber();
-
+    // 3. Generate unique order number
+    const orderNumber = await generateUniqueOrderNumber();
+    console.log(`Generated order number: ${orderNumber}`);
+    
+    // 4. Create the order
     const { data: order, error: orderError } = await supabase
       .from("orders")
       .insert({
@@ -611,54 +719,117 @@ export async function createSimpleOrder(orderData: {
         customer_id: customer.id,
         shipping_address_id: addressId,
         total_amount: orderData.total_amount,
-        subtotal: orderData.total_amount,
-        payment_method: orderData.payment_method,
-        source: orderData.source || "whatsapp",
-        agent_name: orderData.agent_name,
+        subtotal: orderData.subtotal || orderData.total_amount,
+        postage: orderData.postage || 0,
+        website_charges: orderData.website_charges || 0,
+        payment_method: orderData.payment_method || 'cash',
+        payment_status: orderData.payment_status || 'pending',
+        source: orderData.source || "api",
+        agent_name: orderData.agent_name || 'System',
         notes: orderData.notes,
         status: "pending",
-        payment_status: "pending",
-        currency: "MYR",
+        currency: orderData.currency || "MYR",
         order_date: new Date().toISOString(),
+        shipment_description: orderData.shipment_description || '',
+        tracking_number: orderData.tracking_number || '',
+        courier_company: orderData.courier_company || '',
       })
       .select()
       .single();
 
-    if (orderError) {
-      console.error("❌ Failed to create order:", orderError);
-      throw orderError;
-    }
+    if (orderError) throw orderError;
 
+    // 5. Update customer statistics
+    await updateCustomerStats(customer.id!, orderData.total_amount);
+
+    console.log(`Order created successfully: id=${order.id}, customer_id=${customer.id}, phone=${orderData.phone_number}`);
     return order;
+    
   } catch (error) {
-    console.error("❌ Error in createSimpleOrder:", error);
+    console.error("Error in createSimpleOrder:", error);
     throw error;
   }
 }
 
-async function generateOrderNumber(): Promise<string> {
-  try {
-    const date = new Date();
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, "0");
 
-    const { count } = await supabase
-      .from("orders")
-      .select("*", { count: "exact", head: true })
-      .gte("created_at", `${year}-${month}-01`)
-      .lt(
-        "created_at",
-        `${year}-${month === "12" ? year + 1 : year}-${
-          month === "12" ? "01" : String(parseInt(month) + 1).padStart(2, "0")
-        }-01`
-      );
-
-    const sequence = String((count || 0) + 1).padStart(4, "0");
-    return `ORD-${year}${month}-${sequence}`;
-  } catch (error) {
-    console.error("❌ Error generating order number:", error);
-    return `ORD-${Date.now()}`;
+async function generateUniqueOrderNumber(maxRetries = 10): Promise<string> {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      const date = new Date();
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, "0");
+      const yearMonth = `${year}${month}`;
+      
+      // Add small delay between attempts to reduce collisions
+      if (attempt > 0) {
+        await new Promise(resolve => setTimeout(resolve, Math.random() * 100 + 50));
+      }
+      
+      // Get the highest existing order number for this month to ensure sequential numbering
+      const { data: latestOrder, error: queryError } = await supabase
+        .from("orders")
+        .select("order_number")
+        .like("order_number", `ORD-${yearMonth}-%`)
+        .order("order_number", { ascending: false })
+        .limit(1)
+        .single();
+      
+      if (queryError && queryError.code !== 'PGRST116') { // PGRST116 = no rows found
+        console.log(`Query error on attempt ${attempt + 1}:`, queryError);
+        continue; // Retry on query errors
+      }
+      
+      let nextSequence = 1;
+      
+      // Extract sequence from the latest order number
+      if (latestOrder?.order_number) {
+        const parts = latestOrder.order_number.split('-');
+        if (parts.length === 3 && parts[0] === 'ORD' && parts[1] === yearMonth) {
+          const lastSequence = parseInt(parts[2]);
+          if (!isNaN(lastSequence)) {
+            nextSequence = lastSequence + 1;
+          }
+        }
+      }
+      
+      // Add attempt offset to reduce collisions during concurrent requests
+      const finalSequence = nextSequence + attempt;
+      const sequence = String(finalSequence).padStart(4, "0");
+      const orderNumber = `ORD-${yearMonth}-${sequence}`;
+      
+      // Verify this number doesn't exist (double-check)
+      const { data: existing, error: checkError } = await supabase
+        .from("orders")
+        .select("order_number")
+        .eq("order_number", orderNumber)
+        .single();
+      
+      if (checkError && checkError.code === 'PGRST116') {
+        // No existing order found - this number is available
+        console.log(`Generated unique order number: ${orderNumber} (attempt ${attempt + 1})`);
+        return orderNumber;
+      } else if (checkError) {
+        console.log(`Check error on attempt ${attempt + 1}:`, checkError);
+        continue; // Retry on check errors
+      } else {
+        console.log(`Order number ${orderNumber} already exists, retrying (attempt ${attempt + 1})`);
+        continue; // Number exists, retry
+      }
+      
+    } catch (error) {
+      console.error(`Error generating order number (attempt ${attempt + 1}):`, error);
+      
+      if (attempt === maxRetries - 1) {
+        console.error("Max retries exceeded, falling back to timestamp");
+        break;
+      }
+    }
   }
+  
+  // Fallback to timestamp-based (this should rarely happen now)
+  const fallbackNumber = `ORD-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+  console.warn(`Using fallback order number: ${fallbackNumber}`);
+  return fallbackNumber;
 }
 
 export async function getRecentOrders(limit = 50): Promise<Order[]> {
@@ -816,6 +987,121 @@ export async function getDashboardStats(filters?: {
       totalCustomers: 0,
       ordersByStatus: {},
     };
+  }
+}
+
+export async function getCustomerOrderHistory(phoneNumber: string): Promise<{
+  customer: Customer | null;
+  orders: Order[];
+  stats: {
+    totalOrders: number;
+    totalSpent: number;
+    averageOrderValue: number;
+    firstOrderDate: string | null;
+    lastOrderDate: string | null;
+  }
+}> {
+  try {
+    // Get customer by phone number
+    const { data: customer, error: customerError } = await supabase
+      .from("customers")
+      .select("*")
+      .eq("phone_number", phoneNumber)
+      .single();
+
+    if (customerError && customerError.code !== 'PGRST116') {
+      throw customerError;
+    }
+
+    if (!customer) {
+      return {
+        customer: null,
+        orders: [],
+        stats: {
+          totalOrders: 0,
+          totalSpent: 0,
+          averageOrderValue: 0,
+          firstOrderDate: null,
+          lastOrderDate: null
+        }
+      };
+    }
+
+    // Get all orders for this customer
+    const { data: orders, error: ordersError } = await supabase
+      .from("orders")
+      .select("*")
+      .eq("customer_id", customer.id)
+      .order("order_date", { ascending: false });
+
+    if (ordersError) throw ordersError;
+
+    // Calculate stats
+    const totalOrders = orders?.length || 0;
+    const totalSpent = orders?.reduce((sum, order) => sum + (order.total_amount || 0), 0) || 0;
+    const averageOrderValue = totalOrders > 0 ? totalSpent / totalOrders : 0;
+    const firstOrderDate = totalOrders > 0 ? orders[orders.length - 1].order_date : null;
+    const lastOrderDate = totalOrders > 0 ? orders[0].order_date : null;
+
+    return {
+      customer,
+      orders: orders || [],
+      stats: {
+        totalOrders,
+        totalSpent,
+        averageOrderValue,
+        firstOrderDate,
+        lastOrderDate
+      }
+    };
+
+  } catch (error) {
+    console.error("Error getting customer order history:", error);
+    throw error;
+  }
+}
+
+export async function findDuplicateCustomers(): Promise<Array<{
+  phone_number: string;
+  customers: Customer[];
+  total_orders: number;
+}>> {
+  try {
+    // Find phone numbers with multiple customer records
+    const { data: duplicates, error } = await supabase
+      .from("customers")
+      .select(`
+        phone_number,
+        id,
+        customer_name,
+        total_orders,
+        created_at
+      `)
+      .order("phone_number");
+
+    if (error) throw error;
+
+    // Group by phone number
+    const phoneGroups = duplicates.reduce((acc, customer) => {
+      if (!acc[customer.phone_number]) {
+        acc[customer.phone_number] = [];
+      }
+      acc[customer.phone_number].push(customer);
+      return acc;
+    }, {} as Record<string, Customer[]>);
+
+    // Return only phone numbers with multiple customers
+    return Object.entries(phoneGroups)
+      .filter(([_, customers]) => customers.length > 1)
+      .map(([phone_number, customers]) => ({
+        phone_number,
+        customers,
+        total_orders: customers.reduce((sum, c) => sum + (c.total_orders || 0), 0)
+      }));
+
+  } catch (error) {
+    console.error("Error finding duplicate customers:", error);
+    throw error;
   }
 }
 
@@ -1066,54 +1352,4 @@ export async function testNormalizedConnection(): Promise<boolean> {
     console.error("❌ Normalized Supabase connection failed:", error);
     return false;
   }
-}
-
-// ============================================================================
-// LEGACY COMPATIBILITY FUNCTIONS
-// ============================================================================
-
-export async function insertOrder(orderData: any): Promise<number> {
-  try {
-    const order = await createSimpleOrder({
-      customer_name: orderData.customer_name || "Unknown",
-      phone_number: orderData.phone_number || orderData.phone,
-      fb_name: orderData.fb_name,
-      total_amount: orderData.total_paid || orderData.total_amount || 0,
-      payment_method: orderData.payment_method,
-      source: orderData.source || "legacy",
-      agent_name: orderData.agent_name,
-      notes: orderData.remark || orderData.notes,
-      address: orderData.address,
-      city: orderData.city,
-      postcode: orderData.postcode,
-      state: orderData.state,
-    });
-
-    return order.id!;
-  } catch (error) {
-    console.error("❌ Error in legacy insertOrder:", error);
-    throw error;
-  }
-}
-
-export async function bulkInsertOrders(orders: any[]): Promise<void> {
-  console.log(
-    `📦 Bulk inserting ${orders.length} orders using normalized schema...`
-  );
-  let successCount = 0;
-  let errorCount = 0;
-
-  for (const order of orders) {
-    try {
-      await insertOrder(order);
-      successCount++;
-    } catch (error) {
-      console.error(`❌ Failed to insert order:`, error);
-      errorCount++;
-    }
-  }
-
-  console.log(
-    `✅ Bulk insert completed: ${successCount} success, ${errorCount} errors`
-  );
 }

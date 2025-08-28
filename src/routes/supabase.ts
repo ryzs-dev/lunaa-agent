@@ -2,14 +2,12 @@ import express from "express";
 import { 
   createSimpleOrder,
   searchOrders,
-  getRecentOrders,
+
   getDashboardStats,
   supabase,
-  insertMessage,
-  upsertConversation,
-  bulkInsertOrders,
-  Order
+
 } from "../database/supabaseNormalized"; // ✅ FIXED: Using normalized schema
+import { bulkInsertOrders } from "../database/supabaseOrders";
 
 const supabaseRouter = express.Router();
 
@@ -79,32 +77,78 @@ supabaseRouter.post("/orders", async (req, res) => {
       });
     }
 
-    // Use createSimpleOrder from normalized schema
+    // Validate required address fields if address is provided
+    if (orderData.address_line_1 && !orderData.city) {
+      return res.status(400).json({
+        success: false,
+        error: "City is required when address is provided"
+      });
+    }
+
+    // Use createSimpleOrder from normalized schema with updated fields
     const order = await createSimpleOrder({
       customer_name: orderData.customer_name || 'Unknown',
       phone_number: orderData.phone_number,
       fb_name: orderData.fb_name,
-      total_amount: orderData.total_amount || 0, // ✅ FIXED: total_amount not total_paid
-      payment_method: orderData.payment_method,
+      total_amount: orderData.total_amount || 0,
+      payment_method: orderData.payment_method || 'cash',
+      payment_status: orderData.payment_status || 'pending',
       source: orderData.source || 'api',
-      agent_name: orderData.agent_name,
+      agent_name: orderData.agent_name || 'System',
       notes: orderData.notes,
-      address: orderData.address,
+      // Updated address fields to match new schema
+      address_line_1: orderData.address_line_1 || orderData.address, // Fallback for old API
+      address_line_2: orderData.address_line_2,
       city: orderData.city,
       postcode: orderData.postcode,
-      state: orderData.state
+      state: orderData.state,
+      country: orderData.country || 'Malaysia',
+      // Add additional order fields
+      subtotal: orderData.subtotal || orderData.total_amount || 0,
+      postage: orderData.postage || 0,
+      website_charges: orderData.website_charges || 0,
+      currency: orderData.currency || 'MYR'
     });
     
     res.json({
       success: true,
-      data: { id: order.id },
-      message: "Order inserted successfully"
+      data: { 
+        id: order.id,
+        order_number: order.order_number,
+        customer_id: order.customer_id,
+        total_amount: order.total_amount
+      },
+      message: "Order created successfully"
     });
   } catch (error) {
-    console.error("❌ Failed to insert order:", error);
+    console.error("❌ Failed to create order:", error);
+    
+    // Handle specific database errors
+    if (error instanceof Error) {
+      // Handle duplicate order number error specifically
+      if (error.message.includes('duplicate key value violates unique constraint "orders_order_number_key"')) {
+        return res.status(409).json({
+          success: false,
+          error: "Order number conflict",
+          details: "A duplicate order number was generated. Please try again.",
+          code: "DUPLICATE_ORDER_NUMBER"
+        });
+      }
+      
+      // Handle other constraint violations
+      if (error.message.includes('violates') && error.message.includes('constraint')) {
+        return res.status(400).json({
+          success: false,
+          error: "Data validation error",
+          details: error.message,
+          code: "CONSTRAINT_VIOLATION"
+        });
+      }
+    }
+    
     res.status(500).json({
       success: false,
-      error: "Failed to insert order",
+      error: "Failed to create order",
       details: error instanceof Error ? error.message : String(error)
     });
   }
@@ -417,56 +461,6 @@ supabaseRouter.delete("/orders/:id", async (req, res) => {
   }
 });
 
-// POST /api/supabase/sync/august - Special endpoint for August data migration
-supabaseRouter.post("/sync/august", async (req, res) => {
-  try {
-    const { data: augustData } = req.body;
-
-    if (!Array.isArray(augustData)) {
-      return res.status(400).json({
-        success: false,
-        error: "August data must be an array"
-      });
-    }
-
-    console.log(`📅 Starting August data sync for ${augustData.length} records...`);
-
-    // ✅ FIXED: Transform data for normalized schema
-    const transformedOrders = augustData.map((row: any) => ({
-      customer_name: row.customer_name || row.name || row.fb_name || 'Unknown',
-      phone_number: row.phone_number || row.phone,
-      fb_name: row.fb_name,
-      total_amount: parseFloat(row.total_paid || row.total_amount || row.total || 0), // ✅ FIXED
-      payment_method: row.payment_method || row.paymentMethod,
-      source: 'august_migration',
-      agent_name: row.agent_name || row.agent,
-      notes: row.remark || row.notes,
-      address: row.address,
-      city: row.city,
-      postcode: row.postcode,
-      state: row.state
-    }));
-
-    // Use normalized schema bulk insert
-    await bulkInsertOrders(transformedOrders);
-
-    res.json({
-      success: true,
-      data: {
-        processed: augustData.length,
-        inserted: transformedOrders.length
-      },
-      message: `Successfully synced ${transformedOrders.length} August orders`
-    });
-  } catch (error) {
-    console.error("❌ Failed to sync August data:", error);
-    res.status(500).json({
-      success: false,
-      error: "Failed to sync August data",
-      details: error instanceof Error ? error.message : String(error)
-    });
-  }
-});
 
 // GET /api/supabase/health - Health check for Supabase connection
 supabaseRouter.get("/health", async (req, res) => {

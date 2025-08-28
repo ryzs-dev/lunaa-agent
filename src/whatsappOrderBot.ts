@@ -41,20 +41,57 @@ export interface MessageContext {
   timestamp?: string;
 }
 
+interface AgentInfo {
+  phoneNumber: string;
+  name: string;
+}
+
 // ============================================================================
 // CONFIGURATION
 // ============================================================================
 
-const AUTHORIZED_PHONE_NUMBERS = process.env.AUTHORIZED_PHONE_NUMBERS
-  ? process.env.AUTHORIZED_PHONE_NUMBERS.split(",").map((num) => num.trim())
-  : [
-      "601126470411",
-      "60174941361",
-      "60164525013",
-      "60127909921",
-      "60164561361",
-      "601158699901",
-    ];
+
+
+const AUTHORIZED_AGENTS: AgentInfo[] = [
+  {
+    phoneNumber: "601126470411",
+    name: "Sales - 0411",
+  },
+  {
+    phoneNumber: "60174941361", 
+    name: "Sales - 1361",
+  },
+  {
+    phoneNumber: "60164525013",
+    name: "Sales - 5013",
+
+  },
+  {
+    phoneNumber: "60127909921",
+    name: "Sales - 9921",
+
+  },
+  {
+    phoneNumber: "60164561361",
+    name: "Sales - 61361",
+
+  },
+  {
+    phoneNumber: "601158699901",
+    name: "Sales - 9901",
+  }
+];
+
+const PHONE_TO_AGENT = new Map<string, AgentInfo>();
+const AUTHORIZED_PHONE_NUMBERS: string[] = [];
+
+// Initialize maps
+AUTHORIZED_AGENTS.forEach(agent => {
+  const normalizedPhone = PhoneNumberUtil.normalize(agent.phoneNumber);
+  PHONE_TO_AGENT.set(normalizedPhone, agent);
+  AUTHORIZED_PHONE_NUMBERS.push(normalizedPhone);
+});
+
 
 // Initialize Google Sheets API
 const credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON!);
@@ -156,6 +193,19 @@ export class PhoneNumberUtil {
       }
       return false;
     });
+  }
+
+  // ✅ NEW: Get agent info from phone number
+  static getAgentInfo(phoneNumber: string): AgentInfo | null {
+    if (!phoneNumber) return null;
+    const normalized = this.normalize(phoneNumber);
+    return PHONE_TO_AGENT.get(normalized) || null;
+  }
+
+  // ✅ NEW: Get agent name for display
+  static getAgentName(phoneNumber: string): string {
+    const agent = this.getAgentInfo(phoneNumber);
+    return agent ? agent.name : `Agent ${phoneNumber}`;
   }
 }
 
@@ -396,6 +446,7 @@ class OrderExtractor {
       return null;
     }
 
+
     // Determine format and extract
     if (this.isCondensedFormat(messageBody)) {
       return this.extractCondensed(messageBody, context);
@@ -621,6 +672,7 @@ class OrderExtractor {
     console.log(`   Product Code: ${data.productCode}`);
     console.log(`   Total Paid: ${data.totalPaid}`);
     console.log(`   Payment Method: ${data.paymentMethod}`);
+
 
     // Validation and final processing
     if (!data.phoneNumber) {

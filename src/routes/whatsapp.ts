@@ -95,6 +95,8 @@ async function processOrderQueue(): Promise<void> {
         continue;
       }
 
+      console.log(`🧾 Extracted Order Data:`, orderData);
+
       // ✨ DUAL SAVE: Google Sheets + Supabase
       console.log(`📊 Processing order ${queuedOrder.id} to both Google Sheets and Supabase...`);
       
@@ -223,32 +225,41 @@ function getQueueStatus() {
     })),
   };
 }
+
 /**
  * Convert extracted order data to CreateOrderInput format for normalized schema
  */
 function transformOrderForNormalizedSupabase(orderData: any): CreateOrderInput {
+  // Helper function to get product quantity by name
+  const getProductQuantity = (productName: string): number => {
+    if (!orderData.products || !Array.isArray(orderData.products)) return 0;
+    
+    const product = orderData.products.find((p: any) => p.name === productName);
+    return product ? product.quantity : 0;
+  };
+
   return {
-    // Customer information
-    customer_name: orderData.name,
-    phone_number: orderData.phoneNumber,
-    fb_name: orderData.fbName,
+    // Customer information (FIXED: use correct field names)
+    customer_name: orderData.customerName, // ✅ FIXED: was orderData.name
+    phone_number: orderData.phoneNumber,   // ✅ FIXED: already correct
+    fb_name: orderData.fbName,            // Add fb_name if available
     customer_type: orderData.isRepeatCustomer ? 'repeat' : 'new',
     
     // Order details
     order_date: orderData.orderDate || new Date().toISOString().split('T')[0],
-    payment_method: orderData.paymentMethod,
+    payment_method: orderData.paymentMethod || "",
     
-    // Product quantities
-    wash_qty: orderData.products?.wash || 0,
-    femlift_30ml_qty: orderData.products?.femlift30 || 0,
-    femlift_10ml_qty: orderData.products?.femlift10 || 0,
-    wash_30ml_qty: orderData.products?.wash30 || 0,
-    spray_qty: orderData.products?.spray || 0,
+    // Product quantities (FIXED: map from products array)
+    wash_qty: getProductQuantity('wash'),
+    femlift_30ml_qty: getProductQuantity('femlift_30ml'),
+    femlift_10ml_qty: getProductQuantity('femlift_10ml'),
+    wash_30ml_qty: getProductQuantity('wash_30ml'),
+    spray_qty: getProductQuantity('spray'),
     
-    // Pricing
+    // Pricing (FIXED: use correct field names)
     package_price: orderData.packagePrice || 0,
     postage: orderData.postage || 0,
-    total_amount: orderData.totalAmount || 0,
+    total_amount: orderData.totalPaid || orderData.totalAmount || 0, // ✅ FIXED: was totalAmount
     
     // Address information
     address: orderData.address,

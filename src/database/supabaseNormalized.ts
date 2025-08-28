@@ -148,9 +148,141 @@ export interface Conversation {
   updated_at?: string;
 }
 
+// Input interface for creating orders from WhatsApp/Google Sheets data
+export interface CreateOrderInput {
+  // Customer data
+  customer_name: string;
+  phone_number?: string;
+  fb_name?: string;
+  customer_type?: "new" | "repeat";
+  
+  // Order data
+  order_date?: string;
+  payment_method?: string;
+  
+  // Product quantities (from your CSV structure)
+  wash_qty?: number;
+  femlift_30ml_qty?: number;
+  femlift_10ml_qty?: number;
+  wash_30ml_qty?: number;
+  spray_qty?: number;
+  
+  // Pricing
+  package_price?: number;
+  postage?: number;
+  total_paid?: number; // This maps to total_amount
+  total_amount?: number;
+  
+  // Address data
+  address?: string;
+  city?: string;
+  postcode?: string;
+  state?: string;
+  
+  // Fulfillment
+  tracking_number?: string;
+  courier_company?: string;
+  shipment_description?: string;
+  
+  // Metadata
+  remark?: string;
+  agent_name?: string;
+  currency?: string;
+  status?: string;
+  source?: string;
+  
+  // Import metadata
+  import_source_row?: number;
+  import_source_sheet?: string;
+}
+
 // ============================================================================
 // CUSTOMER FUNCTIONS
 // ============================================================================
+
+/**
+ * Get or create customer by phone number
+ */
+export async function getOrCreateCustomer(customerData: {
+  customer_name: string;
+  phone_number?: string;
+  fb_name?: string;
+  customer_type?: "new" | "repeat";
+}): Promise<Customer> {
+  try {
+    let existingCustomer = null;
+    
+    // Try to find existing customer by phone number first
+    if (customerData.phone_number) {
+      const { data } = await supabase
+        .from("customers")
+        .select("*")
+        .eq("phone_number", customerData.phone_number)
+        .single();
+        
+      existingCustomer = data;
+    }
+    
+    // If no phone number match, try by name and fb_name
+    if (!existingCustomer && customerData.fb_name) {
+      const { data } = await supabase
+        .from("customers")
+        .select("*")
+        .eq("customer_name", customerData.customer_name)
+        .eq("fb_name", customerData.fb_name)
+        .single();
+        
+      existingCustomer = data;
+    }
+    
+    if (existingCustomer) {
+      console.log(`✅ Found existing customer: ${existingCustomer.customer_name} (ID: ${existingCustomer.id})`);
+      
+      // Update customer type if this is a repeat order
+      if (customerData.customer_type === "repeat" && existingCustomer.customer_type === "new") {
+        const { data: updatedCustomer } = await supabase
+          .from("customers")
+          .update({ 
+            customer_type: "repeat",
+            updated_at: new Date().toISOString()
+          })
+          .eq("id", existingCustomer.id)
+          .select("*")
+          .single();
+          
+        return updatedCustomer || existingCustomer;
+      }
+      
+      return existingCustomer;
+    }
+
+    // Create new customer
+    console.log(`📝 Creating new customer: ${customerData.customer_name}`);
+    const { data: newCustomer, error } = await supabase
+      .from("customers")
+      .insert({
+        customer_name: customerData.customer_name,
+        phone_number: customerData.phone_number,
+        fb_name: customerData.fb_name,
+        customer_type: customerData.customer_type || "new",
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .select("*")
+      .single();
+
+    if (error) {
+      console.error("❌ Failed to create customer:", error);
+      throw error;
+    }
+
+    console.log(`✅ Created new customer: ${newCustomer.customer_name} (ID: ${newCustomer.id})`);
+    return newCustomer;
+  } catch (error) {
+    console.error("❌ Error in getOrCreateCustomer:", error);
+    throw error;
+  }
+}
 
 export async function upsertCustomer(customerData: {
   customer_name: string;
@@ -329,6 +461,53 @@ export async function getCustomerWithAddresses(
 // ============================================================================
 // ADDRESS FUNCTIONS
 // ============================================================================
+
+/**
+ * Create address for customer
+ */
+export async function createAddress(addressData: {
+  customer_id: number;
+  address?: string;
+  city?: string;
+  postcode?: string;
+  state?: string;
+}): Promise<Address | null> {
+  try {
+    if (!addressData.address) {
+      return null; // No address data provided
+    }
+
+    console.log(`📝 Creating address for customer ${addressData.customer_id}`);
+    
+    const { data: newAddress, error } = await supabase
+      .from("addresses")
+      .insert({
+        customer_id: addressData.customer_id,
+        address_line_1: addressData.address,
+        city: addressData.city,
+        postcode: addressData.postcode,
+        state: addressData.state,
+        country: "Malaysia", // Default for your business
+        address_type: "shipping",
+        is_default: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .select("*")
+      .single();
+
+    if (error) {
+      console.error("❌ Failed to create address:", error);
+      throw error;
+    }
+
+    console.log(`✅ Created address (ID: ${newAddress.id})`);
+    return newAddress;
+  } catch (error) {
+    console.error("❌ Error in createAddress:", error);
+    throw error;
+  }
+}
 
 export async function upsertAddress(
   addressData: Omit<Address, "id" | "created_at" | "updated_at">
@@ -649,6 +828,158 @@ export async function deletePackage(
 // ORDER FUNCTIONS
 // ============================================================================
 
+/**
+ * Create complete order with customer and address (MAIN FUNCTION)
+ */
+export async function createCompleteOrder(orderInput: CreateOrderInput): Promise<{
+  customer: Customer;
+  address: Address | null;
+  order: Order;
+}> {
+  try {
+    console.log(`🔄 Creating complete order for: ${orderInput.customer_name}`);
+
+    // 1. Get or create customer
+    const customer = await getOrCreateCustomer({
+      customer_name: orderInput.customer_name,
+      phone_number: orderInput.phone_number,
+      fb_name: orderInput.fb_name,
+      customer_type: orderInput.customer_type,
+    });
+
+    // 2. Create address if provided
+    const address = await createAddress({
+      customer_id: customer.id!,
+      address: orderInput.address,
+      city: orderInput.city,
+      postcode: orderInput.postcode,
+      state: orderInput.state,
+    });
+
+    // 3. Calculate totals if needed
+    let totalAmount = orderInput.total_amount || orderInput.total_paid || 0;
+    
+    // If no total provided, calculate from package_price + postage
+    if (!totalAmount && orderInput.package_price) {
+      totalAmount = (orderInput.package_price || 0) + (orderInput.postage || 0);
+    }
+
+    // 4. Create the order
+    const orderData: Partial<Order> = {
+      customer_id: customer.id!,
+      shipping_address_id: address?.id,
+      order_date: orderInput.order_date || new Date().toISOString().split('T')[0],
+      status: (orderInput.status as Order['status']) || "pending",
+      total_amount: totalAmount,
+      subtotal: orderInput.package_price,
+      postage: orderInput.postage,
+      currency: orderInput.currency || "MYR",
+      payment_method: orderInput.payment_method,
+      payment_status: "paid", // Assume paid for historical imports
+      tracking_number: orderInput.tracking_number,
+      courier_company: orderInput.courier_company,
+      shipment_description: orderInput.shipment_description,
+      source: orderInput.source || "import",
+      agent_name: orderInput.agent_name,
+      notes: orderInput.remark,
+      remark: orderInput.remark,
+      created_at: orderInput.order_date ? `${orderInput.order_date}T00:00:00.000Z` : new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    console.log(`📝 Creating order for customer ${customer.id} with total ${totalAmount}`);
+    
+    const { data: newOrder, error } = await supabase
+      .from("orders")
+      .insert(orderData)
+      .select("*")
+      .single();
+
+    if (error) {
+      console.error("❌ Failed to create order:", error);
+      throw error;
+    }
+
+    console.log(`✅ Created order (ID: ${newOrder.id}) for ${customer.customer_name}`);
+
+    return {
+      customer,
+      address,
+      order: newOrder,
+    };
+  } catch (error) {
+    console.error("❌ Error in createCompleteOrder:", error);
+    throw error;
+  }
+}
+
+/**
+ * Get order by tracking number
+ */
+export async function getOrderByTrackingNumber(trackingNumber: string): Promise<Order | null> {
+  try {
+    const { data, error } = await supabase
+      .from("orders")
+      .select("*")
+      .eq("tracking_number", trackingNumber)
+      .single();
+
+    if (error && error.code !== "PGRST116") {
+      console.error("❌ Failed to get order by tracking:", error);
+      throw error;
+    }
+
+    return data || null;
+  } catch (error) {
+    console.error("❌ Error in getOrderByTrackingNumber:", error);
+    return null;
+  }
+}
+
+/**
+ * Bulk insert orders (for importing from Google Sheets)
+ */
+export async function bulkInsertNormalizedOrders(orders: CreateOrderInput[]): Promise<{
+  successCount: number;
+  errorCount: number;
+  errors: Array<{ order: CreateOrderInput; error: any }>;
+}> {
+  let successCount = 0;
+  let errorCount = 0;
+  const errors: Array<{ order: CreateOrderInput; error: any }> = [];
+
+  console.log(`📦 Starting bulk insert of ${orders.length} orders...`);
+
+  for (const orderInput of orders) {
+    try {
+      // Check for duplicates if tracking number exists
+      if (orderInput.tracking_number) {
+        const existing = await getOrderByTrackingNumber(orderInput.tracking_number);
+        if (existing) {
+          console.log(`⏭️ Skipping duplicate order with tracking: ${orderInput.tracking_number}`);
+          continue;
+        }
+      }
+
+      await createCompleteOrder(orderInput);
+      successCount++;
+
+      // Log progress every 10 orders
+      if (successCount % 10 === 0) {
+        console.log(`📊 Progress: ${successCount}/${orders.length} orders processed`);
+      }
+
+    } catch (error) {
+      console.error(`❌ Failed to create order for ${orderInput.customer_name}:`, error);
+      errorCount++;
+      errors.push({ order: orderInput, error });
+    }
+  }
+
+  console.log(`✅ Bulk insert completed: ${successCount} success, ${errorCount} errors`);
+  return { successCount, errorCount, errors };
+}
+
 export async function createSimpleOrder(orderData: {
   customer_name: string;
   phone_number: string;
@@ -932,6 +1263,72 @@ export async function searchOrders(query: {
     return { orders: [], totalCount: 0 };
   }
 }
+
+// export async function searchOrders(searchParams: {
+//   searchTerm?: string;
+//   phone?: string;
+//   trackingNumber?: string;
+//   limit?: number;
+// }): Promise<{ orders: Order[]; totalCount: number }> {
+//   try {
+//     let query = supabase
+//       .from("orders")
+//       .select(`
+//         *,
+//         customers (
+//           id,
+//           customer_name,
+//           phone_number,
+//           fb_name,
+//           email
+//         ),
+//         addresses (
+//           id,
+//           address_line_1,
+//           city,
+//           postcode,
+//           state
+//         )
+//       `)
+//       .order("created_at", { ascending: false });
+
+//     if (searchParams.searchTerm) {
+//       // Search across multiple fields
+//       query = query.or(`
+//         tracking_number.ilike.%${searchParams.searchTerm}%,
+//         customers.customer_name.ilike.%${searchParams.searchTerm}%,
+//         customers.phone_number.ilike.%${searchParams.searchTerm}%
+//       `);
+//     }
+
+//     if (searchParams.phone) {
+//       query = query.eq("customers.phone_number", searchParams.phone);
+//     }
+
+//     if (searchParams.trackingNumber) {
+//       query = query.eq("tracking_number", searchParams.trackingNumber);
+//     }
+
+//     if (searchParams.limit) {
+//       query = query.limit(searchParams.limit);
+//     }
+
+//     const { data, error, count } = await query;
+
+//     if (error) {
+//       console.error("❌ Failed to search orders:", error);
+//       throw error;
+//     }
+
+//     return {
+//       orders: data || [],
+//       totalCount: count || 0,
+//     };
+//   } catch (error) {
+//     console.error("❌ Error in searchOrders:", error);
+//     throw error;
+//   }
+// }
 
 export async function getDashboardStats(filters?: {
   startDate?: string;
@@ -1353,3 +1750,68 @@ export async function testNormalizedConnection(): Promise<boolean> {
     return false;
   }
 }
+
+// ============================================================================
+// QUERY FUNCTIONS
+// ============================================================================
+
+/**
+ * Get orders with joined customer and address data
+ */
+export async function getOrdersWithDetails(options: {
+  limit?: number;
+  offset?: number;
+  status?: string;
+} = {}): Promise<Order[]> {
+  try {
+    let query = supabase
+      .from("orders")
+      .select(`
+        *,
+        customers (
+          id,
+          customer_name,
+          phone_number,
+          fb_name,
+          email,
+          customer_type
+        ),
+        addresses (
+          id,
+          address_line_1,
+          address_line_2,
+          city,
+          postcode,
+          state,
+          country
+        )
+      `)
+      .order("created_at", { ascending: false });
+
+    if (options.limit) {
+      query = query.limit(options.limit);
+    }
+
+    if (options.offset) {
+      query = query.range(options.offset, options.offset + (options.limit || 50) - 1);
+    }
+
+    if (options.status) {
+      query = query.eq("status", options.status);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      console.error("❌ Failed to get orders:", error);
+      throw error;
+    }
+
+    return data || [];
+  } catch (error) {
+    console.error("❌ Error in getOrdersWithDetails:", error);
+    throw error;
+  }
+}
+
+

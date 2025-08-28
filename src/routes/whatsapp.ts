@@ -1,12 +1,13 @@
 // src/routes/whatsapp.ts - Updated with Order Queue
 import express from "express";
-import { updateMessageStatusInDB } from "../database/supabaseOrders";
+import { insertOrder, updateMessageStatusInDB } from "../database/supabaseOrders";
 import {
   appendOrderToSheet,
   extractOrderFromMessage,
   getAuthorizedPhoneNumbers,
 } from "../whatsappOrderBot";
 import { PhoneNumberUtil } from "../whatsappOrderBot"; // Make sure this is exported
+import { createCompleteOrder, CreateOrderInput } from "../database/supabaseNormalized";
 
 const whatsappRouter = express.Router();
 
@@ -21,6 +22,7 @@ interface QueuedOrder {
   timestamp: number;
   retryCount: number;
 }
+
 
 const orderQueue: QueuedOrder[] = [];
 let isProcessing = false;
@@ -56,7 +58,7 @@ function addToQueue(messageData: any, context: any): string {
 }
 
 /**
- * Process orders in queue sequentially
+ * Process orders in queue sequentially (MODIFIED)
  */
 async function processOrderQueue(): Promise<void> {
   if (isProcessing) {
@@ -93,16 +95,53 @@ async function processOrderQueue(): Promise<void> {
         continue;
       }
 
-      // Process the order
-      console.log(`📊 Inserting order ${queuedOrder.id} into Google Sheets...`);
-      const result = await appendOrderToSheet(orderData);
+      // ✨ DUAL SAVE: Google Sheets + Supabase
+      console.log(`📊 Processing order ${queuedOrder.id} to both Google Sheets and Supabase...`);
+      
+      let sheetsSuccess = false;
+      let supabaseSuccess = false;
+      let sheetsResult: any = null;
+      let supabaseResult: any = null;
 
-      if (result.success) {
-        console.log(
-          `✅ Order ${queuedOrder.id} processed successfully at row ${result.rowIndex}`
-        );
+      // 1. Save to Google Sheets (existing functionality)
+      try {
+        console.log(`📝 Saving to Google Sheets...`);
+        sheetsResult = await appendOrderToSheet(orderData);
+        sheetsSuccess = sheetsResult.success;
+        
+        if (sheetsSuccess) {
+          console.log(`✅ Google Sheets: Order saved successfully at row ${sheetsResult.rowIndex}`);
+        } else {
+          console.log(`❌ Google Sheets: Failed to save order`);
+        }
+      } catch (sheetsError) {
+        console.error(`❌ Google Sheets error for ${queuedOrder.id}:`, sheetsError);
+        sheetsSuccess = false;
+      }
 
-        // Log success to database if you have message tracking
+      // 2. Save to Supabase (NEW functionality with normalized schema)
+      try {
+        console.log(`💾 Saving to Supabase normalized database...`);
+        const supabaseOrderInput = transformOrderForNormalizedSupabase(orderData);
+        const result = await createCompleteOrder(supabaseOrderInput);
+        supabaseSuccess = true;
+        
+        console.log(`✅ Supabase: Order saved successfully (Order ID: ${result.order.id}, Customer ID: ${result.customer.id})`);
+        supabaseResult = result;
+      } catch (supabaseError) {
+        console.error(`❌ Supabase error for ${queuedOrder.id}:`, supabaseError);
+        supabaseSuccess = false;
+      }
+
+      // Determine overall success
+      const overallSuccess = sheetsSuccess || supabaseSuccess;
+      
+      if (overallSuccess) {
+        console.log(`✅ Order ${queuedOrder.id} processed successfully:`);
+        console.log(`  📝 Google Sheets: ${sheetsSuccess ? '✅' : '❌'}`);
+        console.log(`  💾 Supabase: ${supabaseSuccess ? '✅' : '❌'}`);
+        
+        // Log success to database message tracking
         try {
           await updateMessageStatusInDB(
             queuedOrder.messageData.MessageSid,
@@ -118,8 +157,9 @@ async function processOrderQueue(): Promise<void> {
           );
         }
       } else {
-        throw new Error("Failed to append to sheet");
+        throw new Error(`Both Google Sheets and Supabase failed: Sheets(${sheetsResult?.error || 'unknown'}), Supabase(${supabaseResult?.error || 'unknown'})`);
       }
+
     } catch (error) {
       console.error(`❌ Failed to process order ${queuedOrder.id}:`, error);
 
@@ -137,7 +177,20 @@ async function processOrderQueue(): Promise<void> {
         console.error(
           `💀 Order ${queuedOrder.id} failed after ${MAX_RETRIES} attempts`
         );
-        // Could save to failed orders table here
+        
+        // Save failed order to database for manual review using normalized schema
+        try {
+          const failedOrderInput = transformOrderForNormalizedSupabase(
+            extractOrderFromMessage(queuedOrder.messageData.Body, queuedOrder.context) || {}
+          );
+          failedOrderInput.status = 'failed';
+          failedOrderInput.remark = `Failed after ${MAX_RETRIES} attempts: ${error}`;
+          
+          await createCompleteOrder(failedOrderInput);
+          console.log(`📝 Saved failed order ${queuedOrder.id} to database for review`);
+        } catch (failedSaveError) {
+          console.error(`💥 Could not even save failed order ${queuedOrder.id}:`, failedSaveError);
+        }
       }
     }
 
@@ -168,6 +221,54 @@ function getQueueStatus() {
       retryCount: order.retryCount,
       customerPhone: order.context.customerPhone,
     })),
+  };
+}
+/**
+ * Convert extracted order data to CreateOrderInput format for normalized schema
+ */
+function transformOrderForNormalizedSupabase(orderData: any): CreateOrderInput {
+  return {
+    // Customer information
+    customer_name: orderData.name,
+    phone_number: orderData.phoneNumber,
+    fb_name: orderData.fbName,
+    customer_type: orderData.isRepeatCustomer ? 'repeat' : 'new',
+    
+    // Order details
+    order_date: orderData.orderDate || new Date().toISOString().split('T')[0],
+    payment_method: orderData.paymentMethod,
+    
+    // Product quantities
+    wash_qty: orderData.products?.wash || 0,
+    femlift_30ml_qty: orderData.products?.femlift30 || 0,
+    femlift_10ml_qty: orderData.products?.femlift10 || 0,
+    wash_30ml_qty: orderData.products?.wash30 || 0,
+    spray_qty: orderData.products?.spray || 0,
+    
+    // Pricing
+    package_price: orderData.packagePrice || 0,
+    postage: orderData.postage || 0,
+    total_amount: orderData.totalAmount || 0,
+    
+    // Address information
+    address: orderData.address,
+    city: orderData.city,
+    postcode: orderData.postcode,
+    state: orderData.state,
+    
+    // Tracking and fulfillment
+    tracking_number: orderData.trackingNumber,
+    courier_company: orderData.courierCompany,
+    shipment_description: orderData.shipmentDescription,
+    
+    // Additional metadata
+    remark: orderData.remark,
+    agent_name: orderData.agentName,
+    currency: orderData.currency || 'MYR',
+    status: orderData.status || 'pending',
+    
+    // Source tracking
+    source: orderData.groupName ? `whatsapp_group_${orderData.groupName}` : 'whatsapp_direct',
   };
 }
 
@@ -484,3 +585,4 @@ whatsappRouter.post("/queue/clear", (req, res) => {
 });
 
 export default whatsappRouter;
+

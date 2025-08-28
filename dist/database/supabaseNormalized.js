@@ -13,9 +13,12 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.supabase = void 0;
+exports.getOrCreateCustomer = getOrCreateCustomer;
 exports.upsertCustomer = upsertCustomer;
+exports.updateCustomerStats = updateCustomerStats;
 exports.getCustomerByPhone = getCustomerByPhone;
 exports.getCustomerWithAddresses = getCustomerWithAddresses;
+exports.createAddress = createAddress;
 exports.upsertAddress = upsertAddress;
 exports.getCustomerAddresses = getCustomerAddresses;
 exports.getProducts = getProducts;
@@ -28,10 +31,15 @@ exports.getPackageByCode = getPackageByCode;
 exports.createPackage = createPackage;
 exports.updatePackage = updatePackage;
 exports.deletePackage = deletePackage;
+exports.createCompleteOrder = createCompleteOrder;
+exports.getOrderByTrackingNumber = getOrderByTrackingNumber;
+exports.bulkInsertNormalizedOrders = bulkInsertNormalizedOrders;
 exports.createSimpleOrder = createSimpleOrder;
 exports.getRecentOrders = getRecentOrders;
 exports.searchOrders = searchOrders;
 exports.getDashboardStats = getDashboardStats;
+exports.getCustomerOrderHistory = getCustomerOrderHistory;
+exports.findDuplicateCustomers = findDuplicateCustomers;
 exports.addOrderItem = addOrderItem;
 exports.getOrderItems = getOrderItems;
 exports.updateOrderItem = updateOrderItem;
@@ -40,8 +48,7 @@ exports.createOrderWithItems = createOrderWithItems;
 exports.insertMessage = insertMessage;
 exports.upsertConversation = upsertConversation;
 exports.testNormalizedConnection = testNormalizedConnection;
-exports.insertOrder = insertOrder;
-exports.bulkInsertOrders = bulkInsertOrders;
+exports.getOrdersWithDetails = getOrdersWithDetails;
 // src/database/supabaseNormalized.ts - Complete version with all CRUD operations
 const dotenv_1 = __importDefault(require("dotenv"));
 const path_1 = __importDefault(require("path"));
@@ -54,46 +61,197 @@ exports.supabase = (0, supabase_js_1.createClient)(SUPABASE_URL, SUPABASE_SERVIC
 // ============================================================================
 // CUSTOMER FUNCTIONS
 // ============================================================================
-function upsertCustomer(customerData) {
+/**
+ * Get or create customer by phone number
+ */
+function getOrCreateCustomer(customerData) {
     return __awaiter(this, void 0, void 0, function* () {
         try {
-            const { data, error } = yield exports.supabase
+            let existingCustomer = null;
+            // Try to find existing customer by phone number first
+            if (customerData.phone_number) {
+                const { data } = yield exports.supabase
+                    .from("customers")
+                    .select("*")
+                    .eq("phone_number", customerData.phone_number)
+                    .single();
+                existingCustomer = data;
+            }
+            // If no phone number match, try by name and fb_name
+            if (!existingCustomer && customerData.fb_name) {
+                const { data } = yield exports.supabase
+                    .from("customers")
+                    .select("*")
+                    .eq("customer_name", customerData.customer_name)
+                    .eq("fb_name", customerData.fb_name)
+                    .single();
+                existingCustomer = data;
+            }
+            if (existingCustomer) {
+                console.log(`✅ Found existing customer: ${existingCustomer.customer_name} (ID: ${existingCustomer.id})`);
+                // Update customer type if this is a repeat order
+                if (customerData.customer_type === "repeat" && existingCustomer.customer_type === "new") {
+                    const { data: updatedCustomer } = yield exports.supabase
+                        .from("customers")
+                        .update({
+                        customer_type: "repeat",
+                        updated_at: new Date().toISOString()
+                    })
+                        .eq("id", existingCustomer.id)
+                        .select("*")
+                        .single();
+                    return updatedCustomer || existingCustomer;
+                }
+                return existingCustomer;
+            }
+            // Create new customer
+            console.log(`📝 Creating new customer: ${customerData.customer_name}`);
+            const { data: newCustomer, error } = yield exports.supabase
                 .from("customers")
-                .upsert(Object.assign(Object.assign({}, customerData), { updated_at: new Date().toISOString() }), {
-                onConflict: "phone_number",
-                ignoreDuplicates: false,
+                .insert({
+                customer_name: customerData.customer_name,
+                phone_number: customerData.phone_number,
+                fb_name: customerData.fb_name,
+                customer_type: customerData.customer_type || "new",
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
             })
-                .select()
+                .select("*")
                 .single();
             if (error) {
-                console.error("❌ Failed to upsert customer:", error);
+                console.error("❌ Failed to create customer:", error);
                 throw error;
             }
-            return data;
+            console.log(`✅ Created new customer: ${newCustomer.customer_name} (ID: ${newCustomer.id})`);
+            return newCustomer;
         }
         catch (error) {
-            console.error("❌ Error in upsertCustomer:", error);
+            console.error("❌ Error in getOrCreateCustomer:", error);
             throw error;
         }
     });
 }
-function getCustomerByPhone(phoneNumber) {
+function upsertCustomer(customerData) {
     return __awaiter(this, void 0, void 0, function* () {
+        var _a;
         try {
-            const { data, error } = yield exports.supabase
+            console.log(`Upserting customer: phone=${customerData.phone_number}, name=${customerData.customer_name}`);
+            // First, try to find existing customer by phone number
+            const { data: existingCustomer, error: findError } = yield exports.supabase
                 .from("customers")
                 .select("*")
-                .eq("phone_number", phoneNumber)
-                .maybeSingle();
-            if (error) {
-                console.error("❌ Failed to get customer:", error);
-                throw error;
+                .eq("phone_number", customerData.phone_number)
+                .single();
+            if (findError && findError.code !== 'PGRST116') {
+                throw findError;
             }
-            return data;
+            if (existingCustomer) {
+                // Customer exists - update their information and increment order count
+                console.log(`Found existing customer: id=${existingCustomer.id}, current_orders=${existingCustomer.total_orders || 0}`);
+                // Determine if this should be marked as repeat customer
+                const isRepeatCustomer = (existingCustomer.total_orders || 0) > 0;
+                const { data: updatedCustomer, error: updateError } = yield exports.supabase
+                    .from("customers")
+                    .update({
+                    // Update name if the new one is more complete
+                    customer_name: customerData.customer_name.length > (((_a = existingCustomer.customer_name) === null || _a === void 0 ? void 0 : _a.length) || 0)
+                        ? customerData.customer_name
+                        : existingCustomer.customer_name,
+                    // Update fb_name if provided
+                    fb_name: customerData.fb_name || existingCustomer.fb_name,
+                    // Update email if provided
+                    email: customerData.email || existingCustomer.email,
+                    // Set as repeat customer if they have previous orders
+                    customer_type: isRepeatCustomer ? 'repeat' : customerData.customer_type || existingCustomer.customer_type,
+                    updated_at: new Date().toISOString(),
+                })
+                    .eq("phone_number", customerData.phone_number)
+                    .select()
+                    .single();
+                if (updateError)
+                    throw updateError;
+                console.log(`Updated existing customer: id=${updatedCustomer.id}, name=${updatedCustomer.customer_name}, type=${updatedCustomer.customer_type}`);
+                return updatedCustomer;
+            }
+            else {
+                // Customer doesn't exist - create new one
+                const { data: newCustomer, error: insertError } = yield exports.supabase
+                    .from("customers")
+                    .insert(Object.assign(Object.assign({}, customerData), { customer_type: 'new', total_orders: 0, total_spent: 0, average_order_value: 0, created_at: new Date().toISOString(), updated_at: new Date().toISOString() }))
+                    .select()
+                    .single();
+                if (insertError)
+                    throw insertError;
+                console.log(`Created new customer: id=${newCustomer.id}, phone=${newCustomer.phone_number}`);
+                return newCustomer;
+            }
         }
         catch (error) {
-            console.error("❌ Error in getCustomerByPhone:", error);
+            console.error("Error in upsertCustomer:", error);
             throw error;
+        }
+    });
+}
+function updateCustomerStats(customerId, orderAmount) {
+    return __awaiter(this, void 0, void 0, function* () {
+        try {
+            // Get current customer stats
+            const { data: customer, error: fetchError } = yield exports.supabase
+                .from("customers")
+                .select("total_orders, total_spent, average_order_value")
+                .eq("id", customerId)
+                .single();
+            if (fetchError)
+                throw fetchError;
+            const currentOrders = (customer.total_orders || 0) + 1;
+            const currentSpent = (customer.total_spent || 0) + orderAmount;
+            const newAverageOrderValue = currentSpent / currentOrders;
+            // Update customer stats
+            const { error: updateError } = yield exports.supabase
+                .from("customers")
+                .update({
+                total_orders: currentOrders,
+                total_spent: currentSpent,
+                average_order_value: newAverageOrderValue,
+                last_order_date: new Date().toISOString(),
+                // Update customer type to repeat if they now have multiple orders
+                customer_type: currentOrders > 1 ? 'repeat' : 'new',
+                updated_at: new Date().toISOString(),
+            })
+                .eq("id", customerId);
+            if (updateError)
+                throw updateError;
+            console.log(`Updated customer stats: id=${customerId}, orders=${currentOrders}, spent=${currentSpent.toFixed(2)}, avg=${newAverageOrderValue.toFixed(2)}`);
+        }
+        catch (error) {
+            console.error("Error updating customer stats:", error);
+            throw error;
+        }
+    });
+}
+function getCustomerByPhone(req, res) {
+    return __awaiter(this, void 0, void 0, function* () {
+        try {
+            const { phoneNumber } = req.params;
+            if (!phoneNumber) {
+                return res.status(400).json({
+                    success: false,
+                    error: "Phone number is required"
+                });
+            }
+            const result = yield getCustomerOrderHistory(phoneNumber);
+            res.json({
+                success: true,
+                data: result
+            });
+        }
+        catch (error) {
+            console.error("Error in getCustomerByPhoneEndpoint:", error);
+            res.status(500).json({
+                success: false,
+                error: "Failed to get customer data",
+                details: error instanceof Error ? error.message : String(error)
+            });
         }
     });
 }
@@ -123,6 +281,45 @@ function getCustomerWithAddresses(customerId) {
 // ============================================================================
 // ADDRESS FUNCTIONS
 // ============================================================================
+/**
+ * Create address for customer
+ */
+function createAddress(addressData) {
+    return __awaiter(this, void 0, void 0, function* () {
+        try {
+            if (!addressData.address) {
+                return null; // No address data provided
+            }
+            console.log(`📝 Creating address for customer ${addressData.customer_id}`);
+            const { data: newAddress, error } = yield exports.supabase
+                .from("addresses")
+                .insert({
+                customer_id: addressData.customer_id,
+                address_line_1: addressData.address,
+                city: addressData.city,
+                postcode: addressData.postcode,
+                state: addressData.state,
+                country: "Malaysia", // Default for your business
+                address_type: "shipping",
+                is_default: true,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+            })
+                .select("*")
+                .single();
+            if (error) {
+                console.error("❌ Failed to create address:", error);
+                throw error;
+            }
+            console.log(`✅ Created address (ID: ${newAddress.id})`);
+            return newAddress;
+        }
+        catch (error) {
+            console.error("❌ Error in createAddress:", error);
+            throw error;
+        }
+    });
+}
 function upsertAddress(addressData) {
     return __awaiter(this, void 0, void 0, function* () {
         try {
@@ -402,34 +599,175 @@ function deletePackage(packageId_1) {
 // ============================================================================
 // ORDER FUNCTIONS
 // ============================================================================
+/**
+ * Create complete order with customer and address (MAIN FUNCTION)
+ */
+function createCompleteOrder(orderInput) {
+    return __awaiter(this, void 0, void 0, function* () {
+        try {
+            console.log(`🔄 Creating complete order for: ${orderInput.customer_name}`);
+            // 1. Get or create customer
+            const customer = yield getOrCreateCustomer({
+                customer_name: orderInput.customer_name,
+                phone_number: orderInput.phone_number,
+                fb_name: orderInput.fb_name,
+                customer_type: orderInput.customer_type,
+            });
+            // 2. Create address if provided
+            const address = yield createAddress({
+                customer_id: customer.id,
+                address: orderInput.address,
+                city: orderInput.city,
+                postcode: orderInput.postcode,
+                state: orderInput.state,
+            });
+            // 3. Calculate totals if needed
+            let totalAmount = orderInput.total_amount || orderInput.total_paid || 0;
+            // If no total provided, calculate from package_price + postage
+            if (!totalAmount && orderInput.package_price) {
+                totalAmount = (orderInput.package_price || 0) + (orderInput.postage || 0);
+            }
+            // 4. Create the order
+            const orderData = {
+                customer_id: customer.id,
+                shipping_address_id: address === null || address === void 0 ? void 0 : address.id,
+                order_date: orderInput.order_date || new Date().toISOString().split('T')[0],
+                status: orderInput.status || "pending",
+                total_amount: totalAmount,
+                subtotal: orderInput.package_price,
+                postage: orderInput.postage,
+                currency: orderInput.currency || "MYR",
+                payment_method: orderInput.payment_method,
+                payment_status: "paid", // Assume paid for historical imports
+                tracking_number: orderInput.tracking_number,
+                courier_company: orderInput.courier_company,
+                shipment_description: orderInput.shipment_description,
+                source: orderInput.source || "import",
+                agent_name: orderInput.agent_name,
+                notes: orderInput.remark,
+                remark: orderInput.remark,
+                created_at: orderInput.order_date ? `${orderInput.order_date}T00:00:00.000Z` : new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+            };
+            console.log(`📝 Creating order for customer ${customer.id} with total ${totalAmount}`);
+            const { data: newOrder, error } = yield exports.supabase
+                .from("orders")
+                .insert(orderData)
+                .select("*")
+                .single();
+            if (error) {
+                console.error("❌ Failed to create order:", error);
+                throw error;
+            }
+            console.log(`✅ Created order (ID: ${newOrder.id}) for ${customer.customer_name}`);
+            return {
+                customer,
+                address,
+                order: newOrder,
+            };
+        }
+        catch (error) {
+            console.error("❌ Error in createCompleteOrder:", error);
+            throw error;
+        }
+    });
+}
+/**
+ * Get order by tracking number
+ */
+function getOrderByTrackingNumber(trackingNumber) {
+    return __awaiter(this, void 0, void 0, function* () {
+        try {
+            const { data, error } = yield exports.supabase
+                .from("orders")
+                .select("*")
+                .eq("tracking_number", trackingNumber)
+                .single();
+            if (error && error.code !== "PGRST116") {
+                console.error("❌ Failed to get order by tracking:", error);
+                throw error;
+            }
+            return data || null;
+        }
+        catch (error) {
+            console.error("❌ Error in getOrderByTrackingNumber:", error);
+            return null;
+        }
+    });
+}
+/**
+ * Bulk insert orders (for importing from Google Sheets)
+ */
+function bulkInsertNormalizedOrders(orders) {
+    return __awaiter(this, void 0, void 0, function* () {
+        let successCount = 0;
+        let errorCount = 0;
+        const errors = [];
+        console.log(`📦 Starting bulk insert of ${orders.length} orders...`);
+        for (const orderInput of orders) {
+            try {
+                // Check for duplicates if tracking number exists
+                if (orderInput.tracking_number) {
+                    const existing = yield getOrderByTrackingNumber(orderInput.tracking_number);
+                    if (existing) {
+                        console.log(`⏭️ Skipping duplicate order with tracking: ${orderInput.tracking_number}`);
+                        continue;
+                    }
+                }
+                yield createCompleteOrder(orderInput);
+                successCount++;
+                // Log progress every 10 orders
+                if (successCount % 10 === 0) {
+                    console.log(`📊 Progress: ${successCount}/${orders.length} orders processed`);
+                }
+            }
+            catch (error) {
+                console.error(`❌ Failed to create order for ${orderInput.customer_name}:`, error);
+                errorCount++;
+                errors.push({ order: orderInput, error });
+            }
+        }
+        console.log(`✅ Bulk insert completed: ${successCount} success, ${errorCount} errors`);
+        return { successCount, errorCount, errors };
+    });
+}
 function createSimpleOrder(orderData) {
     return __awaiter(this, void 0, void 0, function* () {
         try {
+            console.log(`Creating order: phone=${orderData.phone_number}, amount=${orderData.total_amount}`);
+            // 1. Upsert customer (handles phone number deduplication)
             const customer = yield upsertCustomer({
                 customer_name: orderData.customer_name,
                 phone_number: orderData.phone_number,
                 fb_name: orderData.fb_name,
-                customer_type: "new",
+                customer_type: orderData.customer_type || 'new',
             });
+            // 2. Create address if provided
             let addressId;
-            if (orderData.address) {
+            if (orderData.address_line_1) {
                 try {
                     const address = yield upsertAddress({
                         customer_id: customer.id,
-                        address_line_1: orderData.address,
+                        address_line_1: orderData.address_line_1,
+                        address_line_2: orderData.address_line_2,
                         city: orderData.city,
                         postcode: orderData.postcode,
                         state: orderData.state,
+                        country: orderData.country || 'Malaysia',
                         address_type: "shipping",
                         is_default: true,
                     });
                     addressId = address.id;
+                    console.log(`Created/updated address: id=${addressId}`);
                 }
                 catch (addressError) {
-                    console.log("⚠️ Could not create address, continuing without it:", addressError);
+                    console.log("Could not create address:", addressError);
                 }
             }
-            const orderNumber = yield generateOrderNumber();
+            // 3. Generate unique order number
+            const orderNumber = yield generateUniqueOrderNumber();
+            console.log(`Generated order number: ${orderNumber}`);
+            // 4. Create the order
             const { data: order, error: orderError } = yield exports.supabase
                 .from("orders")
                 .insert({
@@ -437,48 +775,107 @@ function createSimpleOrder(orderData) {
                 customer_id: customer.id,
                 shipping_address_id: addressId,
                 total_amount: orderData.total_amount,
-                subtotal: orderData.total_amount,
-                payment_method: orderData.payment_method,
-                source: orderData.source || "whatsapp",
-                agent_name: orderData.agent_name,
+                subtotal: orderData.subtotal || orderData.total_amount,
+                postage: orderData.postage || 0,
+                website_charges: orderData.website_charges || 0,
+                payment_method: orderData.payment_method || 'cash',
+                payment_status: orderData.payment_status || 'pending',
+                source: orderData.source || "api",
+                agent_name: orderData.agent_name || 'System',
                 notes: orderData.notes,
                 status: "pending",
-                payment_status: "pending",
-                currency: "MYR",
+                currency: orderData.currency || "MYR",
                 order_date: new Date().toISOString(),
+                shipment_description: orderData.shipment_description || '',
+                tracking_number: orderData.tracking_number || '',
+                courier_company: orderData.courier_company || '',
             })
                 .select()
                 .single();
-            if (orderError) {
-                console.error("❌ Failed to create order:", orderError);
+            if (orderError)
                 throw orderError;
-            }
+            // 5. Update customer statistics
+            yield updateCustomerStats(customer.id, orderData.total_amount);
+            console.log(`Order created successfully: id=${order.id}, customer_id=${customer.id}, phone=${orderData.phone_number}`);
             return order;
         }
         catch (error) {
-            console.error("❌ Error in createSimpleOrder:", error);
+            console.error("Error in createSimpleOrder:", error);
             throw error;
         }
     });
 }
-function generateOrderNumber() {
-    return __awaiter(this, void 0, void 0, function* () {
-        try {
-            const date = new Date();
-            const year = date.getFullYear();
-            const month = String(date.getMonth() + 1).padStart(2, "0");
-            const { count } = yield exports.supabase
-                .from("orders")
-                .select("*", { count: "exact", head: true })
-                .gte("created_at", `${year}-${month}-01`)
-                .lt("created_at", `${year}-${month === "12" ? year + 1 : year}-${month === "12" ? "01" : String(parseInt(month) + 1).padStart(2, "0")}-01`);
-            const sequence = String((count || 0) + 1).padStart(4, "0");
-            return `ORD-${year}${month}-${sequence}`;
+function generateUniqueOrderNumber() {
+    return __awaiter(this, arguments, void 0, function* (maxRetries = 10) {
+        for (let attempt = 0; attempt < maxRetries; attempt++) {
+            try {
+                const date = new Date();
+                const year = date.getFullYear();
+                const month = String(date.getMonth() + 1).padStart(2, "0");
+                const yearMonth = `${year}${month}`;
+                // Add small delay between attempts to reduce collisions
+                if (attempt > 0) {
+                    yield new Promise(resolve => setTimeout(resolve, Math.random() * 100 + 50));
+                }
+                // Get the highest existing order number for this month to ensure sequential numbering
+                const { data: latestOrder, error: queryError } = yield exports.supabase
+                    .from("orders")
+                    .select("order_number")
+                    .like("order_number", `ORD-${yearMonth}-%`)
+                    .order("order_number", { ascending: false })
+                    .limit(1)
+                    .single();
+                if (queryError && queryError.code !== 'PGRST116') { // PGRST116 = no rows found
+                    console.log(`Query error on attempt ${attempt + 1}:`, queryError);
+                    continue; // Retry on query errors
+                }
+                let nextSequence = 1;
+                // Extract sequence from the latest order number
+                if (latestOrder === null || latestOrder === void 0 ? void 0 : latestOrder.order_number) {
+                    const parts = latestOrder.order_number.split('-');
+                    if (parts.length === 3 && parts[0] === 'ORD' && parts[1] === yearMonth) {
+                        const lastSequence = parseInt(parts[2]);
+                        if (!isNaN(lastSequence)) {
+                            nextSequence = lastSequence + 1;
+                        }
+                    }
+                }
+                // Add attempt offset to reduce collisions during concurrent requests
+                const finalSequence = nextSequence + attempt;
+                const sequence = String(finalSequence).padStart(4, "0");
+                const orderNumber = `ORD-${yearMonth}-${sequence}`;
+                // Verify this number doesn't exist (double-check)
+                const { data: existing, error: checkError } = yield exports.supabase
+                    .from("orders")
+                    .select("order_number")
+                    .eq("order_number", orderNumber)
+                    .single();
+                if (checkError && checkError.code === 'PGRST116') {
+                    // No existing order found - this number is available
+                    console.log(`Generated unique order number: ${orderNumber} (attempt ${attempt + 1})`);
+                    return orderNumber;
+                }
+                else if (checkError) {
+                    console.log(`Check error on attempt ${attempt + 1}:`, checkError);
+                    continue; // Retry on check errors
+                }
+                else {
+                    console.log(`Order number ${orderNumber} already exists, retrying (attempt ${attempt + 1})`);
+                    continue; // Number exists, retry
+                }
+            }
+            catch (error) {
+                console.error(`Error generating order number (attempt ${attempt + 1}):`, error);
+                if (attempt === maxRetries - 1) {
+                    console.error("Max retries exceeded, falling back to timestamp");
+                    break;
+                }
+            }
         }
-        catch (error) {
-            console.error("❌ Error generating order number:", error);
-            return `ORD-${Date.now()}`;
-        }
+        // Fallback to timestamp-based (this should rarely happen now)
+        const fallbackNumber = `ORD-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+        console.warn(`Using fallback order number: ${fallbackNumber}`);
+        return fallbackNumber;
     });
 }
 function getRecentOrders() {
@@ -557,6 +954,64 @@ function searchOrders(query) {
         }
     });
 }
+// export async function searchOrders(searchParams: {
+//   searchTerm?: string;
+//   phone?: string;
+//   trackingNumber?: string;
+//   limit?: number;
+// }): Promise<{ orders: Order[]; totalCount: number }> {
+//   try {
+//     let query = supabase
+//       .from("orders")
+//       .select(`
+//         *,
+//         customers (
+//           id,
+//           customer_name,
+//           phone_number,
+//           fb_name,
+//           email
+//         ),
+//         addresses (
+//           id,
+//           address_line_1,
+//           city,
+//           postcode,
+//           state
+//         )
+//       `)
+//       .order("created_at", { ascending: false });
+//     if (searchParams.searchTerm) {
+//       // Search across multiple fields
+//       query = query.or(`
+//         tracking_number.ilike.%${searchParams.searchTerm}%,
+//         customers.customer_name.ilike.%${searchParams.searchTerm}%,
+//         customers.phone_number.ilike.%${searchParams.searchTerm}%
+//       `);
+//     }
+//     if (searchParams.phone) {
+//       query = query.eq("customers.phone_number", searchParams.phone);
+//     }
+//     if (searchParams.trackingNumber) {
+//       query = query.eq("tracking_number", searchParams.trackingNumber);
+//     }
+//     if (searchParams.limit) {
+//       query = query.limit(searchParams.limit);
+//     }
+//     const { data, error, count } = await query;
+//     if (error) {
+//       console.error("❌ Failed to search orders:", error);
+//       throw error;
+//     }
+//     return {
+//       orders: data || [],
+//       totalCount: count || 0,
+//     };
+//   } catch (error) {
+//     console.error("❌ Error in searchOrders:", error);
+//     throw error;
+//   }
+// }
 function getDashboardStats(filters) {
     return __awaiter(this, void 0, void 0, function* () {
         try {
@@ -604,6 +1059,102 @@ function getDashboardStats(filters) {
                 totalCustomers: 0,
                 ordersByStatus: {},
             };
+        }
+    });
+}
+function getCustomerOrderHistory(phoneNumber) {
+    return __awaiter(this, void 0, void 0, function* () {
+        try {
+            // Get customer by phone number
+            const { data: customer, error: customerError } = yield exports.supabase
+                .from("customers")
+                .select("*")
+                .eq("phone_number", phoneNumber)
+                .single();
+            if (customerError && customerError.code !== 'PGRST116') {
+                throw customerError;
+            }
+            if (!customer) {
+                return {
+                    customer: null,
+                    orders: [],
+                    stats: {
+                        totalOrders: 0,
+                        totalSpent: 0,
+                        averageOrderValue: 0,
+                        firstOrderDate: null,
+                        lastOrderDate: null
+                    }
+                };
+            }
+            // Get all orders for this customer
+            const { data: orders, error: ordersError } = yield exports.supabase
+                .from("orders")
+                .select("*")
+                .eq("customer_id", customer.id)
+                .order("order_date", { ascending: false });
+            if (ordersError)
+                throw ordersError;
+            // Calculate stats
+            const totalOrders = (orders === null || orders === void 0 ? void 0 : orders.length) || 0;
+            const totalSpent = (orders === null || orders === void 0 ? void 0 : orders.reduce((sum, order) => sum + (order.total_amount || 0), 0)) || 0;
+            const averageOrderValue = totalOrders > 0 ? totalSpent / totalOrders : 0;
+            const firstOrderDate = totalOrders > 0 ? orders[orders.length - 1].order_date : null;
+            const lastOrderDate = totalOrders > 0 ? orders[0].order_date : null;
+            return {
+                customer,
+                orders: orders || [],
+                stats: {
+                    totalOrders,
+                    totalSpent,
+                    averageOrderValue,
+                    firstOrderDate,
+                    lastOrderDate
+                }
+            };
+        }
+        catch (error) {
+            console.error("Error getting customer order history:", error);
+            throw error;
+        }
+    });
+}
+function findDuplicateCustomers() {
+    return __awaiter(this, void 0, void 0, function* () {
+        try {
+            // Find phone numbers with multiple customer records
+            const { data: duplicates, error } = yield exports.supabase
+                .from("customers")
+                .select(`
+        phone_number,
+        id,
+        customer_name,
+        total_orders,
+        created_at
+      `)
+                .order("phone_number");
+            if (error)
+                throw error;
+            // Group by phone number
+            const phoneGroups = duplicates.reduce((acc, customer) => {
+                if (!acc[customer.phone_number]) {
+                    acc[customer.phone_number] = [];
+                }
+                acc[customer.phone_number].push(customer);
+                return acc;
+            }, {});
+            // Return only phone numbers with multiple customers
+            return Object.entries(phoneGroups)
+                .filter(([_, customers]) => customers.length > 1)
+                .map(([phone_number, customers]) => ({
+                phone_number,
+                customers,
+                total_orders: customers.reduce((sum, c) => sum + (c.total_orders || 0), 0)
+            }));
+        }
+        catch (error) {
+            console.error("Error finding duplicate customers:", error);
+            throw error;
         }
     });
 }
@@ -814,48 +1365,56 @@ function testNormalizedConnection() {
     });
 }
 // ============================================================================
-// LEGACY COMPATIBILITY FUNCTIONS
+// QUERY FUNCTIONS
 // ============================================================================
-function insertOrder(orderData) {
-    return __awaiter(this, void 0, void 0, function* () {
+/**
+ * Get orders with joined customer and address data
+ */
+function getOrdersWithDetails() {
+    return __awaiter(this, arguments, void 0, function* (options = {}) {
         try {
-            const order = yield createSimpleOrder({
-                customer_name: orderData.customer_name || "Unknown",
-                phone_number: orderData.phone_number || orderData.phone,
-                fb_name: orderData.fb_name,
-                total_amount: orderData.total_paid || orderData.total_amount || 0,
-                payment_method: orderData.payment_method,
-                source: orderData.source || "legacy",
-                agent_name: orderData.agent_name,
-                notes: orderData.remark || orderData.notes,
-                address: orderData.address,
-                city: orderData.city,
-                postcode: orderData.postcode,
-                state: orderData.state,
-            });
-            return order.id;
+            let query = exports.supabase
+                .from("orders")
+                .select(`
+        *,
+        customers (
+          id,
+          customer_name,
+          phone_number,
+          fb_name,
+          email,
+          customer_type
+        ),
+        addresses (
+          id,
+          address_line_1,
+          address_line_2,
+          city,
+          postcode,
+          state,
+          country
+        )
+      `)
+                .order("created_at", { ascending: false });
+            if (options.limit) {
+                query = query.limit(options.limit);
+            }
+            if (options.offset) {
+                query = query.range(options.offset, options.offset + (options.limit || 50) - 1);
+            }
+            if (options.status) {
+                query = query.eq("status", options.status);
+            }
+            const { data, error } = yield query;
+            if (error) {
+                console.error("❌ Failed to get orders:", error);
+                throw error;
+            }
+            return data || [];
         }
         catch (error) {
-            console.error("❌ Error in legacy insertOrder:", error);
+            console.error("❌ Error in getOrdersWithDetails:", error);
             throw error;
         }
-    });
-}
-function bulkInsertOrders(orders) {
-    return __awaiter(this, void 0, void 0, function* () {
-        console.log(`📦 Bulk inserting ${orders.length} orders using normalized schema...`);
-        let successCount = 0;
-        let errorCount = 0;
-        for (const order of orders) {
-            try {
-                yield insertOrder(order);
-                successCount++;
-            }
-            catch (error) {
-                console.error(`❌ Failed to insert order:`, error);
-                errorCount++;
-            }
-        }
-        console.log(`✅ Bulk insert completed: ${successCount} success, ${errorCount} errors`);
     });
 }

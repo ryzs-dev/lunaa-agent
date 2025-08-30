@@ -1,15 +1,25 @@
 // src/routes/whatsapp.ts - Updated with Order Queue
 import express from "express";
-import { insertOrder, updateMessageStatusInDB } from "../database/supabaseOrders";
+import {
+  insertOrder,
+  updateMessageStatusInDB,
+} from "../database/supabaseOrders";
 import {
   appendOrderToSheet,
   extractOrderFromMessage,
   getAuthorizedPhoneNumbers,
 } from "../whatsappOrderBot";
 import { PhoneNumberUtil } from "../whatsappOrderBot"; // Make sure this is exported
-import { createCompleteOrder, CreateOrderInput } from "../database/supabaseNormalized";
+import {
+  createCompleteOrder,
+  CreateOrderInput,
+} from "../database/supabaseNormalized";
+import { WhatsAppService } from "../services/whatsapp";
 
 const whatsappRouter = express.Router();
+
+// Initialize WhatsApp Service
+const waService = new WhatsAppService();
 
 // ============================================================================
 // ORDER QUEUE SYSTEM
@@ -22,7 +32,6 @@ interface QueuedOrder {
   timestamp: number;
   retryCount: number;
 }
-
 
 const orderQueue: QueuedOrder[] = [];
 let isProcessing = false;
@@ -98,8 +107,10 @@ async function processOrderQueue(): Promise<void> {
       console.log(`🧾 Extracted Order Data:`, orderData);
 
       // ✨ DUAL SAVE: Google Sheets + Supabase
-      console.log(`📊 Processing order ${queuedOrder.id} to both Google Sheets and Supabase...`);
-      
+      console.log(
+        `📊 Processing order ${queuedOrder.id} to both Google Sheets and Supabase...`
+      );
+
       let sheetsSuccess = false;
       let supabaseSuccess = false;
       let sheetsResult: any = null;
@@ -110,39 +121,50 @@ async function processOrderQueue(): Promise<void> {
         console.log(`📝 Saving to Google Sheets...`);
         sheetsResult = await appendOrderToSheet(orderData);
         sheetsSuccess = sheetsResult.success;
-        
+
         if (sheetsSuccess) {
-          console.log(`✅ Google Sheets: Order saved successfully at row ${sheetsResult.rowIndex}`);
+          console.log(
+            `✅ Google Sheets: Order saved successfully at row ${sheetsResult.rowIndex}`
+          );
         } else {
           console.log(`❌ Google Sheets: Failed to save order`);
         }
       } catch (sheetsError) {
-        console.error(`❌ Google Sheets error for ${queuedOrder.id}:`, sheetsError);
+        console.error(
+          `❌ Google Sheets error for ${queuedOrder.id}:`,
+          sheetsError
+        );
         sheetsSuccess = false;
       }
 
       // 2. Save to Supabase (NEW functionality with normalized schema)
       try {
         console.log(`💾 Saving to Supabase normalized database...`);
-        const supabaseOrderInput = transformOrderForNormalizedSupabase(orderData);
+        const supabaseOrderInput =
+          transformOrderForNormalizedSupabase(orderData);
         const result = await createCompleteOrder(supabaseOrderInput);
         supabaseSuccess = true;
-        
-        console.log(`✅ Supabase: Order saved successfully (Order ID: ${result.order.id}, Customer ID: ${result.customer.id})`);
+
+        console.log(
+          `✅ Supabase: Order saved successfully (Order ID: ${result.order.id}, Customer ID: ${result.customer.id})`
+        );
         supabaseResult = result;
       } catch (supabaseError) {
-        console.error(`❌ Supabase error for ${queuedOrder.id}:`, supabaseError);
+        console.error(
+          `❌ Supabase error for ${queuedOrder.id}:`,
+          supabaseError
+        );
         supabaseSuccess = false;
       }
 
       // Determine overall success
       const overallSuccess = sheetsSuccess || supabaseSuccess;
-      
+
       if (overallSuccess) {
         console.log(`✅ Order ${queuedOrder.id} processed successfully:`);
-        console.log(`  📝 Google Sheets: ${sheetsSuccess ? '✅' : '❌'}`);
-        console.log(`  💾 Supabase: ${supabaseSuccess ? '✅' : '❌'}`);
-        
+        console.log(`  📝 Google Sheets: ${sheetsSuccess ? "✅" : "❌"}`);
+        console.log(`  💾 Supabase: ${supabaseSuccess ? "✅" : "❌"}`);
+
         // Log success to database message tracking
         try {
           await updateMessageStatusInDB(
@@ -159,9 +181,12 @@ async function processOrderQueue(): Promise<void> {
           );
         }
       } else {
-        throw new Error(`Both Google Sheets and Supabase failed: Sheets(${sheetsResult?.error || 'unknown'}), Supabase(${supabaseResult?.error || 'unknown'})`);
+        throw new Error(
+          `Both Google Sheets and Supabase failed: Sheets(${
+            sheetsResult?.error || "unknown"
+          }), Supabase(${supabaseResult?.error || "unknown"})`
+        );
       }
-
     } catch (error) {
       console.error(`❌ Failed to process order ${queuedOrder.id}:`, error);
 
@@ -179,19 +204,27 @@ async function processOrderQueue(): Promise<void> {
         console.error(
           `💀 Order ${queuedOrder.id} failed after ${MAX_RETRIES} attempts`
         );
-        
+
         // Save failed order to database for manual review using normalized schema
         try {
           const failedOrderInput = transformOrderForNormalizedSupabase(
-            extractOrderFromMessage(queuedOrder.messageData.Body, queuedOrder.context) || {}
+            extractOrderFromMessage(
+              queuedOrder.messageData.Body,
+              queuedOrder.context
+            ) || {}
           );
-          failedOrderInput.status = 'failed';
+          failedOrderInput.status = "failed";
           failedOrderInput.remark = `Failed after ${MAX_RETRIES} attempts: ${error}`;
-          
+
           await createCompleteOrder(failedOrderInput);
-          console.log(`📝 Saved failed order ${queuedOrder.id} to database for review`);
+          console.log(
+            `📝 Saved failed order ${queuedOrder.id} to database for review`
+          );
         } catch (failedSaveError) {
-          console.error(`💥 Could not even save failed order ${queuedOrder.id}:`, failedSaveError);
+          console.error(
+            `💥 Could not even save failed order ${queuedOrder.id}:`,
+            failedSaveError
+          );
         }
       }
     }
@@ -233,7 +266,7 @@ function transformOrderForNormalizedSupabase(orderData: any): CreateOrderInput {
   // Helper function to get product quantity by name
   const getProductQuantity = (productName: string): number => {
     if (!orderData.products || !Array.isArray(orderData.products)) return 0;
-    
+
     const product = orderData.products.find((p: any) => p.name === productName);
     return product ? product.quantity : 0;
   };
@@ -241,45 +274,47 @@ function transformOrderForNormalizedSupabase(orderData: any): CreateOrderInput {
   return {
     // Customer information (FIXED: use correct field names)
     customer_name: orderData.customerName, // ✅ FIXED: was orderData.name
-    phone_number: orderData.phoneNumber,   // ✅ FIXED: already correct
-    fb_name: orderData.fbName,            // Add fb_name if available
-    customer_type: orderData.isRepeatCustomer ? 'repeat' : 'new',
-    
+    phone_number: orderData.phoneNumber, // ✅ FIXED: already correct
+    fb_name: orderData.fbName, // Add fb_name if available
+    customer_type: orderData.isRepeatCustomer ? "repeat" : "new",
+
     // Order details
-    order_date: orderData.orderDate || new Date().toISOString().split('T')[0],
+    order_date: orderData.orderDate || new Date().toISOString().split("T")[0],
     payment_method: orderData.paymentMethod || "",
-    
+
     // Product quantities (FIXED: map from products array)
-    wash_qty: getProductQuantity('wash'),
-    femlift_30ml_qty: getProductQuantity('femlift_30ml'),
-    femlift_10ml_qty: getProductQuantity('femlift_10ml'),
-    wash_30ml_qty: getProductQuantity('wash_30ml'),
-    spray_qty: getProductQuantity('spray'),
-    
+    wash_qty: getProductQuantity("wash"),
+    femlift_30ml_qty: getProductQuantity("femlift_30ml"),
+    femlift_10ml_qty: getProductQuantity("femlift_10ml"),
+    wash_30ml_qty: getProductQuantity("wash_30ml"),
+    spray_qty: getProductQuantity("spray"),
+
     // Pricing (FIXED: use correct field names)
     package_price: orderData.packagePrice || 0,
     postage: orderData.postage || 0,
     total_amount: orderData.totalPaid || orderData.totalAmount || 0, // ✅ FIXED: was totalAmount
-    
+
     // Address information
     address: orderData.address,
     city: orderData.city,
     postcode: orderData.postcode,
     state: orderData.state,
-    
+
     // Tracking and fulfillment
     tracking_number: orderData.trackingNumber,
     courier_company: orderData.courierCompany,
     shipment_description: orderData.shipmentDescription,
-    
+
     // Additional metadata
     remark: orderData.remark,
     agent_name: orderData.agentName,
-    currency: orderData.currency || 'MYR',
-    status: orderData.status || 'pending',
-    
+    currency: orderData.currency || "MYR",
+    status: orderData.status || "pending",
+
     // Source tracking
-    source: orderData.groupName ? `whatsapp_group_${orderData.groupName}` : 'whatsapp_direct',
+    source: orderData.groupName
+      ? `whatsapp_group_${orderData.groupName}`
+      : "whatsapp_direct",
   };
 }
 
@@ -546,6 +581,87 @@ whatsappRouter.post("/whatsapp/incoming", async (req, res) => {
   console.log(`📥 Order message queued with ID: ${queueId}`);
 });
 
+whatsappRouter.post("/send", async (req, res) => {
+  const { to, message, template, mediaUrl } = req.body;
+  const { type } = req.query;
+
+  console.log(`\n🚀 /send called with type='${type}' to='${to}'`);
+  if (!to || !type) {
+    return res.status(400).json({
+      success: false,
+      error: "Missing 'to' in body or 'type' in query",
+    });
+  }
+
+  try {
+    switch (type) {
+      case "text":
+        if (!message) {
+          return res
+            .status(400)
+            .json({ success: false, error: "Missing 'message' for text type" });
+        }
+        console.log(`📤 Sending text message to ${to}`);
+        await waService.sendTextMessage(to, message);
+        break;
+
+      case "template":
+        if (!template) {
+          return res.status(400).json({
+            success: false,
+            error: "Missing 'template' for template type",
+          });
+        }
+        console.log(`📤 Sending template message to ${to}`);
+        await waService.sendTemplateMessage(to, template);
+        break;
+
+      // If you want to re-enable media later
+      // case "media":
+      //   if (!mediaUrl) {
+      //     return res.status(400).json({ success: false, error: "Missing 'mediaUrl' for media type" });
+      //   }
+      //   console.log(`📤 Sending media message to ${to}`);
+      //   await waService.sendMediaMessage(to, mediaUrl, message || "");
+      //   break;
+
+      default:
+        return res.status(400).json({
+          success: false,
+          error: `Unsupported type '${type}'`,
+        });
+    }
+
+    res.json({
+      success: true,
+      message: `✅ Message sent to ${to} using type '${type}'`,
+    });
+  } catch (error) {
+    console.error("❌ Error sending message:", error);
+    res.status(500).json({
+      success: false,
+      error: "Failed to send message",
+      details: error instanceof Error ? error.message : String(error),
+    });
+  }
+});
+
+whatsappRouter.get("/whatsapp/templates", async (req, res) => {
+  try {
+    const templates = await waService.getMessageTemplates();
+    res.json({
+      success: true,
+      templates,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: "Failed to fetch templates",
+      details: error instanceof Error ? error.message : String(error),
+    });
+  }
+});
+
 // ============================================================================
 // QUEUE MONITORING ENDPOINTS
 // ============================================================================
@@ -596,4 +712,3 @@ whatsappRouter.post("/queue/clear", (req, res) => {
 });
 
 export default whatsappRouter;
-

@@ -19,6 +19,7 @@
     "@cloudflare/workers-types": "^4.20250724.0",
     "@supabase/supabase-js": "^2.52.1",
     "@types/node-cron": "^3.0.11",
+    "axios": "^1.11.0",
     "cors": "^2.8.5",
     "dotenv": "^17.2.0",
     "express": "^5.1.0",

@@ -6,7 +6,6 @@ import {
   sendProductUsageInstructions,
   sendCompleteMessageSequence,
 } from "../twilioClient";
-import { updateMessageStatusInDB } from "../database/supabaseOrders";
 import dotenv from "dotenv";
 import path from "path";
 import { getProcessed, saveProcessed } from "../utils/tracker";

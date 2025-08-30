@@ -461,3 +461,14 @@ export async function getRecentMessageStatus(
     return null;
   }
 }
+
+export async function getMessagingService() {
+  const services = await client.messaging.v1.services.list({ limit: 20 });
+  return services.map((s) => ({
+    sid: s.sid,
+    friendlyName: s.friendlyName,
+    accountSid: s.accountSid,
+    dateCreated: s.dateCreated,
+    dateUpdated: s.dateUpdated,
+  }));
+}

@@ -3,6 +3,8 @@ import {
   updateMessageStatus,
   updateMessageStatusInDB,
 } from "../database/supabaseOrders";
+import { getMessagingService } from "../twilioClient";
+import { count } from "console";
 
 const twilioRouter = express.Router();
 
@@ -141,6 +143,25 @@ twilioRouter.get("/conversations/:phoneNumber", async (req, res) => {
     res.status(500).json({
       success: false,
       error: "Failed to get conversation details",
+      details: error instanceof Error ? error.message : String(error),
+    });
+  }
+});
+
+twilioRouter.get("/twilio/services", async (req, res) => {
+  try {
+    const services = await getMessagingService();
+
+    res.json({
+      success: true,
+      count: services.length,
+      services,
+    });
+  } catch (error) {
+    console.error("❌ Failed to get Twilio services:", error);
+    res.status(500).json({
+      success: false,
+      error: "Failed to get Twilio services",
       details: error instanceof Error ? error.message : String(error),
     });
   }

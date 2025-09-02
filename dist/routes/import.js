@@ -187,6 +187,7 @@ function transformLegacyRow(row) {
     const femlift10Qty = parseInt(row["Femlift 10ml"]) || 0;
     const wash30Qty = parseInt(row["Wash 30ml"]) || 0;
     const sprayQty = parseInt(row.Spray) || 0;
+    const blossomQty = parseInt(row.Blossom) || 0;
     return {
         // Order data
         order: {
@@ -227,6 +228,7 @@ function transformLegacyRow(row) {
             femlift_10ml: femlift10Qty,
             wash_30ml: wash30Qty,
             spray: sprayQty,
+            blossom: blossomQty,
         },
         // Original row number for tracking
         originalRowNo: row.No,
@@ -486,7 +488,7 @@ function getOrCreateAddressId(orderData) {
 }
 // GET /api/import/template - Download CSV template
 importRouter.get("/template", (req, res) => {
-    const template = `No,Order Date,fbname,Name,Payment method,wash,Femlift 30ml,Femlift 10ml,Wash 30ml,Spray,remark,package (rm),Postage (rm),Website/shopee charges (rm),TOTAL PAID (rm),shipment description,address,city,postcode,state,phone number,tracking number,courires company,new/repeat,cash sale receipt,Agent by / under,sql system,currency,status
+    const template = `No,Order Date,fbname,Name,Payment method,wash,Femlift 30ml,Femlift 10ml,Wash 30ml,Spray,Blossom,remark,package (rm),Postage (rm),Website/shopee charges (rm),TOTAL PAID (rm),shipment description,address,city,postcode,state,phone number,tracking number,courires company,new/repeat,cash sale receipt,Agent by / under,sql system,currency,status
 1,1/8/25,facebook_name,Customer Name,Bank Transfer,1,1,0,0,1,Customer notes,150,10,5,165,Product description,123 Main St,Kuala Lumpur,50000,Selangor,+60123456789,TRK123456,J&T Express,new,CSR001,Agent Name,,MYR,completed`;
     res.setHeader("Content-Type", "text/csv");
     res.setHeader("Content-Disposition", "attachment; filename=lunaa_import_template.csv");

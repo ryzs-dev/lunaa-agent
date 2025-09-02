@@ -261,6 +261,9 @@ class ContentExtractor {
                 case "s":
                     products.push({ name: "spray", quantity, type: "" });
                     break;
+                case "b":
+                case "B":
+                    products.push({ name: "blossom", quantity, type: "" });
             }
             remaining = remaining.substring(full.length);
         }
@@ -801,6 +804,9 @@ class SheetsIntegration {
                     break;
                 case "spray":
                     rowData[index] = this.getProductQuantity(orderData.products, "spray");
+                    break;
+                case "blossom":
+                    rowData[index] = this.getProductQuantity(orderData.products, "blossom");
                     break;
             }
         });

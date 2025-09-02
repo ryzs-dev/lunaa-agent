@@ -18,7 +18,10 @@ const supabaseOrders_1 = require("../database/supabaseOrders");
 const whatsappOrderBot_1 = require("../whatsappOrderBot");
 const whatsappOrderBot_2 = require("../whatsappOrderBot"); // Make sure this is exported
 const supabaseNormalized_1 = require("../database/supabaseNormalized");
+const whatsapp_1 = require("../services/whatsapp");
 const whatsappRouter = express_1.default.Router();
+// Initialize WhatsApp Service
+const waService = new whatsapp_1.WhatsAppService();
 const orderQueue = [];
 let isProcessing = false;
 const MAX_RETRIES = 3;
@@ -69,6 +72,7 @@ function processOrderQueue() {
                     console.log(`❌ Could not extract order from ${queuedOrder.id}`);
                     continue;
                 }
+                console.log(`🧾 Extracted Order Data:`, orderData);
                 // ✨ DUAL SAVE: Google Sheets + Supabase
                 console.log(`📊 Processing order ${queuedOrder.id} to both Google Sheets and Supabase...`);
                 let sheetsSuccess = false;
@@ -108,8 +112,8 @@ function processOrderQueue() {
                 const overallSuccess = sheetsSuccess || supabaseSuccess;
                 if (overallSuccess) {
                     console.log(`✅ Order ${queuedOrder.id} processed successfully:`);
-                    console.log(`  📝 Google Sheets: ${sheetsSuccess ? '✅' : '❌'}`);
-                    console.log(`  💾 Supabase: ${supabaseSuccess ? '✅' : '❌'}`);
+                    console.log(`  📝 Google Sheets: ${sheetsSuccess ? "✅" : "❌"}`);
+                    console.log(`  💾 Supabase: ${supabaseSuccess ? "✅" : "❌"}`);
                     // Log success to database message tracking
                     try {
                         yield (0, supabaseOrders_1.updateMessageStatusInDB)(queuedOrder.messageData.MessageSid, "processed", queuedOrder.messageData.To || "", queuedOrder.messageData.From || "", new Date().toISOString());
@@ -119,7 +123,7 @@ function processOrderQueue() {
                     }
                 }
                 else {
-                    throw new Error(`Both Google Sheets and Supabase failed: Sheets(${(sheetsResult === null || sheetsResult === void 0 ? void 0 : sheetsResult.error) || 'unknown'}), Supabase(${(supabaseResult === null || supabaseResult === void 0 ? void 0 : supabaseResult.error) || 'unknown'})`);
+                    throw new Error(`Both Google Sheets and Supabase failed: Sheets(${(sheetsResult === null || sheetsResult === void 0 ? void 0 : sheetsResult.error) || "unknown"}), Supabase(${(supabaseResult === null || supabaseResult === void 0 ? void 0 : supabaseResult.error) || "unknown"})`);
                 }
             }
             catch (error) {
@@ -137,7 +141,7 @@ function processOrderQueue() {
                     // Save failed order to database for manual review using normalized schema
                     try {
                         const failedOrderInput = transformOrderForNormalizedSupabase((0, whatsappOrderBot_1.extractOrderFromMessage)(queuedOrder.messageData.Body, queuedOrder.context) || {});
-                        failedOrderInput.status = 'failed';
+                        failedOrderInput.status = "failed";
                         failedOrderInput.remark = `Failed after ${MAX_RETRIES} attempts: ${error}`;
                         yield (0, supabaseNormalized_1.createCompleteOrder)(failedOrderInput);
                         console.log(`📝 Saved failed order ${queuedOrder.id} to database for review`);
@@ -177,26 +181,32 @@ function getQueueStatus() {
  * Convert extracted order data to CreateOrderInput format for normalized schema
  */
 function transformOrderForNormalizedSupabase(orderData) {
-    var _a, _b, _c, _d, _e;
+    // Helper function to get product quantity by name
+    const getProductQuantity = (productName) => {
+        if (!orderData.products || !Array.isArray(orderData.products))
+            return 0;
+        const product = orderData.products.find((p) => p.name === productName);
+        return product ? product.quantity : 0;
+    };
     return {
-        // Customer information
-        customer_name: orderData.name,
-        phone_number: orderData.phoneNumber,
-        fb_name: orderData.fbName,
-        customer_type: orderData.isRepeatCustomer ? 'repeat' : 'new',
+        // Customer information (FIXED: use correct field names)
+        customer_name: orderData.customerName, // ✅ FIXED: was orderData.name
+        phone_number: orderData.phoneNumber, // ✅ FIXED: already correct
+        fb_name: orderData.fbName, // Add fb_name if available
+        customer_type: orderData.isRepeatCustomer ? "repeat" : "new",
         // Order details
-        order_date: orderData.orderDate || new Date().toISOString().split('T')[0],
-        payment_method: orderData.paymentMethod,
-        // Product quantities
-        wash_qty: ((_a = orderData.products) === null || _a === void 0 ? void 0 : _a.wash) || 0,
-        femlift_30ml_qty: ((_b = orderData.products) === null || _b === void 0 ? void 0 : _b.femlift30) || 0,
-        femlift_10ml_qty: ((_c = orderData.products) === null || _c === void 0 ? void 0 : _c.femlift10) || 0,
-        wash_30ml_qty: ((_d = orderData.products) === null || _d === void 0 ? void 0 : _d.wash30) || 0,
-        spray_qty: ((_e = orderData.products) === null || _e === void 0 ? void 0 : _e.spray) || 0,
-        // Pricing
+        order_date: orderData.orderDate || new Date().toISOString().split("T")[0],
+        payment_method: orderData.paymentMethod || "",
+        // Product quantities (FIXED: map from products array)
+        wash_qty: getProductQuantity("wash"),
+        femlift_30ml_qty: getProductQuantity("femlift_30ml"),
+        femlift_10ml_qty: getProductQuantity("femlift_10ml"),
+        wash_30ml_qty: getProductQuantity("wash_30ml"),
+        spray_qty: getProductQuantity("spray"),
+        // Pricing (FIXED: use correct field names)
         package_price: orderData.packagePrice || 0,
         postage: orderData.postage || 0,
-        total_amount: orderData.totalAmount || 0,
+        total_amount: orderData.totalPaid || orderData.totalAmount || 0, // ✅ FIXED: was totalAmount
         // Address information
         address: orderData.address,
         city: orderData.city,
@@ -209,14 +219,16 @@ function transformOrderForNormalizedSupabase(orderData) {
         // Additional metadata
         remark: orderData.remark,
         agent_name: orderData.agentName,
-        currency: orderData.currency || 'MYR',
-        status: orderData.status || 'pending',
+        currency: orderData.currency || "MYR",
+        status: orderData.status || "pending",
         // Source tracking
-        source: orderData.groupName ? `whatsapp_group_${orderData.groupName}` : 'whatsapp_direct',
+        source: orderData.groupName
+            ? `whatsapp_group_${orderData.groupName}`
+            : "whatsapp_direct",
     };
 }
 // ============================================================================
-// WEBHOOK HANDLER (Updated with Queue)
+// WEBHOOK HANDLER (Updated with Queue)( Legacy Twilio format )
 // ============================================================================
 whatsappRouter.post("/whatsapp/incoming", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     const { MessageSid, From, To, Body, ProfileName, WaId, GroupId, GroupName, Timestamp, } = req.body;
@@ -423,6 +435,146 @@ whatsappRouter.post("/whatsapp/incoming", (req, res) => __awaiter(void 0, void 0
     const queueId = addToQueue(req.body, context);
     console.log(`📥 Order message queued with ID: ${queueId}`);
 }));
+// ============================================================================
+// Meta Cloud API - Send Messages & Fetch Templates
+// ============================================================================
+whatsappRouter.post("/send", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    const { to, message, template, mediaUrl } = req.body;
+    const { type } = req.query;
+    console.log(`\n🚀 /send called with type='${type}' to='${to}'`);
+    if (!to || !type) {
+        return res.status(400).json({
+            success: false,
+            error: "Missing 'to' in body or 'type' in query",
+        });
+    }
+    try {
+        switch (type) {
+            case "text":
+                if (!message) {
+                    return res
+                        .status(400)
+                        .json({ success: false, error: "Missing 'message' for text type" });
+                }
+                console.log(`📤 Sending text message to ${to}`);
+                yield waService.sendTextMessage(to, message);
+                break;
+            case "template":
+                if (!template) {
+                    return res.status(400).json({
+                        success: false,
+                        error: "Missing 'template' for template type",
+                    });
+                }
+                console.log(`📤 Sending template message to ${to}`);
+                yield waService.sendTemplateMessage(to, template);
+                break;
+            // If you want to re-enable media later
+            // case "media":
+            //   if (!mediaUrl) {
+            //     return res.status(400).json({ success: false, error: "Missing 'mediaUrl' for media type" });
+            //   }
+            //   console.log(`📤 Sending media message to ${to}`);
+            //   await waService.sendMediaMessage(to, mediaUrl, message || "");
+            //   break;
+            default:
+                return res.status(400).json({
+                    success: false,
+                    error: `Unsupported type '${type}'`,
+                });
+        }
+        res.json({
+            success: true,
+            message: `✅ Message sent to ${to} using type '${type}'`,
+        });
+    }
+    catch (error) {
+        console.error("❌ Error sending message:", error);
+        res.status(500).json({
+            success: false,
+            error: "Failed to send message",
+            details: error instanceof Error ? error.message : String(error),
+        });
+    }
+}));
+whatsappRouter.get("/whatsapp/templates", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const templates = yield waService.getMessageTemplates();
+        res.json({
+            success: true,
+            templates,
+        });
+    }
+    catch (error) {
+        res.status(500).json({
+            success: false,
+            error: "Failed to fetch templates",
+            details: error instanceof Error ? error.message : String(error),
+        });
+    }
+}));
+whatsappRouter.get("/webhook", (req, res) => {
+    const VERIFY_TOKEN = "supersecret"; // set in Meta dashboard
+    const mode = req.query["hub.mode"];
+    const token = req.query["hub.verify_token"];
+    const challenge = req.query["hub.challenge"];
+    if (mode && token && mode === "subscribe" && token === VERIFY_TOKEN) {
+        console.log("✅ Webhook verified!");
+        res.status(200).send(challenge);
+    }
+    else {
+        res.sendStatus(403);
+    }
+});
+whatsappRouter.post("/webhook", (req, res) => {
+    var _a;
+    const body = req.body;
+    console.log("Raw webhook body:", JSON.stringify(body, null, 2));
+    if (body.object === "whatsapp_business_account") {
+        (_a = body.entry) === null || _a === void 0 ? void 0 : _a.forEach((entry) => {
+            var _a;
+            (_a = entry.changes) === null || _a === void 0 ? void 0 : _a.forEach((change) => {
+                var _a, _b;
+                // ✅ Save contacts
+                if ((_a = change.value) === null || _a === void 0 ? void 0 : _a.contacts) {
+                    change.value.contacts.forEach((contact) => {
+                        var _a;
+                        const newContact = {
+                            waId: contact.wa_id,
+                            profileName: ((_a = contact.profile) === null || _a === void 0 ? void 0 : _a.name) || "",
+                        };
+                        waService.saveContact(newContact);
+                        console.log("👤 Saved Contact:", newContact);
+                    });
+                }
+                // ✅ Save messages
+                if ((_b = change.value) === null || _b === void 0 ? void 0 : _b.messages) {
+                    change.value.messages.forEach((msg) => {
+                        var _a;
+                        const newMsg = {
+                            id: msg.id,
+                            from: msg.from, // This ties to contact.waId
+                            body: ((_a = msg.text) === null || _a === void 0 ? void 0 : _a.body) || "",
+                            type: msg.type,
+                            timestamp: msg.timestamp,
+                            direction: "inbound",
+                        };
+                        waService.saveMessage(newMsg);
+                        console.log("📥 Saved Message:", newMsg);
+                    });
+                }
+            });
+        });
+        res.sendStatus(200);
+    }
+    else {
+        res.sendStatus(404);
+    }
+});
+whatsappRouter.get("/whatsapp/messages", (req, res) => {
+    const data = waService.getMessages();
+    res.json(data);
+});
 // ============================================================================
 // QUEUE MONITORING ENDPOINTS
 // ============================================================================

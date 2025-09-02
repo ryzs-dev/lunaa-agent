@@ -1,5 +1,6 @@
 import axios, { AxiosInstance } from "axios";
 import dotenv from "dotenv";
+import { Request, Response } from "express";
 import path from "path";
 
 dotenv.config({ path: path.resolve(__dirname, "../../.env.local") });
@@ -15,15 +16,34 @@ interface TemplatePayload {
   components?: any[];
 }
 
+type Message = {
+  from: string;
+  to?: string;
+  type: string;
+  body?: string;
+  timestamp: string;
+  id?: string;
+  direction: string;
+};
+
+type Contact = {
+  waId: string;
+  profileName: string;
+};
+
 export class WhatsAppService {
   private client: AxiosInstance;
   private phoneNumberId: string;
   private businessAccountId: string;
+  private messages: Message[] = [];
+  private contacts: Contact[] = [];
 
   constructor() {
     const accessToken = process.env.WHATSAPP_ACCESS_TOKEN;
     this.phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID || "";
     this.businessAccountId = process.env.WHATSAPP_BUSINESS_ACCOUNT_ID || "";
+    this.messages = [];
+    this.contacts = [];
 
     if (!accessToken || !this.phoneNumberId) {
       throw new Error("❌ Missing WhatsApp API credentials in .env");
@@ -51,6 +71,16 @@ export class WhatsAppService {
           text: { body: message },
         }
       );
+
+      // Save outbound message in DB
+      this.saveMessage({
+        from: this.phoneNumberId, // your business phone number
+        to,
+        type: "text",
+        body: message, // optional, you can also stringify template.components
+        timestamp: Date.now().toString(),
+        direction: "outbound",
+      });
 
       console.log("✅ Text message sent:", response.data);
       return response.data;
@@ -93,6 +123,16 @@ export class WhatsAppService {
         payload
       );
 
+      // Save outbound message in DB
+      //   this.saveMessage({
+      //     from: this.phoneNumberId, // your business phone number
+      //     to,
+      //     type: "template",
+      //     text: template, // optional, you can also stringify template.components
+      //     timestamp: Date.now().toString(),
+      //     direction: "outbound",
+      //   });
+
       return response.data;
     } catch (error: any) {
       //   console.error(
@@ -120,5 +160,28 @@ export class WhatsAppService {
       );
       throw error;
     }
+  }
+
+  saveMessage(msg: Message) {
+    this.messages.push(msg);
+  }
+
+  getMessages() {
+    return this.messages;
+  }
+
+  saveContact(contact: Contact) {
+    // Check if contact already exists by waId
+    const exists = this.contacts.find((c) => c.waId === contact.waId);
+    if (!exists) {
+      this.contacts.push(contact);
+      console.log("📇 Saved Contact:", contact);
+    } else {
+      console.log("⚠️ Contact already exists:", contact.waId);
+    }
+  }
+
+  getContacts() {
+    return this.contacts;
   }
 }

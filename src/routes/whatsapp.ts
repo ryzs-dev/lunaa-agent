@@ -319,7 +319,7 @@ function transformOrderForNormalizedSupabase(orderData: any): CreateOrderInput {
 }
 
 // ============================================================================
-// WEBHOOK HANDLER (Updated with Queue)
+// WEBHOOK HANDLER (Updated with Queue)( Legacy Twilio format )
 // ============================================================================
 
 whatsappRouter.post("/whatsapp/incoming", async (req, res) => {
@@ -581,6 +581,9 @@ whatsappRouter.post("/whatsapp/incoming", async (req, res) => {
   console.log(`📥 Order message queued with ID: ${queueId}`);
 });
 
+// ============================================================================
+// Meta Cloud API - Send Messages & Fetch Templates
+// ============================================================================
 whatsappRouter.post("/send", async (req, res) => {
   const { to, message, template, mediaUrl } = req.body;
   const { type } = req.query;
@@ -612,6 +615,7 @@ whatsappRouter.post("/send", async (req, res) => {
             error: "Missing 'template' for template type",
           });
         }
+
         console.log(`📤 Sending template message to ${to}`);
         await waService.sendTemplateMessage(to, template);
         break;
@@ -660,6 +664,70 @@ whatsappRouter.get("/whatsapp/templates", async (req, res) => {
       details: error instanceof Error ? error.message : String(error),
     });
   }
+});
+
+whatsappRouter.get("/webhook", (req, res) => {
+  const VERIFY_TOKEN = "supersecret"; // set in Meta dashboard
+
+  const mode = req.query["hub.mode"];
+  const token = req.query["hub.verify_token"];
+  const challenge = req.query["hub.challenge"];
+
+  if (mode && token && mode === "subscribe" && token === VERIFY_TOKEN) {
+    console.log("✅ Webhook verified!");
+    res.status(200).send(challenge);
+  } else {
+    res.sendStatus(403);
+  }
+});
+
+whatsappRouter.post("/webhook", (req, res) => {
+  const body = req.body;
+
+  console.log("Raw webhook body:", JSON.stringify(body, null, 2));
+
+  if (body.object === "whatsapp_business_account") {
+    body.entry?.forEach((entry: any) => {
+      entry.changes?.forEach((change: any) => {
+        // ✅ Save contacts
+        if (change.value?.contacts) {
+          change.value.contacts.forEach((contact: any) => {
+            const newContact = {
+              waId: contact.wa_id,
+              profileName: contact.profile?.name || "",
+            };
+            waService.saveContact(newContact);
+            console.log("👤 Saved Contact:", newContact);
+          });
+        }
+
+        // ✅ Save messages
+        if (change.value?.messages) {
+          change.value.messages.forEach((msg: any) => {
+            const newMsg = {
+              id: msg.id,
+              from: msg.from, // This ties to contact.waId
+              body: msg.text?.body || "",
+              type: msg.type,
+              timestamp: msg.timestamp,
+              direction: "inbound",
+            };
+            waService.saveMessage(newMsg);
+            console.log("📥 Saved Message:", newMsg);
+          });
+        }
+      });
+    });
+
+    res.sendStatus(200);
+  } else {
+    res.sendStatus(404);
+  }
+});
+
+whatsappRouter.get("/whatsapp/messages", (req, res) => {
+  const data = waService.getMessages();
+  res.json(data);
 });
 
 // ============================================================================

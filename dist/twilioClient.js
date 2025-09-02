@@ -20,6 +20,7 @@ exports.sendProductUsageVideo = sendProductUsageVideo;
 exports.sendCompleteMessageSequence = sendCompleteMessageSequence;
 exports.getMessageStatusBySid = getMessageStatusBySid;
 exports.getRecentMessageStatus = getRecentMessageStatus;
+exports.getMessagingService = getMessagingService;
 const dotenv_1 = __importDefault(require("dotenv"));
 const path_1 = __importDefault(require("path"));
 const twilio_1 = __importDefault(require("twilio"));
@@ -364,5 +365,17 @@ function getRecentMessageStatus(phoneNumber) {
             console.error("❌ Failed to fetch recent message status:", error);
             return null;
         }
+    });
+}
+function getMessagingService() {
+    return __awaiter(this, void 0, void 0, function* () {
+        const services = yield client.messaging.v1.services.list({ limit: 20 });
+        return services.map((s) => ({
+            sid: s.sid,
+            friendlyName: s.friendlyName,
+            accountSid: s.accountSid,
+            dateCreated: s.dateCreated,
+            dateUpdated: s.dateUpdated,
+        }));
     });
 }

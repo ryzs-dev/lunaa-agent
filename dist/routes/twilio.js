@@ -47,6 +47,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
 const supabaseOrders_1 = require("../database/supabaseOrders");
+const twilioClient_1 = require("../twilioClient");
 const twilioRouter = express_1.default.Router();
 // Twilio webhook for status updates
 twilioRouter.post("/twilio/status", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
@@ -155,6 +156,24 @@ twilioRouter.get("/conversations/:phoneNumber", (req, res) => __awaiter(void 0, 
         res.status(500).json({
             success: false,
             error: "Failed to get conversation details",
+            details: error instanceof Error ? error.message : String(error),
+        });
+    }
+}));
+twilioRouter.get("/twilio/services", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const services = yield (0, twilioClient_1.getMessagingService)();
+        res.json({
+            success: true,
+            count: services.length,
+            services,
+        });
+    }
+    catch (error) {
+        console.error("❌ Failed to get Twilio services:", error);
+        res.status(500).json({
+            success: false,
+            error: "Failed to get Twilio services",
             details: error instanceof Error ? error.message : String(error),
         });
     }

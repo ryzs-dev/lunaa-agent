@@ -38,7 +38,7 @@ function fetchSheetData(sheetName, spreadsheetId) {
             console.log(`📋 Fetching data from sheet: ${sheetName}`);
             const response = yield sheets.spreadsheets.values.get({
                 spreadsheetId,
-                range: `${sheetName}!A:AC`, // Adjust range as needed
+                range: `${sheetName}!A:AD`, // Adjust range as needed
             });
             const rows = response.data.values || [];
             console.log(`✅ Fetched ${rows.length} rows from ${sheetName}`);

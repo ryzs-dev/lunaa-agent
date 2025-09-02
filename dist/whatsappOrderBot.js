@@ -692,7 +692,7 @@ class SheetsIntegration {
                     try {
                         const response = yield sheets.spreadsheets.values.get({
                             spreadsheetId,
-                            range: `${sheetName}!A:AC`,
+                            range: `${sheetName}!A:AD`,
                         });
                         const rows = response.data.values || [];
                         if (rows.length === 0)
@@ -701,7 +701,7 @@ class SheetsIntegration {
                         const rowData = this.createRowData(orderData, headers);
                         yield sheets.spreadsheets.values.append({
                             spreadsheetId,
-                            range: `${sheetName}!A:AC`,
+                            range: `${sheetName}!A:AD`,
                             valueInputOption: "RAW",
                             requestBody: { values: [rowData] },
                         });

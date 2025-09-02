@@ -29,7 +29,7 @@ export async function fetchSheetData(
 
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId,
-      range: `${sheetName}!A:AC`, // Adjust range as needed
+      range: `${sheetName}!A:AD`, // Adjust range as needed
     });
 
     const rows = response.data.values || [];

@@ -842,7 +842,7 @@ class SheetsIntegration {
         try {
           const response = await sheets.spreadsheets.values.get({
             spreadsheetId,
-            range: `${sheetName}!A:AC`,
+            range: `${sheetName}!A:AD`,
           });
 
           const rows = response.data.values || [];
@@ -853,7 +853,7 @@ class SheetsIntegration {
 
           await sheets.spreadsheets.values.append({
             spreadsheetId,
-            range: `${sheetName}!A:AC`,
+            range: `${sheetName}!A:AD`,
             valueInputOption: "RAW",
             requestBody: { values: [rowData] },
           });

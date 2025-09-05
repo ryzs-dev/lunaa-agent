@@ -1,21 +1,26 @@
 import { ContentExtractor } from "./extractors/ContentExtractor";
+import { PhoneExtractor } from "./extractors/PhoneExtractor";
+import { CustomerService } from "./services/CustomerService";
 
-const extractor = new ContentExtractor();
+(async () => {
+  const customerService = new CustomerService();
+  await customerService.init(); // wait for JSON to load
 
-const message = `
-  4/9/25，rpt
+  console.log('Customer service initialized');
 
-total：216
+  const phoneExtractor = new PhoneExtractor(customerService);
 
-khong  sieaw mei 
+  const extractor = new ContentExtractor(phoneExtractor); // pass initialized service
 
-contact: 010-935 3310 
+  const message = `
+    4/9/25，rpt
+    total：216
+    khong sieaw mei
+    contact: 01126470411
+    address: No8,Jalan Mawar Jaya 1-1 ,Taman Mawar Jaya,28300 Triang Pahang Malaysia
+    2w2f2s1w30ml1f10ml10b1f30ml
+  `;
 
-address: No8,Jalan Mawar Jaya 1-1 ,Taman Mawar Jaya,28300 Triang Pahang Malaysia
-
-2w2f2s1w30ml1f10ml10b1f30ml
-`;
-
-const result = extractor.extractAll(message);
-
-console.log(result);
+  const result = await extractor.extractAll(message);
+  console.log(result);
+})();

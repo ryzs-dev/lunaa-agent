@@ -10,17 +10,49 @@ import { CustomerService } from "./services/CustomerService";
 
   const phoneExtractor = new PhoneExtractor(customerService);
 
-  const extractor = new ContentExtractor(phoneExtractor); // pass initialized service
+  const extractor = new ContentExtractor(phoneExtractor); 
 
   const message = `
-    4/9/25，rpt
-    total：216
-    khong sieaw mei
-    contact: 01126470411
-    address: No8,Jalan Mawar Jaya 1-1 ,Taman Mawar Jaya,28300 Triang Pahang Malaysia
-    2w2f2s1w30ml1f10ml10b1f30ml
+5/9/25
+Total: 185
+
+Name: Amirul (Deliver by 9/9)
+
+Contact: 0123456789
+
+Address: No. 12, Jalan Merpati 5, Taman Bukit Indah, 81200 Johor Bahru, Johor
+
+Items: 2w2f
   `;
 
   const result = await extractor.extractAll(message);
   console.log(result);
+
+  if (result.contact) {
+  try {
+    await customerService.upsertCustomer({
+      phoneNumber: result.contact,
+      customerName: result.name || '',
+      addresses: result.address ? [{
+        addressLine1: result.address.address || '',
+        postcode: result.address.postcode || '',
+        state: result.address.state || '',
+        country: result.address.country || ''
+      }] : [],
+      messages: [{
+        messageId: Date.now().toString(),
+        customerPhone: result.contact,
+        content: message,
+        timestamp: new Date(),
+        customerId: result.contact
+      }],
+    });
+  } catch (error) {
+    console.error("Failed to upsert customer:", error);
+  }
+}
+
 })();
+
+
+

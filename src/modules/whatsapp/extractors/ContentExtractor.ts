@@ -31,7 +31,7 @@ export class ContentExtractor {
       contact: phoneNumber,
       address: this.addressExtractor.extract(text),
       products: this.productExtractor.extract(text),
-      repeatCustomer: isRepeat,
+      repeatCustomer: isRepeat ? "repeat" : "new",
     };
   }
 }

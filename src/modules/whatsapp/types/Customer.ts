@@ -7,6 +7,7 @@ export interface Customer {
   customerName: string;         // Name
   phoneNumber: string;
   addresses: Address[];
-  isRepeatCustomer: boolean;
-  messages: Message[];
+  isRepeatCustomer: 'repeat' | 'new';
+  messages?: Message[];
+  totalOrders?: number;      // Total orders
 }

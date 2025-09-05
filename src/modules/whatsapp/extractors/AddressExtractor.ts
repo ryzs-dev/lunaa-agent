@@ -8,7 +8,6 @@ export interface IAddress {
 }
 
 export class AddressExtractor implements IExtractor<IAddress | null> {
-  // Malaysia states
   private MALAYSIA_STATES = [
     "Johor", "Kedah", "Kelantan", "Melaka", "Negeri Sembilan", "Pahang",
     "Penang", "Pulau Pinang", "Perak", "Perlis", "Sabah", "Sarawak",
@@ -16,43 +15,55 @@ export class AddressExtractor implements IExtractor<IAddress | null> {
   ];
 
   extract(text: string): IAddress | null {
-    let src = text.trim();
+    if (!text) return null;
 
-    // Step 1: If there's an "address" label, slice from its last occurrence
-    const idx = src.toLowerCase().lastIndexOf("address");
-    if (idx !== -1) {
-      src = src.slice(idx).replace(/^address[:：]?\s*/i, "").trim();
-    }
+    const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
 
-    // Step 2: Find postcode (MY = 5 digits, SG = 6 digits)
-    const postcodeMatch = src.match(/(\d{5}|\d{6})/);
-    if (!postcodeMatch) {
-      return { address: src, postcode: "", state: "", country: "" };
-    }
+    // Remove lines that contain dates, product codes, contact info, total, etc.
+    const filteredLines = lines.filter(line => {
+      if (/\d{1,2}\/\d{1,2}\/\d{2,4}/.test(line)) return false; // date
+      if (/total|rpt/i.test(line)) return false; // total/report
+      if (/contact[:：]?/i.test(line)) return false; // contact
+      if (/^\+?\d{8,12}$/.test(line)) return false; // phone
+      if (/\d+[wfsb]\d*(ml)?/i.test(line)) return false;
+      if (/name[:：]/i.test(line)) return false; // name
+      return true;
+    });
 
-    const postcode = postcodeMatch[1];
-    const [before, after] = src.split(postcode, 2);
+    let src = filteredLines.join(", ");
 
-    let address = before.trim().replace(/^[, ]+|[, ]+$/g, "");
-    let state = after.trim().replace(/^[, ]+|[, ]+$/g, "");
-    let country = "";
+    
 
-    // Step 3: Identify country & state
-    if (postcode.length === 6) {
-      // Likely Singapore
-      country = "Singapore";
-      state = ""; // Singapore doesn't need a state
-    } else {
-      // Likely Malaysia
-      country = "Malaysia";
-      for (const s of this.MALAYSIA_STATES) {
-        const regex = new RegExp(`\\b${s}\\b`, "i");
-        if (regex.test(state)) {
-          state = s;
-          break;
-        }
+    // Extract postcode (5 digits for Malaysia)
+    const postcodeMatch = src.match(/\b\d{5}\b/);
+    const postcode = postcodeMatch ? postcodeMatch[0] : "";
+
+    // Extract state
+    let state = "";
+    for (const s of this.MALAYSIA_STATES) {
+      if (new RegExp(`\\b${s}\\b`, "i").test(src)) {
+        state = s;
+        break;
       }
     }
+
+    // Determine country
+    const country = postcode.length === 6 ? "Singapore" : "Malaysia";
+
+    // Clean address: remove postcode, state, common extra labels
+    let address = src
+      .replace(postcode, "")
+      .replace(state, "")
+      .replace(/Name[:：].*?,?/i, "")
+      .replace(/Contact[:：]?.*?,?/i, "")
+      .replace(country, "")
+      .replace(/\s*,\s*/g, ", ")
+      .trim();
+
+    address = address.replace(/\b\d+[wfsb]\d*(ml)?\b/gi, "").trim();
+    address = address.replace(/^,|,$/g, "").trim();
+    address = address.replace(/\b(Address|Addr|Add)[:：]\s*/i, "");
+
 
     return { address, postcode, state, country };
   }

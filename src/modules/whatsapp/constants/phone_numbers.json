@@ -1,9 +1,42 @@
-[{
+[
+  {
+    "name": "Ryan",
     "number": "601126470411",
-    "name": "Ryan"
-},
-
-{
+    "address": "",
+    "postcode": "",
+    "city": "",
+    "state": "",
+    "country": "",
+    "isRepeatCustomer": "repeat"
+  },
+  {
+    "name": "Zi Qian",
     "number": "60137424267",
-    "name": "Zi Qian"
-}]
+    "address": "",
+    "postcode": "",
+    "city": "",
+    "state": "",
+    "country": "",
+    "isRepeatCustomer": "repeat"
+  },
+  {
+    "name": "Vivi（URGENT! Receive before 8/9）",
+    "number": "60177936668",
+    "address": "",
+    "postcode": "",
+    "city": "",
+    "state": "",
+    "country": "",
+    "isRepeatCustomer": "repeat"
+  },
+  {
+    "name": "Amirul (Deliver by 9/9)",
+    "number": "60123456789",
+    "address": "No. 12, Jalan Merpati 5, Taman Bukit Indah, Bahru, Johor",
+    "postcode": "81200",
+    "city": "",
+    "state": "Johor",
+    "country": "Malaysia",
+    "isRepeatCustomer": "repeat"
+  }
+]

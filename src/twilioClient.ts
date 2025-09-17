@@ -89,6 +89,13 @@ function detectCourierAndLink(
     };
   }
 
+  if (courierLower.includes("best") || courierLower.includes("best express")) {
+    return {
+      name: "Best Express",
+      link: `https://www.best-inc.my/track`,
+    };
+  }
+
   if (courierLower.includes("j&t") || courierLower.includes("jnt")) {
     return {
       name: "J&T Express",
@@ -140,8 +147,8 @@ function detectCourierAndLink(
   }
 
   return {
-    name: "Flash Express (MY)",
-    link: `https://www.flashexpress.my/fle/tracking?trackNumber=${trackingNumber}`,
+    name: "Best Express",
+    link: `https://www.best-inc.my/track`,
   };
 }
 

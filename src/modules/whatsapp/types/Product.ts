@@ -1,6 +1,8 @@
-export interface ProductOrder {
-  productId?: string;
-  name: string;                 // e.g. "Femlift 30ml"
-  quantity: number;             // how many
-  type?: string;
-}
+export interface Product {
+    id: string;
+    name: string;
+    price: number;
+    stock?: number; // optional if you track inventory
+    isActive?: boolean; // default true
+  }
+  

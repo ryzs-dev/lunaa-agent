@@ -1,5 +1,5 @@
 import { SupabaseClient } from "@supabase/supabase-js";
-import { CustomerDB } from "../types/CustomerDB";
+import { Customer } from "../../whatsapp/types";
 
 export class CustomerService {
   constructor(private supabase: SupabaseClient) {}
@@ -9,7 +9,7 @@ export class CustomerService {
    * - If exists → update with rules
    * - If not exists → insert new customer
    */
-  async upsert(customerData: CustomerDB): Promise<CustomerDB> {
+  async upsert(customerData: Customer): Promise<Customer> {
     const now = new Date().toISOString();
     const existing = await this.findByPhone(customerData.phoneNumber);
 
@@ -20,7 +20,7 @@ export class CustomerService {
 
   /** --- Private Helpers --- */
 
-  private async findByPhone(phone: string): Promise<CustomerDB | null> {
+  private async findByPhone(phone: string): Promise<Customer | null> {
     const { data, error } = await this.supabase
       .from("customers")
       .select("*")
@@ -35,10 +35,10 @@ export class CustomerService {
   }
 
   private async update(
-    existing: CustomerDB,
-    incoming: CustomerDB,
+    existing: Customer,
+    incoming: Customer,
     now: string
-  ): Promise<CustomerDB> {
+  ): Promise<Customer> {
     const isRepeat = (existing.totalOrders || 0) > 0;
 
     const { data, error } = await this.supabase
@@ -63,29 +63,32 @@ export class CustomerService {
     return data!;
   }
 
-  private async insert(incoming: CustomerDB, now: string): Promise<CustomerDB> {
+  private async insert(incoming: Customer, now: string): Promise<Customer> {
     const { data, error } = await this.supabase
       .from("customers")
       .insert({
-        phone_number: incoming.phoneNumber,
+        customer_id: incoming.customerId,
         customer_name: incoming.customerName,
-        id: '200',
-        customer_type: incoming.isRepeatCustomer,
-        total_orders: 0,
-        total_spent: 0,
-        average_order_value: 0,
+        phone_number: incoming.phoneNumber,
+        is_repeat_customer: incoming.isRepeatCustomer,
+        fb_name: incoming.fbName ?? null,
+        email: incoming.email ?? null,
+        total_orders: incoming.totalOrders ?? 0,
+        total_spent: incoming.totalSpent ?? 0,
+        last_order_date: incoming.lastOrderDate ?? null,
         created_at: now,
         updated_at: now,
       })
       .select()
       .single();
-
+  
     if (error) throw error;
-
+  
     console.log(
-      `✅ Created new customer: id=${data!.id}, phone=${data!.phoneNumber}`
+      `✅ Created new customer: id=${data!.customer_id}, phone=${data!.phone_number}`
     );
-
+  
     return data!;
   }
+  
 }

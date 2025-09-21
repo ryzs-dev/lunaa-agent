@@ -1,13 +1,13 @@
 import { Agent } from "./Agent";
 import { Customer } from "./Customer";
-import { ProductOrder } from "./Product";
+import { OrderItem } from "./OrderItem";
 import { Shipment } from "./Shipment";
 
-export interface OrderData {
+export interface Order {
   orderId: string;
   orderDate: string;
   customer: Customer;           
-  products: ProductOrder[];     
+  items: OrderItem[];     
   totalPaid?: number;           
   productCode?: string;         
   remark?: string;
@@ -18,12 +18,3 @@ export interface OrderData {
   agentName?: Agent;           // Agent by / under
   currency?: string;            // RM, USD etc.
 }
-
-
-
-
-
-
-
-
-

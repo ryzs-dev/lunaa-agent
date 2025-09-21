@@ -23,11 +23,6 @@ export class CustomerService {
     const data = Array.from(this.customers.values()).map(c => ({
       name: c.customerName,
       number: c.phoneNumber,
-      address: c.addresses?.[0]?.addressLine1 || '',
-      postcode: c.addresses?.[0]?.postcode || '',
-      city: c.addresses?.[0]?.city || '',
-      state: c.addresses?.[0]?.state || '',
-      country: c.addresses?.[0]?.country || '',
       isRepeatCustomer: c.isRepeatCustomer,
     }));
     await fs.writeFile(filePath, JSON.stringify(data, null, 2), "utf-8");
@@ -49,8 +44,6 @@ export class CustomerService {
           customerId: crypto.randomUUID(),
           phoneNumber: entry.number,
           customerName: entry.name,
-          addresses: [],
-          messages: [],
           isRepeatCustomer: 'repeat', // preloaded customers are considered repeat
         });
       });
@@ -65,16 +58,12 @@ export class CustomerService {
     return this.customers.get(phoneNumber);
   }
 
-  async upsertCustomer(parsed: Omit<Customer, "isRepeatCustomer" | "customerId">): Promise<Customer> {
+  async upsertCustomer(parsed: Omit<Customer, "addresses" | "messages" | "isRepeatCustomer" | "customerId">): Promise<Customer> {
   const phone = parsed.phoneNumber;
   let existing = this.customers.get(phone);
 
   if (existing) {
     existing.isRepeatCustomer = 'repeat';
-    existing.messages = existing.messages || [];
-    existing.addresses = existing.addresses || [];
-    existing.messages.push(...(parsed.messages || []));
-    existing.addresses.push(...(parsed.addresses || []));
     this.customers.set(phone, existing);
     await this.saveToFile(); 
 
@@ -87,7 +76,10 @@ export class CustomerService {
     return existing;
   }
 
-  const newCustomer: Customer = {
+  type NewCustomerCreateInput = Omit<Customer, "addresses" | "messages">;
+
+
+  const newCustomer: NewCustomerCreateInput = {
     customerId: crypto.randomUUID(),
     ...parsed,
     isRepeatCustomer: 'new',
@@ -95,15 +87,9 @@ export class CustomerService {
   this.customers.set(phone, newCustomer);
   await this.saveToFile(); 
 
-  const payload = {
-    phoneNumber: newCustomer.phoneNumber,
-    customerName: newCustomer.customerName,
-    isRepeatCustomer: newCustomer.isRepeatCustomer,
-    customerId : newCustomer.customerId,
-  }
 
   try {
-      await this.supabaseCustomerService.upsert(payload)
+      await this.supabaseCustomerService.upsert(newCustomer)
     } catch (error) {
       throw new Error("Failed to upsert customer to Supabase: " + (error as Error).message);  
     }

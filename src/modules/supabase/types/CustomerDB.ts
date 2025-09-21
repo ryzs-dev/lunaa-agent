@@ -1,5 +1,5 @@
 export interface CustomerDB {
-  customerId: string;
+  customerId?: number;
   fbName?:string;
   customerName: string;         // Name
   phoneNumber: string;
@@ -7,4 +7,7 @@ export interface CustomerDB {
   totalOrders?: number;
   totalSpent?: number;     
   email?: string;
+  lastOrderDate?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }

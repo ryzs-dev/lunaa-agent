@@ -1,10 +1,10 @@
 import { IExtractor } from "./IExtractor";
 import products from "../constants/products.json";
 import sizes from "../constants/sizes.json";
-import { ProductOrder } from "../types";
+import { OrderItem } from "../types";
 
-export class ProductExtractor implements IExtractor<ProductOrder[]> {
-  extract(text: string): ProductOrder[] {
+export class ProductExtractor implements IExtractor<OrderItem[]> {
+  extract(text: string): OrderItem[] {
     if (!text) return [];
 
     // last non-empty line
@@ -15,7 +15,7 @@ export class ProductExtractor implements IExtractor<ProductOrder[]> {
     const cleaned = lastLine.replace(/\s+/g, "").toLowerCase();
     const regex = /(\d+)([a-z])(\d+ml)?/gi;
 
-    const orders: ProductOrder[] = [];
+    const orders: OrderItem[] = [];
     let match: RegExpExecArray | null;
 
     while ((match = regex.exec(cleaned)) !== null) {

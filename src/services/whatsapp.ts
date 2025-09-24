@@ -1,7 +1,7 @@
 import axios, { AxiosInstance } from "axios";
 import dotenv from "dotenv";
-import { Request, Response } from "express";
 import path from "path";
+import { supabase } from "../modules/supabase";
 
 dotenv.config({ path: path.resolve(__dirname, "../../.env.local") });
 
@@ -17,11 +17,14 @@ interface TemplatePayload {
 }
 
 type Message = {
+  mediaFileUrl: null;
   from: string;
   to?: string;
   type: string;
+  image?: { id: string; mime_type: string; caption?: string };
+  text?: { body: string };
   body?: string;
-  timestamp: string;
+  timestamp?: string;
   id?: string;
   direction: string;
 };
@@ -30,6 +33,8 @@ type Contact = {
   waId: string;
   profileName: string;
 };
+
+
 
 export class WhatsAppService {
   private client: AxiosInstance;
@@ -59,38 +64,30 @@ export class WhatsAppService {
   }
 
   /** Send a plain text message */
-  async sendTextMessage(to: string, message: string) {
-    try {
-      console.log("Sending text message to:", to);
-      const response = await this.client.post(
-        `/${this.phoneNumberId}/messages`,
-        {
-          messaging_product: "whatsapp",
-          to,
-          type: "text",
-          text: { body: message },
-        }
-      );
-
-      // Save outbound message in DB
-      this.saveMessage({
-        from: this.phoneNumberId, // your business phone number
+  async sendTextMessage(to: string, body: string) {
+    const response = await this.client.post(
+      `/${this.phoneNumberId}/messages`,
+      {
+        messaging_product: "whatsapp",
         to,
         type: "text",
-        body: message, // optional, you can also stringify template.components
-        timestamp: Date.now().toString(),
-        direction: "outbound",
-      });
+        text: { body },
+      }
+    );
 
-      console.log("✅ Text message sent:", response.data);
-      return response.data;
-    } catch (error: any) {
-      console.error(
-        "❌ Error sending text:",
-        error.response?.data || error.message
-      );
-      throw error;
-    }
+    return response.data;
+  }
+
+  async getMedia(mediaId:string) {
+    const response = await this.client.get(`/${mediaId}`, {
+      params: { fields: 'url, mime_type' }
+    });
+
+    const { url, mime_type } = response.data;
+
+    const fileRes = await this.client.get(url, { responseType: "arraybuffer",  });
+
+    return { fileData: fileRes.data, mimeType: mime_type };
   }
 
   /** Send a template message */
@@ -162,13 +159,51 @@ export class WhatsAppService {
     }
   }
 
-  saveMessage(msg: Message) {
-    this.messages.push(msg);
+  // saveMessage(msg: Message) {
+  //   this.insertMessage(msg)
+  // }
+
+  async saveMessage(msg: Message) {
+    const ts = msg.timestamp
+      ? Number(msg.timestamp) > 1e12
+        ? new Date(Number(msg.timestamp)).toISOString()   // ms
+        : new Date(Number(msg.timestamp) * 1000).toISOString() // s
+      : new Date().toISOString();
+
+    const { data, error } = await supabase
+      .from('messages')
+      .insert({
+        message_id: msg.id || null,
+        direction: msg.direction === 'outbound' ? 'out' : 'in',
+        from_number: msg.from,   // ⚠️ change your DB schema to from_number
+        to_number: msg.to,
+        type: msg.type,
+        body: msg.body,
+        timestamp: ts,
+        metadata: {},
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error("❌ DB insert failed:", error.message);
+      throw error;
+    }
+    return data;
   }
 
-  getMessages() {
-    return this.messages;
+  async getMessages(conversationId: string) {
+    const { data, error } = await supabase
+      .from("messages")
+      .select("*")
+      .eq("conversation_id", conversationId) // link messages to convo
+      .order("timestamp", { ascending: true })
+      .limit(50);
+
+    if (error) throw error;
+    return data;
   }
+
 
   saveContact(contact: Contact) {
     // Check if contact already exists by waId
@@ -184,4 +219,278 @@ export class WhatsAppService {
   getContacts() {
     return this.contacts;
   }
+  
+  async upsertContact(contact: Contact) {
+    await supabase.from("contacts").upsert({
+      wa_id: contact.waId,
+      profile_name: contact.profileName || null,
+      phone_number: contact.waId,
+      updated_at: new Date().toISOString(),
+    });
+  }
+
+  // async upsertConversation(waId: string, businessNumber: string, lastMessageId: string) {
+  // // Step 1: check if convo exists
+  // const { data: convo, error } = await supabase
+  //   .from("conversations")
+  //   .select("id, unread_count") // 👈 only fetch what we need
+  //   .eq("contact_wa_id", waId)
+  //   .eq("business_number", businessNumber)
+  //   .maybeSingle();
+
+  // if (error) throw error;
+
+  // // Step 2: update if exists
+  // if (convo) {
+  //   const { data: updated, error: updateError } = await supabase
+  //     .from("conversations")
+  //     .update({
+  //       last_message_id: lastMessageId,
+  //       unread_count: convo.unread_count + 1,
+  //       updated_at: new Date().toISOString(),
+  //     })
+  //     .eq("id", convo.id)
+  //     .select("id")
+  //     .maybeSingle(); // 👈 use maybeSingle to avoid runtime errors
+
+  //   if (updateError) throw updateError;
+  //   return updated?.id ?? convo.id; // 👈 fallback to original convo.id
+  // }
+
+  // // Step 3: insert if not exists
+  // const { data: inserted, error: insertError } = await supabase
+  //   .from("conversations")
+  //   .insert({
+  //     contact_wa_id: waId,
+  //     business_number: businessNumber,
+  //     last_message_id: lastMessageId,
+  //     unread_count: 1,
+  //     status: "open",
+  //   })
+  //   .select("id")
+  //   .maybeSingle();
+
+  // if (insertError) throw insertError;
+  // return inserted?.id ?? null;
+
+  
+  // }
+
+  async upsertConversation(
+    waId: string,
+    businessNumber: string,
+    lastMessageId: string | null
+  ) {
+    const { data, error } = await supabase
+      .from("conversations")
+      .upsert(
+        {
+          contact_wa_id: waId,
+          business_number: businessNumber,
+          last_message_id: lastMessageId,
+          unread_count: 0, // will be incremented if conflict
+          status: "open",
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "contact_wa_id,business_number" }
+      )
+      .select("id")
+      .single();
+
+    if (error) throw error;
+    return data?.id ?? null;
+  }
+
+  async getConversations() {
+    const { data, error } = await supabase
+      .from("conversations")
+      .select(`
+        id,
+        contact:contacts (
+          wa_id,
+          profile_name
+        ),
+        messages:messages!messages_conversation_id_fkey (
+          id,
+          body,
+          type,
+          direction,
+          timestamp,
+          message_media ( id, media_id, mime_type, caption )
+        ),
+        unread_count,
+        status,
+        updated_at
+      `)
+      .order("updated_at", { ascending: false })
+      .limit(20);
+
+    if (error) throw error;
+
+    // transform: keep only the last message
+    return data.map(conv => ({
+      id: conv.id,
+      contact: conv.contact,
+      last_message: conv.messages?.[conv.messages.length - 1] ?? null,
+      unread_count: conv.unread_count,
+      status: conv.status,
+      updated_at: conv.updated_at
+    }));
+  }
+
+  async  getConversationMessages(conversationId: string) {
+    const { data, error } = await supabase
+      .from("messages")
+      .select(`
+        id,
+        body,
+        type,
+        direction,
+        timestamp,
+        message_media ( 
+          id, 
+          media_id, 
+          mime_type, 
+          caption 
+        )
+      `)
+      .eq("conversation_id", conversationId)
+      .order("timestamp", { ascending: true }); // chronological
+
+    if (error) throw error;
+    return data;
+  }
+
+  async handleInboundMessage(message: Message, businessNumber: string, profileName: string) {
+    const waId = message.from;
+    
+    // 1. Ensure contact exists
+    await this.upsertContact({ waId, profileName });
+
+    // 2. Ensure conversation exists
+    const convoId = await this.upsertConversation(waId, businessNumber, null);
+    console.log("Handling inbound message for convo:", convoId);
+
+
+    // 3. Insert the message (deduped)
+    const { data: savedMessage, error: msgError } = await supabase
+      .from("messages")
+      .upsert(
+        {
+          message_id: message.id,
+          conversation_id: convoId,
+          direction: "inbound",
+          from_number: waId,
+          to_number: businessNumber,
+          type: message.type,
+          body: message.text?.body,
+          timestamp: message.timestamp
+            ? new Date(parseInt(message.timestamp) * 1000).toISOString()
+            : new Date().toISOString(),
+          metadata: message,
+        },
+        { onConflict: "message_id" }
+      )
+      .select("id")
+      .single();
+
+    if (msgError) throw msgError;
+
+    // ✅ If message has media, insert into message_media
+    if (savedMessage && message.type === "image" && message.image) {
+      const { error: mediaError } = await supabase
+        .from("message_media")
+        .insert({
+          message_id: savedMessage.id,   // FK to messages.id
+          media_id: message.image.id,    // WhatsApp media ID
+          mime_type: message.image.mime_type,
+          caption: message.image.caption || null,
+        });
+
+      if (mediaError) {
+        console.error("❌ Error saving media:", mediaError);
+        throw mediaError;
+      }
+    }
+
+    // 4. Update conversation → trigger increments unread_count
+    const { error: updateError } = await supabase
+      .from("conversations")
+      .update({
+        last_message_id: savedMessage.id,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", convoId);
+
+    if (updateError) throw updateError;
+
+    return savedMessage;
+  }
+
+  async sendOutboundMessage(conversationId: string, body: string) {
+    // 1. Get the conversation
+    console.log("Sending outbound message to convo:", conversationId);
+
+    const { data: convo, error } = await supabase
+      .from("conversations")
+      .select("id, contact_wa_id, business_number")
+      .eq("id", conversationId)
+      .maybeSingle();
+
+    if (error || !convo) throw new Error("Conversation not found");
+
+    // 2. Send to WhatsApp API
+    const response = await this.sendTextMessage(convo.contact_wa_id, body);
+    const waMessageId = response.messages?.[0]?.id;
+
+    // 3. Save outbound message
+    const { data: savedMessage, error: msgError } = await supabase
+      .from("messages")
+      .insert({
+        message_id: waMessageId,        
+        conversation_id: convo.id,       
+        direction: "outbound",
+        from_number: convo.business_number,
+        to_number: convo.contact_wa_id,
+        type: "text",
+        body,
+        timestamp: new Date().toISOString(),
+        metadata: response,            
+      })
+      .select("id")
+      .single();
+
+    if (msgError) throw msgError;
+
+    // 4. Update conversation with last_message_id
+    const { error: updateError } = await supabase
+      .from("conversations")
+      .update({
+        last_message_id: savedMessage.id,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", convo.id);
+
+    if (updateError) throw updateError;
+
+    return savedMessage;
+    }
+
+  async markConversationAsRead(conversationId: string) {
+    console.log("Marking conversation as read:", conversationId);
+    const { error } = await supabase
+      .from("conversations")
+      .update({
+        unread_count: 0,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", conversationId);
+
+    if (error) {
+      console.error("❌ Error marking conversation as read:", error);
+      throw error;
+    }
+  }
+
+
 }

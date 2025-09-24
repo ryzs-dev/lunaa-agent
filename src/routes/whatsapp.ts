@@ -15,6 +15,7 @@ import {
   CreateOrderInput,
 } from "../database/supabaseNormalized";
 import { WhatsAppService } from "../services/whatsapp";
+import { supabase } from "../modules/supabase";
 
 const whatsappRouter = express.Router();
 
@@ -584,71 +585,84 @@ whatsappRouter.post("/whatsapp/incoming", async (req, res) => {
 // ============================================================================
 // Meta Cloud API - Send Messages & Fetch Templates
 // ============================================================================
-whatsappRouter.post("/send", async (req, res) => {
-  const { to, message, template, mediaUrl } = req.body;
-  const { type } = req.query;
+// whatsappRouter.post("/send", async (req, res) => {
+//   const { to, message, template, mediaUrl } = req.body;
+//   const { type } = req.query;
 
-  console.log(`\n🚀 /send called with type='${type}' to='${to}'`);
-  if (!to || !type) {
-    return res.status(400).json({
-      success: false,
-      error: "Missing 'to' in body or 'type' in query",
-    });
-  }
+//   console.log(`\n🚀 /send called with type='${type}' to='${to}'`);
+//   if (!to || !type) {
+//     return res.status(400).json({
+//       success: false,
+//       error: "Missing 'to' in body or 'type' in query",
+//     });
+//   }
+
+//   try {
+//     switch (type) {
+//       case "text":
+//         if (!message) {
+//           return res
+//             .status(400)
+//             .json({ success: false, error: "Missing 'message' for text type" });
+//         }
+//         console.log(`📤 Sending text message to ${to}`);
+//         await waService.sendTextMessage(to, message);
+//         break;
+
+//       case "template":
+//         if (!template) {
+//           return res.status(400).json({
+//             success: false,
+//             error: "Missing 'template' for template type",
+//           });
+//         }
+
+//         console.log(`📤 Sending template message to ${to}`);
+//         await waService.sendTemplateMessage(to, template);
+//         break;
+
+//       // If you want to re-enable media later
+//       // case "media":
+//       //   if (!mediaUrl) {
+//       //     return res.status(400).json({ success: false, error: "Missing 'mediaUrl' for media type" });
+//       //   }
+//       //   console.log(`📤 Sending media message to ${to}`);
+//       //   await waService.sendMediaMessage(to, mediaUrl, message || "");
+//       //   break;
+
+//       default:
+//         return res.status(400).json({
+//           success: false,
+//           error: `Unsupported type '${type}'`,
+//         });
+//     }
+
+//     res.json({
+//       success: true,
+//       message: `✅ Message sent to ${to} using type '${type}'`,
+//     });
+//   } catch (error) {
+//     console.error("❌ Error sending message:", error);
+//     res.status(500).json({
+//       success: false,
+//       error: "Failed to send message",
+//       details: error instanceof Error ? error.message : String(error),
+//     });
+//   }
+// });
+
+whatsappRouter.post("/send", async (req, res) => {
+  const { conversationId, message } = req.body;
 
   try {
-    switch (type) {
-      case "text":
-        if (!message) {
-          return res
-            .status(400)
-            .json({ success: false, error: "Missing 'message' for text type" });
-        }
-        console.log(`📤 Sending text message to ${to}`);
-        await waService.sendTextMessage(to, message);
-        break;
-
-      case "template":
-        if (!template) {
-          return res.status(400).json({
-            success: false,
-            error: "Missing 'template' for template type",
-          });
-        }
-
-        console.log(`📤 Sending template message to ${to}`);
-        await waService.sendTemplateMessage(to, template);
-        break;
-
-      // If you want to re-enable media later
-      // case "media":
-      //   if (!mediaUrl) {
-      //     return res.status(400).json({ success: false, error: "Missing 'mediaUrl' for media type" });
-      //   }
-      //   console.log(`📤 Sending media message to ${to}`);
-      //   await waService.sendMediaMessage(to, mediaUrl, message || "");
-      //   break;
-
-      default:
-        return res.status(400).json({
-          success: false,
-          error: `Unsupported type '${type}'`,
-        });
-    }
-
-    res.json({
-      success: true,
-      message: `✅ Message sent to ${to} using type '${type}'`,
-    });
-  } catch (error) {
-    console.error("❌ Error sending message:", error);
-    res.status(500).json({
-      success: false,
-      error: "Failed to send message",
-      details: error instanceof Error ? error.message : String(error),
-    });
+    const savedMsg = await waService.sendOutboundMessage(conversationId, message);
+    res.json({ success: true, data: savedMsg });
+  } catch (err: any) {
+    console.error("❌ Send error:", err.message);
+    res.status(500).json({ success: false, error: err.message });
   }
 });
+
 
 whatsappRouter.get("/whatsapp/templates", async (req, res) => {
   try {
@@ -681,53 +695,143 @@ whatsappRouter.get("/webhook", (req, res) => {
   }
 });
 
-whatsappRouter.post("/webhook", (req, res) => {
+// whatsappRouter.post("/webhook", (req, res) => {
+//   const body = req.body;
+
+//   console.log("Raw webhook body:", JSON.stringify(body, null, 2));
+
+//   if (body.object === "whatsapp_business_account") {
+//     body.entry?.forEach((entry: any) => {
+//       entry.changes?.forEach((change: any) => {
+//         // ✅ Save contacts
+//         if (change.value?.contacts) {
+//           change.value.contacts.forEach((contact: any) => {
+//             const newContact = {
+//               waId: contact.wa_id,
+//               profileName: contact.profile?.name || "",
+//             };
+//             waService.upsertContact(newContact);
+//             console.log("👤 Saved Contact:", newContact);
+//           });
+//         }
+
+//         // ✅ Save messages
+//         if (change.value?.messages) {
+//           const businessNumber = change.value?.metadata?.display_phone_number || null;
+
+//           change.value.messages.forEach(async (msg: any) => {
+//             const newMsg = {
+//               id: msg.id,
+//               to: businessNumber, // Use business number from metadata
+//               from: msg.from, // This ties to contact.waId
+//               body: msg.text?.body || "",
+//               type: msg.type,
+//               direction: "inbound",
+//             };
+//             const savedMessage = await waService.saveMessage(newMsg);
+            
+//             await waService.upsertConversation(
+//               msg.from, // contact’s waId
+//               businessNumber,
+//               savedMessage.id
+//             );
+//           });
+//         }
+//       });
+//     });
+
+//     res.sendStatus(200);
+//   } else {
+//     res.sendStatus(404);
+//   }
+// });
+
+whatsappRouter.post("/webhook", async (req, res) => {
+
   const body = req.body;
 
   console.log("Raw webhook body:", JSON.stringify(body, null, 2));
 
-  if (body.object === "whatsapp_business_account") {
-    body.entry?.forEach((entry: any) => {
-      entry.changes?.forEach((change: any) => {
-        // ✅ Save contacts
-        if (change.value?.contacts) {
-          change.value.contacts.forEach((contact: any) => {
-            const newContact = {
-              waId: contact.wa_id,
-              profileName: contact.profile?.name || "",
-            };
-            waService.saveContact(newContact);
-            console.log("👤 Saved Contact:", newContact);
-          });
-        }
+  try {
+    const body = req.body;
 
-        // ✅ Save messages
-        if (change.value?.messages) {
-          change.value.messages.forEach((msg: any) => {
-            const newMsg = {
-              id: msg.id,
-              from: msg.from, // This ties to contact.waId
-              body: msg.text?.body || "",
-              type: msg.type,
-              timestamp: msg.timestamp,
-              direction: "inbound",
-            };
-            waService.saveMessage(newMsg);
-            console.log("📥 Saved Message:", newMsg);
-          });
+    if (body.object === "whatsapp_business_account") {
+      for (const entry of body.entry || []) {
+        for (const change of entry.changes || []) {
+          const businessNumber = change.value?.metadata?.display_phone_number;
+          const profileName = change.value?.contacts?.[0]?.profile?.name || "";
+          for (const msg of change.value?.messages || []) {
+            await waService.handleInboundMessage(msg, businessNumber, profileName);
+          }
         }
-      });
-    });
-
-    res.sendStatus(200);
-  } else {
-    res.sendStatus(404);
+      }
+      res.sendStatus(200);
+    } else {
+      res.sendStatus(404);
+    }
+  } catch (err: any) {
+    console.error("❌ Webhook error:", err);
+    res.status(500).json({ error: err.message });
   }
 });
 
-whatsappRouter.get("/whatsapp/messages", (req, res) => {
-  const data = waService.getMessages();
-  res.json(data);
+// Mark conversation as read
+// whatsappRouter.post("/whatsapp/conversations/:id/read", async (req, res) => {
+//   const { id } = req.params;
+
+//   try {
+//     await waService.markConversationAsRead(id);
+//     res.json({ success: true });
+//   } catch (err: any) {
+//     res.status(500).json({ success: false, error: err.message });
+//   }
+// });
+
+// List all conversations
+whatsappRouter.get("/whatsapp/conversations", async (req, res) => {
+  try {
+    const conversations = await waService.getConversations();
+    res.json({ success: true, conversations });
+  } catch (error: any) {
+    console.error("❌ Error fetching conversations:", error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Get messages for a specific conversation
+whatsappRouter.get("/whatsapp/conversations/:conversationId", async (req, res) => {
+  try {
+    const { conversationId } = req.params;
+
+    if (!conversationId) {
+      return res.status(400).json({ success: false, error: "Missing conversationId" });
+    }
+
+    const data = await waService.getConversationMessages(conversationId);
+    res.json({ success: true, messages: data });
+  } catch (error: any) {
+    console.error("❌ Error fetching messages:", error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Get media URL
+whatsappRouter.get("/whatsapp/media/:mediaId", async (req, res) => {
+  const { mediaId } = req.params;
+
+  try {
+    if (!mediaId) {
+      return res.status(400).json({ success: false, error: "Missing mediaId" });
+    }
+
+    const media = await waService.getMedia(mediaId);
+
+    res.setHeader("Content-Type", media.mimeType);
+    res.send(media.fileData); // send the raw image bytes
+  } catch (error) {
+    console.error("❌ Error fetching media:", error);
+    res.status(500).json({ success: false, error: "Failed to fetch media" });
+  }
 });
 
 // ============================================================================

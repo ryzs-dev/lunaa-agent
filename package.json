@@ -27,6 +27,7 @@
     "express": "^5.1.0",
     "fs": "^0.0.1-security",
     "googleapis": "^153.0.0",
+    "malaysia-postcodes": "^2.7.3",
     "multer": "^2.0.2",
     "node-cron": "^4.2.1",
     "papaparse": "^5.5.3",

@@ -16,6 +16,7 @@ import {
 } from "../database/supabaseNormalized";
 import { WhatsAppService } from "../services/whatsapp";
 import { supabase } from "../modules/supabase";
+import { AUTHORIZED_AGENTS } from "../modules/whatsapp/config/agent.config";
 
 const whatsappRouter = express.Router();
 
@@ -695,85 +696,96 @@ whatsappRouter.get("/webhook", (req, res) => {
   }
 });
 
-// whatsappRouter.post("/webhook", (req, res) => {
+// whatsappRouter.post("/webhook", async (req, res) => {
+
 //   const body = req.body;
 
 //   console.log("Raw webhook body:", JSON.stringify(body, null, 2));
 
-//   if (body.object === "whatsapp_business_account") {
-//     body.entry?.forEach((entry: any) => {
-//       entry.changes?.forEach((change: any) => {
-//         // ✅ Save contacts
-//         if (change.value?.contacts) {
-//           change.value.contacts.forEach((contact: any) => {
-//             const newContact = {
-//               waId: contact.wa_id,
-//               profileName: contact.profile?.name || "",
-//             };
-//             waService.upsertContact(newContact);
-//             console.log("👤 Saved Contact:", newContact);
-//           });
+//   const adminPhone = AUTHORIZED_AGENTS;
+
+//   try {
+//     const body = req.body;
+
+//     if( body.object === "whatsapp_business_account") {
+//       for (const entry of body.entry || []) {
+//         for (const change of entry.changes || []) {
+//           const businessNumber = change.value?.metadata?.display_phone_number;
+//           const profileName = change.value?.contacts?.[0]?.profile?.name || "";
+
+//           if(businessNumber && !adminPhone.includes(businessNumber)) {
+//             res.status(403).json("Unauthorized business number");
+//             return;
+//           } else {
+//             for (const msg of change.value?.messages || []) {
+//               await waService.handleMessageExtraction(msg);
+//             }
+//           }     
 //         }
+//       }
+//       res.sendStatus(200);
+//     }else {
+//       res.sendStatus(404)
+//     }
 
-//         // ✅ Save messages
-//         if (change.value?.messages) {
-//           const businessNumber = change.value?.metadata?.display_phone_number || null;
-
-//           change.value.messages.forEach(async (msg: any) => {
-//             const newMsg = {
-//               id: msg.id,
-//               to: businessNumber, // Use business number from metadata
-//               from: msg.from, // This ties to contact.waId
-//               body: msg.text?.body || "",
-//               type: msg.type,
-//               direction: "inbound",
-//             };
-//             const savedMessage = await waService.saveMessage(newMsg);
-            
-//             await waService.upsertConversation(
-//               msg.from, // contact’s waId
-//               businessNumber,
-//               savedMessage.id
-//             );
-//           });
-//         }
-//       });
-//     });
-
-//     res.sendStatus(200);
-//   } else {
-//     res.sendStatus(404);
+//     // if (body.object === "whatsapp_business_account") {
+//     //   for (const entry of body.entry || []) {
+//     //     for (const change of entry.changes || []) {
+//     //       const businessNumber = change.value?.metadata?.display_phone_number;
+//     //       const profileName = change.value?.contacts?.[0]?.profile?.name || "";
+//     //       for (const msg of change.value?.messages || []) {
+//     //         await waService.handleInboundMessage(msg, businessNumber, profileName);
+//     //       }
+//     //     }
+//     //   }
+//     //   res.sendStatus(200);
+//     // } else {
+//     //   res.sendStatus(404);
+//     // }
+//   } catch (err: any) {
+//     console.error("❌ Webhook error:", err);
+//     res.status(500).json({ error: err.message });
 //   }
 // });
 
 whatsappRouter.post("/webhook", async (req, res) => {
-
-  const body = req.body;
-
-  console.log("Raw webhook body:", JSON.stringify(body, null, 2));
-
   try {
     const body = req.body;
+    const adminPhones = AUTHORIZED_AGENTS.map(agent => agent.phoneNumber);
 
-    if (body.object === "whatsapp_business_account") {
-      for (const entry of body.entry || []) {
-        for (const change of entry.changes || []) {
-          const businessNumber = change.value?.metadata?.display_phone_number;
-          const profileName = change.value?.contacts?.[0]?.profile?.name || "";
-          for (const msg of change.value?.messages || []) {
+    if (body.object !== "whatsapp_business_account") {
+      return res.sendStatus(404);
+    }
+
+    for (const entry of body.entry || []) {
+      for (const change of entry.changes || []) {
+        const businessNumber = change.value?.metadata?.display_phone_number; // your WA business number
+        const userNumber = change.value?.contacts?.[0]?.wa_id; // the sender’s WhatsApp ID
+        const profileName = change.value?.contacts?.[0]?.profile?.name || "";
+
+        for (const msg of change.value?.messages || []) {
+          if (userNumber && adminPhones.includes(userNumber)) {
+            // 🔹 Admin flow
+            console.log("✅ Admin message from:", userNumber);
+            await waService.handleMessageExtraction(msg);
+            // await waService.handleInboundMessage(msg, businessNumber, profileName);
+          } else {
+            // 🔹 Normal user flow
+            // console.log("📩 Normal user message from:", userNumber);
             await waService.handleInboundMessage(msg, businessNumber, profileName);
           }
         }
       }
-      res.sendStatus(200);
-    } else {
-      res.sendStatus(404);
     }
+
+    return res.sendStatus(200);
   } catch (err: any) {
     console.error("❌ Webhook error:", err);
-    res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message });
   }
 });
+
+
 
 // Mark conversation as read
 // whatsappRouter.post("/whatsapp/conversations/:id/read", async (req, res) => {

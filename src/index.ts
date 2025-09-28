@@ -15,6 +15,8 @@ import productsRouter from "./routes/products";
 import packagesRouter from "./routes/packages";
 import metaRouter from "./routes/meta";
 import customersRouter from "./routes/customers";
+import { orderRouter } from "./routes/order";
+import { addressRouter } from "./routes/address";
 
 dotenv.config({ path: path.resolve(__dirname, "../.env.local") });
 
@@ -39,6 +41,8 @@ app.use("/api/products", productsRouter);
 app.use("/api/packages", packagesRouter);
 app.use("/api/meta", metaRouter);
 app.use("/api/customers", customersRouter);
+app.use("/api/orders", orderRouter);
+app.use("/api/addresses", addressRouter);
 
 app.get("/health", (req, res) => {
   res.json({

@@ -2,6 +2,11 @@ import axios, { AxiosInstance } from "axios";
 import dotenv from "dotenv";
 import path from "path";
 import { supabase } from "../modules/supabase";
+import { ContentExtractor } from "../modules/whatsapp/extractors/ContentExtractor";
+import { CustomerService } from "../modules/whatsapp/services/CustomerService";
+import { PhoneExtractor } from "../modules/whatsapp/extractors/PhoneExtractor";
+import { AddressService } from "../modules/whatsapp/services/AddressService";
+import { UUID } from "crypto";
 
 dotenv.config({ path: path.resolve(__dirname, "../../.env.local") });
 
@@ -33,8 +38,6 @@ type Contact = {
   waId: string;
   profileName: string;
 };
-
-
 
 export class WhatsAppService {
   private client: AxiosInstance;
@@ -220,13 +223,17 @@ export class WhatsAppService {
     return this.contacts;
   }
   
-  async upsertContact(contact: Contact) {
-    await supabase.from("contacts").upsert({
+  async upsertContact(contact: Contact, customerId?: UUID) {
+    const {data: contactData, error} = await supabase.from("contacts").upsert({
       wa_id: contact.waId,
       profile_name: contact.profileName || null,
       phone_number: contact.waId,
       updated_at: new Date().toISOString(),
-    });
+      customer_id: customerId || null
+    }, { onConflict: "wa_id" });
+
+    if(error) throw error;
+    return contactData;
   }
 
   // async upsertConversation(waId: string, businessNumber: string, lastMessageId: string) {
@@ -369,8 +376,6 @@ export class WhatsAppService {
 
     // 2. Ensure conversation exists
     const convoId = await this.upsertConversation(waId, businessNumber, null);
-    console.log("Handling inbound message for convo:", convoId);
-
 
     // 3. Insert the message (deduped)
     const { data: savedMessage, error: msgError } = await supabase
@@ -492,5 +497,120 @@ export class WhatsAppService {
     }
   }
 
+  async handleMessageExtraction(msg: Message) {
+    const customerService = new CustomerService();
+    await customerService.init(); // wait for JSON to load
+    console.log("✅ Customer service initialized");
+  
+    const phoneExtractor = new PhoneExtractor(customerService);
+    const extractor = new ContentExtractor(phoneExtractor);
+    const addressService = new AddressService(); 
 
+    if(!msg.text?.body){
+      console.log("⚠️ No text body in message to extract");
+      return;
+    }
+
+    const body = msg.text?.body
+
+    const result = await extractor.extractAll(body)
+
+    const customerData = {
+      name: result.name || "",
+      phone_number: result.contact || "",
+      email: result.email || "",
+      repeat_customer: result.repeatCustomer || "new"
+    };
+
+    const contactData = {
+      wa_id: result.contact || "",
+      profile_name: result.name || "",
+      phone_number: result.contact || ""
+    }
+
+    const addressData = {
+      full_address: result?.address?.address || "",
+      postcode: result?.address?.postcode || "",
+      city: result?.address?.city || "",
+      state: result?.address?.state,
+      country: result?.address?.country || "",
+    };
+
+    const orderData = {
+      order_date: result.date || new Date().toISOString().split('T')[0],
+      status: "pending",
+      total_amount: result.total || 0,
+      payment_method: result.paymentMethod || "",
+    };
+
+    const orderItemsData = (result.products || []).map(p => ({
+      product_name: p.name,
+      quantity: p.quantity,
+    }));
+
+    const customer = await this.upsertCustomer(customerData)
+
+    const contact = await this.upsertContact({waId: contactData.wa_id, profileName: contactData.profile_name}, customer.id)
+
+    const address = await this.upsertAddress(customer.id, addressData)
+
+    const order = await this.upsertOrder(customer.id, address?.id || null, orderData)
+
+    await this.upsertOrderItems(order.id, orderItemsData)
+    
+  }
+
+  async upsertCustomer(customer: { name:string, phone_number:string, email?:string, repeat_customer?:string }) {
+    const { data: customerData, error } = await supabase
+    .from("customers")
+    .upsert(customer, { onConflict: "phone_number" })
+    .select("id")
+    .single();
+
+    if(error) throw error;
+    return customerData;
+  }
+
+  async upsertAddress(customer_id: UUID, address: {
+    full_address:string,
+    postcode:string,
+    city?:string,
+    state?:string,
+    country:string
+  }) {
+    const { data: addressData, error } = await supabase
+      .from("addresses")
+      .upsert({ customer_id, ...address })
+      .select("id")
+      .single();
+
+    if(error) throw error;
+    return addressData;
+  }
+
+  async upsertOrder(customer_id: UUID, address_id: UUID | null, order: {
+    order_date: string,
+    status: string,
+    total_amount: number,
+    payment_method?: string
+  }) {
+    const { data: orderData, error } = await supabase
+      .from("orders")
+      .upsert({ customer_id, address_id, ...order })
+      .select("id")
+      .single();
+
+    if(error) throw error;
+    return orderData;
+  }
+
+  async upsertOrderItems(order_id: UUID, items: { product_name: string, quantity: number }[]) {
+    const { data: itemsData, error } = await supabase
+      .from("order_items")
+      .insert(items.map(i => ({ order_id, ...i })))
+      .select();
+
+    if(error) throw error;
+    return itemsData;
+  }
 }

@@ -1,6 +1,7 @@
 import { AddressExtractor } from "./AddressExtractor";
 import { AmountExtractor } from "./AmountExtractor";
 import { DateExtractor } from "./DateExtractor";
+import { EmailExtractor } from "./EmailExtractor";
 import { NameExtractor } from "./NameExtractor";
 import { PaymentMethodExtractor } from "./PaymentMethodExtractor";
 import { PhoneExtractor } from "./PhoneExtractor";
@@ -14,6 +15,7 @@ export class ContentExtractor {
   private phoneExtractor: PhoneExtractor;
   private addressExtractor = new AddressExtractor();
   private productExtractor = new ProductExtractor();
+  private emailExtractor = new EmailExtractor()
 
   constructor(phoneExtractor: PhoneExtractor) {
     this.phoneExtractor = phoneExtractor
@@ -28,6 +30,7 @@ export class ContentExtractor {
       paymentMethod: this.paymentMethodExtractor.extract(text),
       date: this.dateExtractor.extract(text),
       name: this.nameExtractor.extract(text),
+      email: this.emailExtractor.extract(text),
       contact: phoneNumber,
       address: this.addressExtractor.extract(text),
       products: this.productExtractor.extract(text),

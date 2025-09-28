@@ -1,15 +1,126 @@
 // src/routes/customers.ts - Customer Management Routes
 import express from "express";
 import { supabase } from "../database/supabaseNormalized";
+import CustomerService from "../modules/customer/service";
+import { UUID } from "crypto";
 
 const customersRouter = express.Router();
 
+const customerService = new CustomerService()
+
 // ============================================================================
 // CUSTOMERS ROUTES
+// ============================================================================\
+
+// GET /api/customers - Get all customers
+customersRouter.get("/", async (req, res) => {
+  const { limit, offset, search, sortBy, sortOrder } = req.query;
+
+  try {
+    const customers = await customerService.getAllCustomers({
+      limit: limit ? parseInt(limit as string, 10) : undefined,
+      offset: offset ? parseInt(offset as string, 10) : undefined,
+      search: search ? String(search) : undefined,
+      sortBy: sortBy ? String(sortBy) : undefined,
+      sortOrder: sortOrder === "asc" ? "asc" : "desc",
+    });
+    res.status(200).json({
+      data: customers,
+      pagination: {
+        limit: Number(limit) || 20,
+        offset: Number(offset) || 0,
+        total: customers.length
+      }
+    });
+  } catch (error) {
+    console.error("Error fetching customers:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+  
+});
+
+// GET /api/customers/:phone_number - Get customer by phone number
+customersRouter.get("/:phone_number", async (req, res)=> {
+  const { phone_number} = req.params
+
+  if(!phone_number){
+    return res.status(400).json({error: "Phone number is required"})
+  }
+
+  const customer = await customerService.getCustomerByPhoneNumber(phone_number);
+
+  if(!customer){
+    return res.status(404).json({error: "Customer not found"})
+  }
+
+  res.status(200).json(customer);
+})
+
+// POST /api/customers - Create or update customer
+customersRouter.post("/", async (req, res) => {
+  const customerData = req.body;
+
+  if (!customerData || !customerData.phone_number || !customerData.name) {
+    return res
+      .status(400)
+      .json({ error: "Phone Number and Customer Name are required" });
+  }
+
+  try {
+    const customer = await customerService.createCustomer(customerData);
+
+    return res.status(201).json({
+      success: "Customer successfully inserted or updated",
+      data: customer,
+    });
+  } catch (error) {
+    console.error("Error creating customer:", error);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// DELETE /api/customers/:id - Delete customer by ID
+customersRouter.delete("/:id", async (req, res) => {
+  const { id } = req.params;
+  if (!id) {
+    return res.status(400).json({ error: "Customer ID is required" });
+  }
+  try {
+    await customerService.deleteCustomer(id as UUID);
+    return res.status(200).json({ success: "Customer successfully deleted" });
+  } catch (error) {
+    console.error("Error deleting customer:", error);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+})
+
+// PATCH /api/customers/:id - Update customer by ID
+customersRouter.patch("/:id", async (req, res) => {
+  const { id } = req.params;
+  const updates = req.body;
+  if (!id) {
+    return res.status(400).json({ error: "Customer ID is required" });
+  }
+
+  try {
+    const updatedCustomer = await customerService.updateCustomer(id as UUID, updates);
+    return res.status(200).json({
+      success: "Customer successfully updated",
+      data: updatedCustomer,
+    });
+  } catch (error) {
+    console.error("Error updating customer:", error);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+})
+
+
+// ============================================================================
+// LEGACY CUSTOMERS ROUTES
 // ============================================================================
 
 // GET /api/customers - Get all customers with stats
-customersRouter.get("/", async (req, res) => {
+customersRouter.get("/s", async (req, res) => {
   try {
     const { 
       limit = 100,
@@ -389,5 +500,7 @@ customersRouter.get("/search/phone/:phone", async (req, res) => {
     });
   }
 });
+
+
 
 export default customersRouter;

@@ -1,282 +1,78 @@
-// src/routes/products.ts - Products Only
 import express from "express";
-import {
-  supabase,
-  getProducts,
-  getProductByCode,
-  Product,
-} from "../database/supabaseNormalized";
+import ProductService from "../modules/product/service";
+import { UUID } from "crypto";
 
 const productsRouter = express.Router();
 
-// ============================================================================
-// PRODUCTS ROUTES
-// ============================================================================
+const productService = new ProductService();
 
 // GET /api/products - Get all products
-productsRouter.get("/", async (req, res) => {
-  try {
-    const {
-      category,
-      is_active = "true",
-      limit = 100,
-      offset = 0,
-      search,
-    } = req.query;
-
-    let query = supabase
-      .from("products")
-      .select("*", { count: "exact" })
-      .order("product_name", { ascending: true });
-
-    // Apply filters
-    if (category) {
-      query = query.eq("category", category);
+productsRouter.get('/', async (req, res) => {
+    try {
+        const products = await productService.getAllProducts();
+        res.json({products:products, total: products.length});
+    } catch (error) {
+        console.error('Error fetching products:', error);
+        res.status(500).json({ error: 'Internal server error' });
     }
-
-    if (is_active !== "all") {
-      query = query.eq("is_active", is_active === "true");
-    }
-
-    if (search) {
-      query = query.or(
-        `product_name.ilike.%${search}%,product_code.ilike.%${search}%,description.ilike.%${search}%`
-      );
-    }
-
-    // Apply pagination
-    query = query.range(Number(offset), Number(offset) + Number(limit) - 1);
-
-    const { data, error, count } = await query;
-
-    if (error) {
-      console.error("❌ Failed to fetch products:", error);
-      throw error;
-    }
-
-    res.json({
-      success: true,
-      data: data || [],
-      pagination: {
-        offset: Number(offset),
-        limit: Number(limit),
-        total: count || 0,
-      },
-    });
-  } catch (error) {
-    console.error("❌ Failed to fetch products:", error);
-    res.status(500).json({
-      success: false,
-      error: "Failed to fetch products",
-      details: error instanceof Error ? error.message : String(error),
-    });
-  }
 });
 
-// GET /api/products/:id - Get single product
-productsRouter.get("/:id", async (req, res) => {
-  try {
-    const { id } = req.params;
+// GET /api/products/:id - Get a product by ID
+productsRouter.get('/:id', async (req, res) => {
+    const productId = req.params.id;
 
-    const { data, error } = await supabase
-      .from("products")
-      .select("*")
-      .eq("id", id)
-      .single();
-
-    if (error) {
-      if (error.code === "PGRST116") {
-        return res.status(404).json({
-          success: false,
-          error: "Product not found",
-        });
-      }
-      console.error("❌ Failed to get product:", error);
-      throw error;
+    try {
+        const product = await productService.getProductById(productId as UUID);
+        if (!product) {
+            return res.status(404).json({ error: 'Product not found' });
+        }
+        res.json({ product });
+    } catch (error) {
+        console.error('Error fetching product:', error);
+        res.status(500).json({ error: 'Internal server error' });
     }
-
-    res.json({
-      success: true,
-      data,
-    });
-  } catch (error) {
-    console.error("❌ Failed to get product:", error);
-    res.status(500).json({
-      success: false,
-      error: "Failed to get product",
-      details: error instanceof Error ? error.message : String(error),
-    });
-  }
 });
 
-// POST /api/products - Create new product
-productsRouter.post("/", async (req, res) => {
-  try {
-    const productData: Omit<Product, "id" | "created_at" | "updated_at"> =
-      req.body;
+// POST /api/products - Create a new product
+productsRouter.post('/', async (req, res) => {
+    const productData = req.body;
 
-    // Validate required fields
-    if (!productData.product_code || !productData.product_name) {
-      return res.status(400).json({
-        success: false,
-        error: "Product code and name are required",
-      });
+    try {
+        const newProduct = await productService.createProduct(productData);
+        res.status(201).json({ product: newProduct });
+    } catch (error) {
+        console.error('Error creating product:', error);
+        res.status(500).json({ error: 'Internal server error' });
     }
-
-    // Check if product code already exists
-    const existingProduct = await getProductByCode(productData.product_code);
-    if (existingProduct) {
-      return res.status(409).json({
-        success: false,
-        error: "Product code already exists",
-      });
-    }
-
-    const { data, error } = await supabase
-      .from("products")
-      .insert({
-        ...productData,
-        is_active: productData.is_active ?? true,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      })
-      .select()
-      .single();
-
-    if (error) {
-      console.error("❌ Failed to create product:", error);
-      throw error;
-    }
-
-    res.status(201).json({
-      success: true,
-      data,
-      message: "Product created successfully",
-    });
-  } catch (error) {
-    console.error("❌ Failed to create product:", error);
-    res.status(500).json({
-      success: false,
-      error: "Failed to create product",
-      details: error instanceof Error ? error.message : String(error),
-    });
-  }
 });
 
-// PUT /api/products/:id - Update product
-productsRouter.put("/:id", async (req, res) => {
-  try {
-    const { id } = req.params;
+// PATCH /api/products/:id - Update a product by ID
+productsRouter.patch('/:id', async (req, res) => {
+    const productId = req.params.id;
     const updates = req.body;
+    try {
+        const updatedProduct = await productService.updateProduct(productId as UUID, updates);
+        res.json({ product: updatedProduct });
+    } catch (error) {
+        console.error('Error updating product:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
 
-    // Add updated timestamp
-    updates.updated_at = new Date().toISOString();
+// DELETE /api/products/:id - Delete a product by ID
+productsRouter.delete('/:id', async (req, res) => {
+    const productId = req.params.id;
 
-    const { data, error } = await supabase
-      .from("products")
-      .update(updates)
-      .eq("id", id)
-      .select()
-      .single();
-
-    if (error) {
-      if (error.code === "PGRST116") {
-        return res.status(404).json({
-          success: false,
-          error: "Product not found",
+    try {
+        await productService.deleteProduct(productId as UUID);
+        res.status(204).json({
+            success: true,
+            message: 'Product deleted successfully'
         });
-      }
-      throw error;
+    } catch (error) {
+        console.error('Error deleting product:', error);
+        res.status(500).json({ error: 'Internal server error' });
     }
-
-    res.json({
-      success: true,
-      data,
-      message: "Product updated successfully",
-    });
-  } catch (error) {
-    console.error("❌ Failed to update product:", error);
-    res.status(500).json({
-      success: false,
-      error: "Failed to update product",
-      details: error instanceof Error ? error.message : String(error),
-    });
-  }
-});
-
-// DELETE /api/products/:id - Delete product (soft delete by setting is_active = false)
-productsRouter.delete("/:id", async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { hard_delete = false } = req.query;
-
-    if (hard_delete === "true") {
-      // Hard delete
-      const { error } = await supabase.from("products").delete().eq("id", id);
-
-      if (error) throw error;
-    } else {
-      // Soft delete
-      const { error } = await supabase
-        .from("products")
-        .update({
-          is_active: false,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", id);
-
-      if (error) throw error;
-    }
-
-    res.json({
-      success: true,
-      message:
-        hard_delete === "true"
-          ? "Product deleted permanently"
-          : "Product deactivated",
-    });
-  } catch (error) {
-    console.error("❌ Failed to delete product:", error);
-    res.status(500).json({
-      success: false,
-      error: "Failed to delete product",
-      details: error instanceof Error ? error.message : String(error),
-    });
-  }
-});
-
-// ============================================================================
-// PRODUCTS META ROUTES
-// ============================================================================
-
-// GET /api/products/categories - Get unique product categories
-productsRouter.get("/meta/categories", async (req, res) => {
-  try {
-    const { data, error } = await supabase
-      .from("products")
-      .select("category")
-      .not("category", "is", null)
-      .neq("category", "");
-
-    if (error) throw error;
-
-    // Get unique categories
-    const categories = [
-      ...new Set(data?.map((item) => item.category).filter(Boolean)),
-    ];
-
-    res.json({
-      success: true,
-      data: categories,
-    });
-  } catch (error) {
-    console.error("❌ Failed to get categories:", error);
-    res.status(500).json({
-      success: false,
-      error: "Failed to get categories",
-      details: error instanceof Error ? error.message : String(error),
-    });
-  }
 });
 
 export default productsRouter;

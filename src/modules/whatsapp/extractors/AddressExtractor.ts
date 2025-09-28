@@ -1,8 +1,10 @@
 import { IExtractor } from "./IExtractor";
+import { findPostcode, getPostcodes, findCities } from "malaysia-postcodes";
 
 export interface IAddress {
   address: string;
   postcode: string;
+  city?: string;
   state: string;
   country: string;
 }
@@ -17,45 +19,67 @@ export class AddressExtractor implements IExtractor<IAddress | null> {
   extract(text: string): IAddress | null {
     if (!text) return null;
 
+    // Split and filter junk lines
     const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-
-    // Remove lines that contain dates, product codes, contact info, total, etc.
     const filteredLines = lines.filter(line => {
       if (/\d{1,2}\/\d{1,2}\/\d{2,4}/.test(line)) return false; // date
       if (/total|rpt/i.test(line)) return false; // total/report
       if (/contact[:：]?/i.test(line)) return false; // contact
       if (/^\+?\d{8,12}$/.test(line)) return false; // phone
-      if (/\d+[wfsb]\d*(ml)?/i.test(line)) return false;
+      if (/\d+[wfsb]\d*(ml)?/i.test(line)) return false; // product codes
       if (/name[:：]/i.test(line)) return false; // name
+      if (/email[:：]?/i.test(line)) return false; // email
       return true;
     });
 
-    let src = filteredLines.join(", ");
+    const src = filteredLines.join(" ");
 
-    
-
-    // Extract postcode (5 digits for Malaysia)
+    // Extract postcode (Malaysia = 5 digits)
     const postcodeMatch = src.match(/\b\d{5}\b/);
     const postcode = postcodeMatch ? postcodeMatch[0] : "";
 
-    // Extract state
+    let city = "";
     let state = "";
-    for (const s of this.MALAYSIA_STATES) {
-      if (new RegExp(`\\b${s}\\b`, "i").test(src)) {
-        state = s;
-        break;
+
+    if (postcode) {
+      // Try to resolve postcode -> state + city
+      const result = findPostcode(postcode, true);
+      if (result.found && result.results && result.results.length > 0) {
+        const first = result.results[0];
+        city = first.city;
+        state = first.state;
+      }
+    }
+
+    // If still missing state, fall back to regex scan
+    if (!state) {
+      for (const s of this.MALAYSIA_STATES) {
+        if (new RegExp(`\\b${s}\\b`, "i").test(src)) {
+          state = s;
+          break;
+        }
+      }
+    }
+
+    // If still missing city, try to infer from raw text
+    if (!city && state) {
+      const result = findCities(src, false);
+      if (result.found && result.results && result.results.length > 0) {
+        city = result.results[0].city;
       }
     }
 
     // Determine country
     const country = postcode.length === 6 ? "Singapore" : "Malaysia";
 
-    // Clean address: remove postcode, state, common extra labels
+    // Clean address string
     let address = src
       .replace(postcode, "")
       .replace(state, "")
+      .replace(city, "")
       .replace(/Name[:：].*?,?/i, "")
       .replace(/Contact[:：]?.*?,?/i, "")
+      .replace(/Email[:：]?.*?,?/i, "")
       .replace(country, "")
       .replace(/\s*,\s*/g, ", ")
       .trim();
@@ -64,7 +88,12 @@ export class AddressExtractor implements IExtractor<IAddress | null> {
     address = address.replace(/^,|,$/g, "").trim();
     address = address.replace(/\b(Address|Addr|Add)[:：]\s*/i, "");
 
-
-    return { address, postcode, state, country };
+    return {
+      address,
+      postcode,
+      city,
+      state,
+      country,
+    };
   }
 }

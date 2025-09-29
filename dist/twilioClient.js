@@ -134,8 +134,8 @@ function detectCourierAndLink(trackingNumber, courier) {
         };
     }
     return {
-        name: "Best Express",
-        link: `https://www.best-inc.my/track`,
+        name: "Flash Express (MY)",
+        link: `https://www.flashexpress.my/fle/tracking?trackNumber=${trackingNumber}`,
     };
 }
 // Send tracking template

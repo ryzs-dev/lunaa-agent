@@ -12,7 +12,7 @@ class CustomerDatabase {
     }) {
         let query = supabase
             .from("customers")
-            .select("*")
+            .select("*", {count:"exact"})
             .order(sortBy, { ascending: sortOrder === "asc" })
             .range(offset, offset + limit - 1);
 
@@ -20,9 +20,9 @@ class CustomerDatabase {
             query = query.ilike("name", `%${search}%`);
         }
 
-        const { data: customers, error } = await query;
+        const { data: customers, error, count } = await query;
         if (error) throw error;
-        return customers;
+        return {customers, count};
     }
 
     async getCustomerByPhoneNumber(phoneNumber:string){

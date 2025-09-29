@@ -45,7 +45,22 @@ class CustomerService {
         const sortBy = options.sortBy ?? "created_at";
         const sortOrder = options.sortOrder ?? "desc";
 
-        return this.customerDatabase.getAllCustomers({ limit, offset, search: options.search, sortBy, sortOrder });
+        const { customers, count } = await this.customerDatabase.getAllCustomers({
+            limit,
+            offset,
+            search: options.search,
+            sortBy,
+            sortOrder,
+          });
+
+        return {
+        customers,
+        pagination: {
+            limit,
+            offset,
+            total: count ?? 0,
+        },
+        };
     }
 
     async getCustomerByPhoneNumber(phoneNumber: string) {

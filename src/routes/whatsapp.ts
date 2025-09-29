@@ -767,12 +767,12 @@ whatsappRouter.post("/webhook", async (req, res) => {
           if (userNumber && adminPhones.includes(userNumber)) {
             // 🔹 Admin flow
             console.log("✅ Admin message from:", userNumber);
-            await waService.handleMessageExtraction(msg);
+            // await waService.handleMessageExtraction(msg);
             // await waService.handleInboundMessage(msg, businessNumber, profileName);
           } else {
             // 🔹 Normal user flow
             // console.log("📩 Normal user message from:", userNumber);
-            await waService.handleInboundMessage(msg, businessNumber, profileName);
+            // await waService.handleInboundMessage(msg, businessNumber, profileName);
           }
         }
       }

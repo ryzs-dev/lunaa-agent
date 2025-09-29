@@ -17,27 +17,24 @@ customersRouter.get("/", async (req, res) => {
   const { limit, offset, search, sortBy, sortOrder } = req.query;
 
   try {
-    const customers = await customerService.getAllCustomers({
+    const { customers, pagination } = await customerService.getAllCustomers({
       limit: limit ? parseInt(limit as string, 10) : undefined,
       offset: offset ? parseInt(offset as string, 10) : undefined,
       search: search ? String(search) : undefined,
       sortBy: sortBy ? String(sortBy) : undefined,
       sortOrder: sortOrder === "asc" ? "asc" : "desc",
     });
+
     res.status(200).json({
       data: customers,
-      pagination: {
-        limit: Number(limit) || 20,
-        offset: Number(offset) || 0,
-        total: customers.length
-      }
+      pagination,
     });
   } catch (error) {
     console.error("Error fetching customers:", error);
     res.status(500).json({ error: "Internal server error" });
   }
-  
 });
+
 
 // GET /api/customers/:phone_number - Get customer by phone number
 customersRouter.get("/:phone_number", async (req, res)=> {

@@ -25,7 +25,7 @@ class OrderTrackingService {
         return await this.orderTrackingDatabase.updateTrackingEntry(entryId, updates);
     }
 
-    async deleteTrackingEntry(entryId: string) {
+    async deleteTrackingEntry(entryId: UUID) {
         return await this.orderTrackingDatabase.deleteTrackingEntry(entryId);
     }
 }

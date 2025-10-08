@@ -1,37 +1,67 @@
-import { UUID } from "crypto";
-import OrderDatabase from "./database";
-import { OrderInput } from "./types";
+import { UUID } from 'crypto';
+import OrderDatabase from './database';
+import { OrderInput } from './types';
 
 class OrderService {
-    private orderDatabase: OrderDatabase
+  private orderDatabase: OrderDatabase;
 
-    constructor() {
-        this.orderDatabase = new OrderDatabase();
-    }
+  constructor() {
+    this.orderDatabase = new OrderDatabase();
+  }
 
-    async getAllOrders() {
-        return await this.orderDatabase.getAllOrders();
-    }
+  async getAllOrders(options: {
+    limit?: number;
+    offset?: number;
+    search?: string;
+    sortBy?: string;
+    sortOrder?: 'asc' | 'desc';
+  }) {
+    const limit = !options.limit || options.limit > 100 ? 20 : options.limit;
+    const offset = options.offset ?? 0;
+    const sortBy = options.sortBy ?? 'created_at';
+    const sortOrder = options.sortOrder ?? 'desc';
 
-    async getOrderById(orderId: UUID) {
-        return await this.orderDatabase.getOrderById(orderId);
-    }
+    const { orders, count } = await this.orderDatabase.getAllOrders({
+      limit,
+      offset,
+      search: options.search,
+      sortBy,
+      sortOrder,
+    });
 
-    async getOrdersByCustomerId(customerId: UUID) {
-        return await this.orderDatabase.getOrdersByCustomerId(customerId);
-    }
-
-    async createOrder(orderData: OrderInput) {
-        return await this.orderDatabase.upsertOrder(orderData);
+    return {
+      orders,
+      pagination: {
+        limit,
+        offset,
+        total: count ?? 0,
+      },
     };
+  }
 
-    async updateOrder(orderId: UUID, updates: Partial<OrderInput>) {
-        return await this.orderDatabase.updateOrder(orderId, updates);
-    }
+  async getOrderById(orderId: UUID) {
+    return await this.orderDatabase.getOrderById(orderId);
+  }
 
-    async deleteOrder(orderId: UUID) {
-        return await this.orderDatabase.deleteOrder(orderId);
-    }
+  async getOrdersByCustomerId(customerId: UUID) {
+    return await this.orderDatabase.getOrdersByCustomerId(customerId);
+  }
+
+  async createOrder(orderData: OrderInput) {
+    return await this.orderDatabase.upsertOrder(orderData);
+  }
+
+  async updateOrder(orderId: UUID, updates: Partial<OrderInput>) {
+    return await this.orderDatabase.updateOrder(orderId, updates);
+  }
+
+  async deleteOrder(orderId: UUID) {
+    return await this.orderDatabase.deleteOrder(orderId);
+  }
+
+  async bulkDeleteOrders(orderIds: UUID[]) {
+    return await this.orderDatabase.bulkDeleteOrders(orderIds);
+  }
 }
 
 export default OrderService;

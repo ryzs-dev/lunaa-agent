@@ -30,7 +30,7 @@ class OrderTrackingDatabase {
         return record;
     }
 
-    async deleteTrackingEntry(entryId: string) {
+    async deleteTrackingEntry(entryId: UUID) {
         const { data: record, error } = await supabase.from("order_tracking").delete().eq("id", entryId).single();
         if (error) throw error;
         return record;

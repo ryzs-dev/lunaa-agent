@@ -1,54 +1,122 @@
-import { UUID } from "crypto";
-import { supabase } from "../supabase";
-import { OrderInput } from "./types";
+import { UUID } from 'crypto';
+import { supabase } from '../supabase';
+import { OrderInput } from './types';
+
+interface QueryParams {
+  limit: number;
+  offset: number;
+  search?: string;
+  sortBy: string;
+  sortOrder: 'asc' | 'desc';
+}
 
 class OrderDatabase {
-    async getAllOrders(){
-        const { data: orders, error } = await supabase.from("orders").select("*, order_items(*), customers(*), order_tracking(*)");
-        if (error) throw error;
-        return orders;
+  async getAllOrders({
+    limit,
+    offset,
+    search,
+    sortBy,
+    sortOrder,
+  }: QueryParams) {
+    let query = supabase
+      .from('orders')
+      .select('*, order_items(*), customers(*), order_tracking(*)', {
+        count: 'exact',
+      })
+      .order(sortBy, { ascending: sortOrder === 'asc' })
+      .range(offset, offset + limit - 1);
+
+    if (search) {
+      query = query.ilike('name', `%${search}%`);
     }
 
-    async getOrderById(orderId:UUID) {
-        const { data: order, error } = await supabase.from("orders").select("*, addresses(*), order_items(*, products(*)), customers(*), order_tracking(*)").eq("id", orderId).single();
-        if (error) throw error;
-        return order;
-    }
+    const { data: orders, error, count } = await query;
 
-    async getOrdersByCustomerId(customerId:UUID){
-        const { data: orders, error } = await supabase.from("orders").select("*, order_items(*), customers(*), order_tracking(*)").eq("customer_id", customerId);
-        if (error) throw error;
-        return orders;
-    }
+    if (error) throw error;
+    return { orders, count };
+  }
 
-    async upsertOrder(orderData: OrderInput){
-        const {order_items, ...order} = orderData;
+  async getOrderById(orderId: UUID) {
+    const { data: order, error } = await supabase
+      .from('orders')
+      .select(
+        '*, addresses(*), order_items(*, products(*)), customers(*), order_tracking(*)'
+      )
+      .eq('id', orderId)
+      .single();
+    if (error) throw error;
+    return order;
+  }
 
-        const { data, error } = await supabase.from("orders").upsert([order]).select("*").single();
-        if (error) throw error;
+  async getOrdersByCustomerId(customerId: UUID) {
+    const { data: orders, error } = await supabase
+      .from('orders')
+      .select('*, order_items(*), customers(*), order_tracking(*)')
+      .eq('customer_id', customerId);
+    if (error) throw error;
+    return orders;
+  }
 
-        const orderId = data.id
-        const itemsToInsert = order_items.map(item => ({ ...item, order_id: orderId }));
+  async upsertOrder(orderData: OrderInput) {
+    const { order_items, ...order } = orderData;
 
-        const { error: itemsError } = await supabase.from("order_items").insert(itemsToInsert);
-        if (itemsError) throw itemsError;
+    const { data, error } = await supabase
+      .from('orders')
+      .upsert([order])
+      .select('*')
+      .single();
+    if (error) throw error;
 
-        const { data:updatedOrder} = await supabase.from("orders").select("* , order_items(*)").eq("id", orderId).single();
-    
-        return updatedOrder;
-    }
+    const orderId = data.id;
+    const itemsToInsert = order_items.map((item) => ({
+      ...item,
+      order_id: orderId,
+    }));
 
-    async deleteOrder(orderId:UUID){
-        const { data: order, error } = await supabase.from("orders").delete().eq("id", orderId).single();
-        if (error) throw error;
-        return order;
-    }
+    const { error: itemsError } = await supabase
+      .from('order_items')
+      .insert(itemsToInsert);
+    if (itemsError) throw itemsError;
 
-    async updateOrder(orderId:UUID, updates: Partial<OrderInput>){
-        const { data: order, error } = await supabase.from("orders").update(updates).eq("id", orderId).select("*").single();
-        if (error) throw error;
-        return order;
-    }
+    const { data: updatedOrder } = await supabase
+      .from('orders')
+      .select('* , order_items(*)')
+      .eq('id', orderId)
+      .single();
+
+    return updatedOrder;
+  }
+
+  async deleteOrder(orderId: UUID) {
+    const { data: order, error } = await supabase
+      .from('orders')
+      .delete()
+      .eq('id', orderId)
+      .single();
+    if (error) throw error;
+    return order;
+  }
+
+  async bulkDeleteOrders(orderIds: UUID[]) {
+    if (!orderIds.length) return [];
+    const { data: orders, error } = await supabase
+      .from('orders')
+      .delete()
+      .in('id', orderIds);
+    if (error) throw error;
+    return orders;
+  }
+
+  async updateOrder(orderId: UUID, updates: Partial<OrderInput>) {
+    const { data: order, error } = await supabase
+      .from('orders')
+      .update(updates)
+      .eq('id', orderId)
+      .select('*')
+      .single();
+    if (error) throw error;
+    return order;
+  }
 }
 
 export default OrderDatabase;

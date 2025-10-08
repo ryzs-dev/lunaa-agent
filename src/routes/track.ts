@@ -34,13 +34,6 @@ trackRouter.post("/track", async (req: Request, res: Response) => {
   }
 
   try {
-    console.log(`📋 Starting track process for sheet: ${sheetName}`);
-    console.log(`🔧 Options:`, {
-      includeUsageGuide,
-      includeUsageVideo,
-      delayBetweenMessages,
-      useSequence,
-    });
 
     const rows = await fetchSheetData(sheetName, spreadsheetId);
 

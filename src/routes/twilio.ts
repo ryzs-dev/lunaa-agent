@@ -4,7 +4,6 @@ import {
   updateMessageStatusInDB,
 } from "../database/supabaseOrders";
 import { getMessagingService } from "../twilioClient";
-import { count } from "console";
 
 const twilioRouter = express.Router();
 

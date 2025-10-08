@@ -575,6 +575,7 @@ whatsappRouter.get("/whatsapp/messages", (req, res) => {
     const data = waService.getMessages();
     res.json(data);
 });
+
 // ============================================================================
 // QUEUE MONITORING ENDPOINTS
 // ============================================================================

@@ -1,0 +1,22 @@
+[
+  {
+    "name": "Ryan",
+    "number": "601126470411",
+    "isRepeatCustomer": "repeat"
+  },
+  {
+    "name": "Zi Qian",
+    "number": "60137424267",
+    "isRepeatCustomer": "repeat"
+  },
+  {
+    "name": "Vivi（URGENT! Receive before 8/9）",
+    "number": "60177936668",
+    "isRepeatCustomer": "repeat"
+  },
+  {
+    "name": "Amirul (Deliver by 9/9)",
+    "number": "60123456789",
+    "isRepeatCustomer": "new"
+  }
+]

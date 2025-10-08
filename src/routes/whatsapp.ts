@@ -1,20 +1,22 @@
 // src/routes/whatsapp.ts - Updated with Order Queue
-import express from "express";
+import express from 'express';
 import {
   insertOrder,
   updateMessageStatusInDB,
-} from "../database/supabaseOrders";
+} from '../database/supabaseOrders';
 import {
   appendOrderToSheet,
   extractOrderFromMessage,
   getAuthorizedPhoneNumbers,
-} from "../whatsappOrderBot";
-import { PhoneNumberUtil } from "../whatsappOrderBot"; // Make sure this is exported
+} from '../whatsappOrderBot';
+import { PhoneNumberUtil } from '../whatsappOrderBot'; // Make sure this is exported
 import {
   createCompleteOrder,
   CreateOrderInput,
-} from "../database/supabaseNormalized";
-import { WhatsAppService } from "../services/whatsapp";
+} from '../database/supabaseNormalized';
+import { WhatsAppService } from '../services/whatsapp';
+import { supabase } from '../modules/supabase';
+import { AUTHORIZED_AGENTS } from '../modules/whatsapp/config/agent.config';
 
 const whatsappRouter = express.Router();
 
@@ -71,12 +73,12 @@ function addToQueue(messageData: any, context: any): string {
  */
 async function processOrderQueue(): Promise<void> {
   if (isProcessing) {
-    console.log("⏸️ Queue processing already running");
+    console.log('⏸️ Queue processing already running');
     return;
   }
 
   if (orderQueue.length === 0) {
-    console.log("✅ Queue is empty");
+    console.log('✅ Queue is empty');
     return;
   }
 
@@ -162,16 +164,16 @@ async function processOrderQueue(): Promise<void> {
 
       if (overallSuccess) {
         console.log(`✅ Order ${queuedOrder.id} processed successfully:`);
-        console.log(`  📝 Google Sheets: ${sheetsSuccess ? "✅" : "❌"}`);
-        console.log(`  💾 Supabase: ${supabaseSuccess ? "✅" : "❌"}`);
+        console.log(`  📝 Google Sheets: ${sheetsSuccess ? '✅' : '❌'}`);
+        console.log(`  💾 Supabase: ${supabaseSuccess ? '✅' : '❌'}`);
 
         // Log success to database message tracking
         try {
           await updateMessageStatusInDB(
             queuedOrder.messageData.MessageSid,
-            "processed",
-            queuedOrder.messageData.To || "",
-            queuedOrder.messageData.From || "",
+            'processed',
+            queuedOrder.messageData.To || '',
+            queuedOrder.messageData.From || '',
             new Date().toISOString()
           );
         } catch (dbError) {
@@ -183,8 +185,8 @@ async function processOrderQueue(): Promise<void> {
       } else {
         throw new Error(
           `Both Google Sheets and Supabase failed: Sheets(${
-            sheetsResult?.error || "unknown"
-          }), Supabase(${supabaseResult?.error || "unknown"})`
+            sheetsResult?.error || 'unknown'
+          }), Supabase(${supabaseResult?.error || 'unknown'})`
         );
       }
     } catch (error) {
@@ -213,7 +215,7 @@ async function processOrderQueue(): Promise<void> {
               queuedOrder.context
             ) || {}
           );
-          failedOrderInput.status = "failed";
+          failedOrderInput.status = 'failed';
           failedOrderInput.remark = `Failed after ${MAX_RETRIES} attempts: ${error}`;
 
           await createCompleteOrder(failedOrderInput);
@@ -239,7 +241,7 @@ async function processOrderQueue(): Promise<void> {
   }
 
   isProcessing = false;
-  console.log("✅ Queue processing completed");
+  console.log('✅ Queue processing completed');
 }
 
 /**
@@ -276,18 +278,18 @@ function transformOrderForNormalizedSupabase(orderData: any): CreateOrderInput {
     customer_name: orderData.customerName, // ✅ FIXED: was orderData.name
     phone_number: orderData.phoneNumber, // ✅ FIXED: already correct
     fb_name: orderData.fbName, // Add fb_name if available
-    customer_type: orderData.isRepeatCustomer ? "repeat" : "new",
+    customer_type: orderData.isRepeatCustomer ? 'repeat' : 'new',
 
     // Order details
-    order_date: orderData.orderDate || new Date().toISOString().split("T")[0],
-    payment_method: orderData.paymentMethod || "",
+    order_date: orderData.orderDate || new Date().toISOString().split('T')[0],
+    payment_method: orderData.paymentMethod || '',
 
     // Product quantities (FIXED: map from products array)
-    wash_qty: getProductQuantity("wash"),
-    femlift_30ml_qty: getProductQuantity("femlift_30ml"),
-    femlift_10ml_qty: getProductQuantity("femlift_10ml"),
-    wash_30ml_qty: getProductQuantity("wash_30ml"),
-    spray_qty: getProductQuantity("spray"),
+    wash_qty: getProductQuantity('wash'),
+    femlift_30ml_qty: getProductQuantity('femlift_30ml'),
+    femlift_10ml_qty: getProductQuantity('femlift_10ml'),
+    wash_30ml_qty: getProductQuantity('wash_30ml'),
+    spray_qty: getProductQuantity('spray'),
 
     // Pricing (FIXED: use correct field names)
     package_price: orderData.packagePrice || 0,
@@ -308,13 +310,13 @@ function transformOrderForNormalizedSupabase(orderData: any): CreateOrderInput {
     // Additional metadata
     remark: orderData.remark,
     agent_name: orderData.agentName,
-    currency: orderData.currency || "MYR",
-    status: orderData.status || "pending",
+    currency: orderData.currency || 'MYR',
+    status: orderData.status || 'pending',
 
     // Source tracking
     source: orderData.groupName
       ? `whatsapp_group_${orderData.groupName}`
-      : "whatsapp_direct",
+      : 'whatsapp_direct',
   };
 }
 
@@ -322,7 +324,7 @@ function transformOrderForNormalizedSupabase(orderData: any): CreateOrderInput {
 // WEBHOOK HANDLER (Updated with Queue)( Legacy Twilio format )
 // ============================================================================
 
-whatsappRouter.post("/whatsapp/incoming", async (req, res) => {
+whatsappRouter.post('/whatsapp/incoming', async (req, res) => {
   const {
     MessageSid,
     From,
@@ -344,11 +346,11 @@ whatsappRouter.post("/whatsapp/incoming", async (req, res) => {
   const messageNumber = Date.now(); // Unique identifier for this message
   console.log(`\n🚨 === MESSAGE ${messageNumber} START ===`);
   console.log(`📱 INCOMING MESSAGE DEBUG`);
-  console.log(`MessageSid: ${MessageSid || "MISSING"}`);
-  console.log(`Raw From: ${From || "MISSING"}`);
-  console.log(`WaId: ${WaId || "MISSING"}`);
-  console.log(`ProfileName: ${ProfileName || "MISSING"}`);
-  console.log(`Group: ${GroupName || "Direct message"}`);
+  console.log(`MessageSid: ${MessageSid || 'MISSING'}`);
+  console.log(`Raw From: ${From || 'MISSING'}`);
+  console.log(`WaId: ${WaId || 'MISSING'}`);
+  console.log(`ProfileName: ${ProfileName || 'MISSING'}`);
+  console.log(`Group: ${GroupName || 'Direct message'}`);
   console.log(`Body exists: ${!!Body}`);
   console.log(`Body Length: ${Body?.length || 0}`);
 
@@ -357,8 +359,8 @@ whatsappRouter.post("/whatsapp/incoming", async (req, res) => {
     console.log(`"${Body}"`);
     console.log(`📝 BODY ANALYSIS:`);
     console.log(`  - Starts with: "${Body.substring(0, 20)}..."`);
-    console.log(`  - Contains newlines: ${Body.includes("\n")}`);
-    console.log(`  - Number of lines: ${Body.split("\n").length}`);
+    console.log(`  - Contains newlines: ${Body.includes('\n')}`);
+    console.log(`  - Number of lines: ${Body.split('\n').length}`);
     console.log(`  - Has numbers: ${/\d/.test(Body)}`);
     console.log(`  - Has letters: ${/[a-zA-Z]/.test(Body)}`);
 
@@ -381,8 +383,8 @@ whatsappRouter.post("/whatsapp/incoming", async (req, res) => {
   const isAuthorized = PhoneNumberUtil.isAuthorized(normalizedPhone);
 
   console.log(`📞 PHONE ANALYSIS:`);
-  console.log(`  Customer Phone: ${customerPhone || "MISSING"}`);
-  console.log(`  Normalized Phone: ${normalizedPhone || "MISSING"}`);
+  console.log(`  Customer Phone: ${customerPhone || 'MISSING'}`);
+  console.log(`  Normalized Phone: ${normalizedPhone || 'MISSING'}`);
   console.log(`  Is Authorized: ${isAuthorized}`);
   console.log(`  Authorized Numbers:`, getAuthorizedPhoneNumbers());
 
@@ -491,7 +493,7 @@ whatsappRouter.post("/whatsapp/incoming", async (req, res) => {
       if (matches) {
         console.log(
           `   ✅ Product codes detected: ${matches.join(
-            ", "
+            ', '
           )} (+3) - Score: ${score}`
         );
       }
@@ -522,7 +524,7 @@ whatsappRouter.post("/whatsapp/incoming", async (req, res) => {
     }
 
     // 9. Multi-line structured format (WEAK indicator) - Score: 1
-    const lines = Body.split("\n").filter((line) => line.trim().length > 0);
+    const lines = Body.split('\n').filter((line) => line.trim().length > 0);
     if (lines.length >= 4) {
       score += 1;
       console.log(
@@ -545,7 +547,7 @@ whatsappRouter.post("/whatsapp/incoming", async (req, res) => {
 
     console.log(`🧠 === FINAL RESULTS ===`);
     console.log(`🧠 Final Score: ${score}/20 (Need 5+ to qualify as order)`);
-    console.log(`🧠 Qualification: ${score >= 5 ? "✅ PASSED" : "❌ FAILED"}`);
+    console.log(`🧠 Qualification: ${score >= 5 ? '✅ PASSED' : '❌ FAILED'}`);
     console.log(`🧠 === END SMART DETECTION ===`);
 
     // Need at least 5 points to be considered an order
@@ -584,73 +586,23 @@ whatsappRouter.post("/whatsapp/incoming", async (req, res) => {
 // ============================================================================
 // Meta Cloud API - Send Messages & Fetch Templates
 // ============================================================================
-whatsappRouter.post("/send", async (req, res) => {
-  const { to, message, template, mediaUrl } = req.body;
-  const { type } = req.query;
 
-  console.log(`\n🚀 /send called with type='${type}' to='${to}'`);
-  if (!to || !type) {
-    return res.status(400).json({
-      success: false,
-      error: "Missing 'to' in body or 'type' in query",
-    });
-  }
+whatsappRouter.post('/send', async (req, res) => {
+  const { conversationId, message } = req.body;
 
   try {
-    switch (type) {
-      case "text":
-        if (!message) {
-          return res
-            .status(400)
-            .json({ success: false, error: "Missing 'message' for text type" });
-        }
-        console.log(`📤 Sending text message to ${to}`);
-        await waService.sendTextMessage(to, message);
-        break;
-
-      case "template":
-        if (!template) {
-          return res.status(400).json({
-            success: false,
-            error: "Missing 'template' for template type",
-          });
-        }
-
-        console.log(`📤 Sending template message to ${to}`);
-        await waService.sendTemplateMessage(to, template);
-        break;
-
-      // If you want to re-enable media later
-      // case "media":
-      //   if (!mediaUrl) {
-      //     return res.status(400).json({ success: false, error: "Missing 'mediaUrl' for media type" });
-      //   }
-      //   console.log(`📤 Sending media message to ${to}`);
-      //   await waService.sendMediaMessage(to, mediaUrl, message || "");
-      //   break;
-
-      default:
-        return res.status(400).json({
-          success: false,
-          error: `Unsupported type '${type}'`,
-        });
-    }
-
-    res.json({
-      success: true,
-      message: `✅ Message sent to ${to} using type '${type}'`,
-    });
-  } catch (error) {
-    console.error("❌ Error sending message:", error);
-    res.status(500).json({
-      success: false,
-      error: "Failed to send message",
-      details: error instanceof Error ? error.message : String(error),
-    });
+    const savedMsg = await waService.sendOutboundMessage(
+      conversationId,
+      message
+    );
+    res.json({ success: true, data: savedMsg });
+  } catch (err: any) {
+    console.error('❌ Send error:', err.message);
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
-whatsappRouter.get("/whatsapp/templates", async (req, res) => {
+whatsappRouter.get('/whatsapp/templates', async (req, res) => {
   try {
     const templates = await waService.getMessageTemplates();
     res.json({
@@ -660,74 +612,126 @@ whatsappRouter.get("/whatsapp/templates", async (req, res) => {
   } catch (error) {
     res.status(500).json({
       success: false,
-      error: "Failed to fetch templates",
+      error: 'Failed to fetch templates',
       details: error instanceof Error ? error.message : String(error),
     });
   }
 });
 
-whatsappRouter.get("/webhook", (req, res) => {
-  const VERIFY_TOKEN = "supersecret"; // set in Meta dashboard
+whatsappRouter.get('/webhook', (req, res) => {
+  const VERIFY_TOKEN = 'supersecret'; // set in Meta dashboard
 
-  const mode = req.query["hub.mode"];
-  const token = req.query["hub.verify_token"];
-  const challenge = req.query["hub.challenge"];
+  const mode = req.query['hub.mode'];
+  const token = req.query['hub.verify_token'];
+  const challenge = req.query['hub.challenge'];
 
-  if (mode && token && mode === "subscribe" && token === VERIFY_TOKEN) {
-    console.log("✅ Webhook verified!");
+  if (mode && token && mode === 'subscribe' && token === VERIFY_TOKEN) {
+    console.log('✅ Webhook verified!');
     res.status(200).send(challenge);
   } else {
     res.sendStatus(403);
   }
 });
 
-whatsappRouter.post("/webhook", (req, res) => {
-  const body = req.body;
+whatsappRouter.post('/webhook', async (req, res) => {
+  try {
+    const body = req.body;
+    const adminPhones = AUTHORIZED_AGENTS.map((agent) => agent.phoneNumber);
 
-  console.log("Raw webhook body:", JSON.stringify(body, null, 2));
+    if (body.object !== 'whatsapp_business_account') {
+      return res.sendStatus(404);
+    }
 
-  if (body.object === "whatsapp_business_account") {
-    body.entry?.forEach((entry: any) => {
-      entry.changes?.forEach((change: any) => {
-        // ✅ Save contacts
-        if (change.value?.contacts) {
-          change.value.contacts.forEach((contact: any) => {
-            const newContact = {
-              waId: contact.wa_id,
-              profileName: contact.profile?.name || "",
-            };
-            waService.saveContact(newContact);
-            console.log("👤 Saved Contact:", newContact);
-          });
+    for (const entry of body.entry || []) {
+      for (const change of entry.changes || []) {
+        const businessNumber = change.value?.metadata?.display_phone_number; // your WA business number
+        const userNumber = change.value?.contacts?.[0]?.wa_id; // the sender’s WhatsApp ID
+        const profileName = change.value?.contacts?.[0]?.profile?.name || '';
+
+        for (const msg of change.value?.messages || []) {
+          if (userNumber && adminPhones.includes(userNumber)) {
+            // 🔹 Admin flow
+            console.log('✅ Admin message from:', userNumber);
+            // await waService.handleMessageExtraction(msg);
+            // await waService.handleInboundMessage(msg, businessNumber, profileName);
+          } else {
+            // 🔹 Normal user flow
+            // console.log("📩 Normal user message from:", userNumber);
+            // await waService.handleInboundMessage(msg, businessNumber, profileName);
+          }
         }
+      }
+    }
 
-        // ✅ Save messages
-        if (change.value?.messages) {
-          change.value.messages.forEach((msg: any) => {
-            const newMsg = {
-              id: msg.id,
-              from: msg.from, // This ties to contact.waId
-              body: msg.text?.body || "",
-              type: msg.type,
-              timestamp: msg.timestamp,
-              direction: "inbound",
-            };
-            waService.saveMessage(newMsg);
-            console.log("📥 Saved Message:", newMsg);
-          });
-        }
-      });
-    });
-
-    res.sendStatus(200);
-  } else {
-    res.sendStatus(404);
+    return res.sendStatus(200);
+  } catch (err: any) {
+    console.error('❌ Webhook error:', err);
+    return res.status(500).json({ error: err.message });
   }
 });
 
-whatsappRouter.get("/whatsapp/messages", (req, res) => {
-  const data = waService.getMessages();
-  res.json(data);
+// Mark conversation as read
+// whatsappRouter.post("/whatsapp/conversations/:id/read", async (req, res) => {
+//   const { id } = req.params;
+
+//   try {
+//     await waService.markConversationAsRead(id);
+//     res.json({ success: true });
+//   } catch (err: any) {
+//     res.status(500).json({ success: false, error: err.message });
+//   }
+// });
+
+// List all conversations
+whatsappRouter.get('/whatsapp/conversations', async (req, res) => {
+  try {
+    const conversations = await waService.getConversations();
+    res.json({ success: true, conversations });
+  } catch (error: any) {
+    console.error('❌ Error fetching conversations:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Get messages for a specific conversation
+whatsappRouter.get(
+  '/whatsapp/conversations/:conversationId',
+  async (req, res) => {
+    try {
+      const { conversationId } = req.params;
+
+      if (!conversationId) {
+        return res
+          .status(400)
+          .json({ success: false, error: 'Missing conversationId' });
+      }
+
+      const data = await waService.getConversationMessages(conversationId);
+      res.json({ success: true, messages: data });
+    } catch (error: any) {
+      console.error('❌ Error fetching messages:', error.message);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  }
+);
+
+// Get media URL
+whatsappRouter.get('/whatsapp/media/:mediaId', async (req, res) => {
+  const { mediaId } = req.params;
+
+  try {
+    if (!mediaId) {
+      return res.status(400).json({ success: false, error: 'Missing mediaId' });
+    }
+
+    const media = await waService.getMedia(mediaId);
+
+    res.setHeader('Content-Type', media.mimeType);
+    res.send(media.fileData); // send the raw image bytes
+  } catch (error) {
+    console.error('❌ Error fetching media:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch media' });
+  }
 });
 
 // ============================================================================
@@ -735,7 +739,7 @@ whatsappRouter.get("/whatsapp/messages", (req, res) => {
 // ============================================================================
 
 // Get queue status
-whatsappRouter.get("/queue/status", (req, res) => {
+whatsappRouter.get('/queue/status', (req, res) => {
   res.json({
     success: true,
     ...getQueueStatus(),
@@ -743,12 +747,12 @@ whatsappRouter.get("/queue/status", (req, res) => {
 });
 
 // Manually trigger queue processing (for debugging)
-whatsappRouter.post("/queue/process", async (req, res) => {
+whatsappRouter.post('/queue/process', async (req, res) => {
   try {
     if (isProcessing) {
       return res.json({
         success: false,
-        message: "Queue is already being processed",
+        message: 'Queue is already being processed',
       });
     }
 
@@ -756,20 +760,20 @@ whatsappRouter.post("/queue/process", async (req, res) => {
 
     res.json({
       success: true,
-      message: "Queue processing started",
+      message: 'Queue processing started',
       ...getQueueStatus(),
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      error: "Failed to start queue processing",
+      error: 'Failed to start queue processing',
       details: error instanceof Error ? error.message : String(error),
     });
   }
 });
 
 // Clear queue (for emergency situations)
-whatsappRouter.post("/queue/clear", (req, res) => {
+whatsappRouter.post('/queue/clear', (req, res) => {
   const clearedCount = orderQueue.length;
   orderQueue.length = 0; // Clear array
 

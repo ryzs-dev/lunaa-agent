@@ -90,10 +90,10 @@ export class ImportService {
       const order = await orderService.createOrder({
         customer_id: customer.id as UUID,
         ...payload.order,
-        status:
-          (payload.order.status as 'unpaid' | 'paid' | 'refunded') || 'unpaid',
+        status: (payload.order.status as 'unpaid' | 'paid' | 'refunded') || 'unpaid',
         order_items: await this.mapProductNamesToIds(payload.order.order_items),
         address_id: address.id as UUID,
+        created_at: ''
       });
 
       // 4. create order_tracking

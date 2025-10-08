@@ -1,13 +1,4 @@
 "use strict";
-var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
-    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
-    return new (P || (P = Promise))(function (resolve, reject) {
-        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
-        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
-        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
-        step((generator = generator.apply(thisArg, _arguments || [])).next());
-    });
-};
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -24,34 +15,34 @@ exports.getUnauthorizedMessage = getUnauthorizedMessage;
 const googleapis_1 = require("googleapis");
 const dotenv_1 = __importDefault(require("dotenv"));
 const path_1 = __importDefault(require("path"));
-dotenv_1.default.config({ path: path_1.default.resolve(__dirname, "../.env.local") });
+dotenv_1.default.config({ path: path_1.default.resolve(__dirname, '../.env.local') });
 // ============================================================================
 // CONFIGURATION
 // ============================================================================
 const AUTHORIZED_AGENTS = [
     {
-        phoneNumber: "601126470411",
-        name: "Sales - 0411",
+        phoneNumber: '601126470411',
+        name: 'Sales - 0411',
     },
     {
-        phoneNumber: "60174941361",
-        name: "Sales - 1361",
+        phoneNumber: '60174941361',
+        name: 'Sales - 1361',
     },
     {
-        phoneNumber: "60164525013",
-        name: "Sales - 5013",
+        phoneNumber: '60164525013',
+        name: 'Sales - 5013',
     },
     {
-        phoneNumber: "60127909921",
-        name: "Sales - 9921",
+        phoneNumber: '60127909921',
+        name: 'Sales - 9921',
     },
     {
-        phoneNumber: "60164561361",
-        name: "Sales - 61361",
+        phoneNumber: '60164561361',
+        name: 'Sales - 61361',
     },
     {
-        phoneNumber: "601158699901",
-        name: "Sales - 9901",
+        phoneNumber: '601158699901',
+        name: 'Sales - 9901',
     },
 ];
 const PHONE_TO_AGENT = new Map();
@@ -60,38 +51,38 @@ const AUTHORIZED_PHONE_NUMBERS = [];
 const credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON);
 const auth = new googleapis_1.google.auth.GoogleAuth({
     credentials,
-    scopes: ["https://www.googleapis.com/auth/spreadsheets"],
+    scopes: ['https://www.googleapis.com/auth/spreadsheets'],
 });
-const sheets = googleapis_1.google.sheets({ version: "v4", auth });
+const sheets = googleapis_1.google.sheets({ version: 'v4', auth });
 // ============================================================================
 // PHONE NUMBER UTILITIES
 // ============================================================================
 class PhoneNumberUtil {
     static normalize(phoneNumber) {
         if (!phoneNumber)
-            return "";
-        const digits = phoneNumber.replace(/\D/g, "");
+            return '';
+        const digits = phoneNumber.replace(/\D/g, '');
         // Handle Singapore numbers first (+65)
-        if (digits.startsWith("65")) {
+        if (digits.startsWith('65')) {
             return digits;
         }
         else if (digits.length === 8 && /^[3689]/.test(digits)) {
-            return "65" + digits;
+            return '65' + digits;
         }
         // Handle Malaysian numbers (+60)
-        if (digits.startsWith("60")) {
+        if (digits.startsWith('60')) {
             return digits;
         }
-        else if (digits.startsWith("0")) {
-            return "60" + digits.substring(1);
+        else if (digits.startsWith('0')) {
+            return '60' + digits.substring(1);
         }
         else if (digits.length >= 9 &&
             digits.length <= 11 &&
             /^[13-9]/.test(digits)) {
-            if (digits.startsWith("6") && digits.length === 8) {
-                return "65" + digits;
+            if (digits.startsWith('6') && digits.length === 8) {
+                return '65' + digits;
             }
-            return "60" + digits;
+            return '60' + digits;
         }
         return digits;
     }
@@ -121,7 +112,7 @@ class PhoneNumberUtil {
             const pattern = patterns[i];
             const matches = text.match(pattern);
             if (matches && matches.length > 0) {
-                const result = matches[0].replace(/\s+/g, "");
+                const result = matches[0].replace(/\s+/g, '');
                 console.log(`   ✅ Pattern ${i + 1} matched: "${result}"`);
                 return result;
             }
@@ -138,10 +129,10 @@ class PhoneNumberUtil {
             if (normalized === normalizedAuth)
                 return true;
             // Compare without country codes
-            if (normalized.startsWith("60") && normalizedAuth.startsWith("60")) {
+            if (normalized.startsWith('60') && normalizedAuth.startsWith('60')) {
                 return normalized.substring(2) === normalizedAuth.substring(2);
             }
-            if (normalized.startsWith("65") && normalizedAuth.startsWith("65")) {
+            if (normalized.startsWith('65') && normalizedAuth.startsWith('65')) {
                 return normalized.substring(2) === normalizedAuth.substring(2);
             }
             return false;
@@ -198,19 +189,19 @@ class ContentExtractor {
         if (!text)
             return null;
         const methods = [
-            { pattern: /\b(cod|cash\s*on\s*delivery)\b/i, method: "COD" },
-            { pattern: /\b(tng|touch\s*n\s*go|touchngo)\b/i, method: "TNG" },
+            { pattern: /\b(cod|cash\s*on\s*delivery)\b/i, method: 'COD' },
+            { pattern: /\b(tng|touch\s*n\s*go|touchngo)\b/i, method: 'TNG' },
             {
                 pattern: /\b(bank\s*transfer|transfer|fpx)\b/i,
-                method: "BANK TRANSFER",
+                method: 'BANK TRANSFER',
             },
-            { pattern: /\b(card|credit\s*card|debit\s*card)\b/i, method: "CARD" },
-            { pattern: /\b(grab\s*pay|grabpay)\b/i, method: "GRABPAY" },
-            { pattern: /\b(boost)\b/i, method: "BOOST" },
-            { pattern: /\b(maya|paymaya)\b/i, method: "MAYA" },
-            { pattern: /\b(gcash)\b/i, method: "GCASH" },
-            { pattern: /\b(cash|tunai)\b/i, method: "CASH" },
-            { pattern: /\b(atome)\b/i, method: "ATOME" },
+            { pattern: /\b(card|credit\s*card|debit\s*card)\b/i, method: 'CARD' },
+            { pattern: /\b(grab\s*pay|grabpay)\b/i, method: 'GRABPAY' },
+            { pattern: /\b(boost)\b/i, method: 'BOOST' },
+            { pattern: /\b(maya|paymaya)\b/i, method: 'MAYA' },
+            { pattern: /\b(gcash)\b/i, method: 'GCASH' },
+            { pattern: /\b(cash|tunai)\b/i, method: 'CASH' },
+            { pattern: /\b(atome)\b/i, method: 'ATOME' },
         ];
         const textLower = text.toLowerCase().trim();
         for (const { pattern, method } of methods) {
@@ -236,7 +227,7 @@ class ContentExtractor {
         if (!productCode)
             return [];
         const products = [];
-        let remaining = productCode.replace(/\s/g, "").toLowerCase();
+        let remaining = productCode.replace(/\s/g, '').toLowerCase();
         while (remaining.length > 0) {
             const match = remaining.match(/^(\d+)([wfs])(30ml|10ml)?/i);
             if (!match)
@@ -244,26 +235,26 @@ class ContentExtractor {
             const [full, qty, letter, size] = match;
             const quantity = parseInt(qty);
             switch (letter) {
-                case "w":
+                case 'w':
                     products.push({
-                        name: size === "30ml" ? "wash_30ml" : "wash",
+                        name: size === '30ml' ? 'wash_30ml' : 'wash',
                         quantity,
-                        type: size || "",
+                        type: size || '',
                     });
                     break;
-                case "f":
+                case 'f':
                     products.push({
-                        name: size === "10ml" ? "femlift_10ml" : "femlift_30ml",
+                        name: size === '10ml' ? 'femlift_10ml' : 'femlift_30ml',
                         quantity,
-                        type: size || "30ml",
+                        type: size || '30ml',
                     });
                     break;
-                case "s":
-                    products.push({ name: "spray", quantity, type: "" });
+                case 's':
+                    products.push({ name: 'spray', quantity, type: '' });
                     break;
-                case "b":
-                case "B":
-                    products.push({ name: "blossom", quantity, type: "" });
+                case 'b':
+                case 'B':
+                    products.push({ name: 'blossom', quantity, type: '' });
             }
             remaining = remaining.substring(full.length);
         }
@@ -272,8 +263,8 @@ class ContentExtractor {
     static formatDate(dateStr) {
         const parts = dateStr.split(/[\/\-]/);
         if (parts.length === 3) {
-            const day = parts[0].padStart(2, "0");
-            const month = parts[1].padStart(2, "0");
+            const day = parts[0].padStart(2, '0');
+            const month = parts[1].padStart(2, '0');
             let year = parts[2];
             if (year.length === 2) {
                 const yearNum = parseInt(year);
@@ -281,7 +272,7 @@ class ContentExtractor {
             }
             return `${year}-${month}-${day}`;
         }
-        return new Date().toISOString().split("T")[0];
+        return new Date().toISOString().split('T')[0];
     }
 }
 // ============================================================================
@@ -292,7 +283,7 @@ class AddressParser {
         const address = addressLine.trim();
         const addressLower = address.toLowerCase();
         // Extract postcode
-        let postcode = "";
+        let postcode = '';
         const malaysianPostcode = address.match(/\b\d{5}\b/);
         const singaporePostcode = address.match(/\b\d{6}\b/);
         if (malaysianPostcode)
@@ -300,7 +291,7 @@ class AddressParser {
         else if (singaporePostcode)
             postcode = singaporePostcode[0];
         // Determine state
-        let state = "";
+        let state = '';
         // First try by name variants
         for (const stateInfo of this.STATES) {
             if (stateInfo.variants.some((variant) => addressLower.includes(variant))) {
@@ -312,7 +303,7 @@ class AddressParser {
         if (!state && postcode) {
             const postcodeNum = parseInt(postcode);
             if (postcode.length === 6) {
-                state = "Singapore";
+                state = 'Singapore';
             }
             else if (postcode.length === 5) {
                 for (const stateInfo of this.STATES) {
@@ -326,7 +317,7 @@ class AddressParser {
         }
         return {
             address,
-            city: "", // Not extracting city as requested
+            city: '', // Not extracting city as requested
             postcode,
             state,
         };
@@ -334,42 +325,42 @@ class AddressParser {
 }
 AddressParser.STATES = [
     {
-        name: "Selangor",
-        variants: ["selangor", "sel"],
+        name: 'Selangor',
+        variants: ['selangor', 'sel'],
         postcodes: [40000, 48999],
     },
     {
-        name: "Kuala Lumpur",
-        variants: ["kuala lumpur", "kl"],
+        name: 'Kuala Lumpur',
+        variants: ['kuala lumpur', 'kl'],
         postcodes: [50000, 60999],
     },
     {
-        name: "Penang",
-        variants: ["penang", "pulau pinang"],
+        name: 'Penang',
+        variants: ['penang', 'pulau pinang'],
         postcodes: [10000, 14999],
     },
-    { name: "Johor", variants: ["johor", "jb"], postcodes: [79000, 86999] },
-    { name: "Perak", variants: ["perak"], postcodes: [30000, 36999] },
-    { name: "Kedah", variants: ["kedah"], postcodes: [5000, 9999] },
-    { name: "Kelantan", variants: ["kelantan"], postcodes: [15000, 18999] },
-    { name: "Terengganu", variants: ["terengganu"], postcodes: [20000, 24999] },
-    { name: "Pahang", variants: ["pahang"], postcodes: [25000, 29999] },
+    { name: 'Johor', variants: ['johor', 'jb'], postcodes: [79000, 86999] },
+    { name: 'Perak', variants: ['perak'], postcodes: [30000, 36999] },
+    { name: 'Kedah', variants: ['kedah'], postcodes: [5000, 9999] },
+    { name: 'Kelantan', variants: ['kelantan'], postcodes: [15000, 18999] },
+    { name: 'Terengganu', variants: ['terengganu'], postcodes: [20000, 24999] },
+    { name: 'Pahang', variants: ['pahang'], postcodes: [25000, 29999] },
     {
-        name: "Negeri Sembilan",
-        variants: ["negeri sembilan", "n9"],
+        name: 'Negeri Sembilan',
+        variants: ['negeri sembilan', 'n9'],
         postcodes: [70000, 73999],
     },
     {
-        name: "Melaka",
-        variants: ["melaka", "malacca"],
+        name: 'Melaka',
+        variants: ['melaka', 'malacca'],
         postcodes: [75000, 78999],
     },
-    { name: "Perlis", variants: ["perlis"], postcodes: [1000, 2999] },
-    { name: "Sabah", variants: ["sabah"], postcodes: [87000, 91999] },
-    { name: "Sarawak", variants: ["sarawak"], postcodes: [93000, 98999] },
-    { name: "Putrajaya", variants: ["putrajaya"], postcodes: [62000, 62999] },
-    { name: "Labuan", variants: ["labuan"], postcodes: [87000, 87999] },
-    { name: "Singapore", variants: ["singapore", "sg"], postcodes: [] },
+    { name: 'Perlis', variants: ['perlis'], postcodes: [1000, 2999] },
+    { name: 'Sabah', variants: ['sabah'], postcodes: [87000, 91999] },
+    { name: 'Sarawak', variants: ['sarawak'], postcodes: [93000, 98999] },
+    { name: 'Putrajaya', variants: ['putrajaya'], postcodes: [62000, 62999] },
+    { name: 'Labuan', variants: ['labuan'], postcodes: [87000, 87999] },
+    { name: 'Singapore', variants: ['singapore', 'sg'], postcodes: [] },
 ];
 // ============================================================================
 // ORDER EXTRACTOR (Main Logic)
@@ -391,7 +382,7 @@ class OrderExtractor {
     }
     static isCondensedFormat(messageBody) {
         const trimmed = messageBody.trim();
-        const lines = trimmed.split("\n").filter((line) => line.trim());
+        const lines = trimmed.split('\n').filter((line) => line.trim());
         const hasDateAtStart = /^\d{1,2}[\/\-]\d{1,2}[\/\-](\d{2}|\d{4})/.test(trimmed);
         const hasProductAtEnd = /\s+\d+[wfs](\d+ml)?(\d+[wfs](\d+ml)?)*\s*$/i.test(trimmed);
         const isCondensedCandidate = lines.length === 1 ||
@@ -416,7 +407,7 @@ class OrderExtractor {
             .substring(0, remaining.length - productMatch[0].length)
             .trim();
         // Extract payment and amount
-        let paymentMethod = ContentExtractor.detectPaymentMethod(remaining) || "";
+        let paymentMethod = ContentExtractor.detectPaymentMethod(remaining) || '';
         let totalPaid = 0;
         const paymentAmountMatch = remaining.match(/^(cod|bank|cash|transfer|tng|grabpay|boost)\s+rm\s*(\d+)/i);
         if (paymentAmountMatch) {
@@ -431,6 +422,13 @@ class OrderExtractor {
                 remaining = remaining.substring(amountMatch[0].length).trim();
             }
         }
+        // Extract customer email
+        let email = '';
+        const emailMatch = remaining.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
+        if (emailMatch) {
+            email = emailMatch[0];
+            remaining = remaining.substring(0, emailMatch.index).trim();
+        }
         // Extract phone and customer info
         const extractedPhone = PhoneNumberUtil.extract(remaining);
         if (!extractedPhone)
@@ -444,6 +442,7 @@ class OrderExtractor {
         const addressComponents = AddressParser.parse(addressString);
         const isRepeat = ContentExtractor.detectRepeatCustomer(messageBody);
         return this.buildOrderData({
+            email,
             orderDate,
             customerName,
             phoneNumber,
@@ -458,7 +457,7 @@ class OrderExtractor {
     }
     static extractMultiLine(messageBody, context) {
         const lines = messageBody
-            .split("\n")
+            .split('\n')
             .map((line) => line.trim())
             .filter(Boolean);
         if (lines.length < 2)
@@ -467,20 +466,21 @@ class OrderExtractor {
         lines.forEach((line, i) => console.log(`   ${i + 1}: "${line}"`));
         // Initialize extraction data
         const data = {
-            orderDate: "",
+            email: '',
+            orderDate: '',
             totalPaid: 0,
-            customerName: "",
-            receiverName: "",
-            phoneNumber: "",
-            address: "",
-            productCode: "",
-            paymentMethod: "",
+            customerName: '',
+            receiverName: '',
+            phoneNumber: '',
+            address: '',
+            productCode: '',
+            paymentMethod: '',
             isRepeatCustomer: false,
         };
         // Global detection
         data.isRepeatCustomer = ContentExtractor.detectRepeatCustomer(messageBody);
         data.paymentMethod =
-            ContentExtractor.detectPaymentMethod(messageBody) || "";
+            ContentExtractor.detectPaymentMethod(messageBody) || '';
         // Find product code first
         for (const line of lines) {
             if (/^(\d+[wfs](\d+ml)?)+$/i.test(line.trim()) &&
@@ -529,13 +529,13 @@ class OrderExtractor {
                 !PhoneNumberUtil.extract(line)) {
                 data.customerName = line
                     .trim()
-                    .replace(/\s*[\(（]([^)）]*)[\)）]\s*$/g, "");
+                    .replace(/\s*[\(（]([^)）]*)[\)）]\s*$/g, '');
                 console.log(`   👤 Found customer name: ${data.customerName}`);
                 continue;
             }
             // Address line detection
             if (this.isAddressLine(line, data)) {
-                data.address += (data.address ? ", " : "") + line;
+                data.address += (data.address ? ', ' : '') + line;
                 console.log(`   📍 Added address line: ${line}`);
                 console.log(`   📍 Full address now: ${data.address}`);
                 continue;
@@ -561,13 +561,14 @@ class OrderExtractor {
         console.log(`   Payment Method: ${data.paymentMethod}`);
         // Validation and final processing
         if (!data.phoneNumber) {
-            console.log("❌ No customer phone number found");
+            console.log('❌ No customer phone number found');
             return null;
         }
         const addressComponents = AddressParser.parse(data.address);
-        const finalCustomerName = data.receiverName || data.customerName || "WhatsApp Customer";
+        const finalCustomerName = data.receiverName || data.customerName || 'WhatsApp Customer';
         return this.buildOrderData({
-            orderDate: data.orderDate || new Date().toISOString().split("T")[0],
+            email: data.email || '',
+            orderDate: data.orderDate || new Date().toISOString().split('T')[0],
             customerName: finalCustomerName,
             phoneNumber: data.phoneNumber,
             totalPaid: data.totalPaid,
@@ -582,18 +583,18 @@ class OrderExtractor {
     static processLabeledField(line, data) {
         const lowerLine = line.toLowerCase();
         // Check for labeled fields with colons
-        if ((lowerLine.startsWith("name") ||
-            lowerLine.startsWith("contact") ||
-            lowerLine.startsWith("address") ||
-            lowerLine.startsWith("payment") ||
-            lowerLine.startsWith("total")) &&
-            (line.includes(":") || line.includes("："))) {
-            const content = line.replace(/^[^：:]*[：:]\s*/i, "").trim();
-            if (lowerLine.startsWith("name")) {
-                data.customerName = content.replace(/\s*[\(（]([^)）]*)[\)）]\s*$/g, "");
+        if ((lowerLine.startsWith('name') ||
+            lowerLine.startsWith('contact') ||
+            lowerLine.startsWith('address') ||
+            lowerLine.startsWith('payment') ||
+            lowerLine.startsWith('total')) &&
+            (line.includes(':') || line.includes('：'))) {
+            const content = line.replace(/^[^：:]*[：:]\s*/i, '').trim();
+            if (lowerLine.startsWith('name')) {
+                data.customerName = content.replace(/\s*[\(（]([^)）]*)[\)）]\s*$/g, '');
                 return true;
             }
-            if (lowerLine.startsWith("contact")) {
+            if (lowerLine.startsWith('contact')) {
                 const phone = PhoneNumberUtil.extract(content);
                 if (phone) {
                     data.phoneNumber = PhoneNumberUtil.normalize(phone);
@@ -601,17 +602,17 @@ class OrderExtractor {
                 }
                 return true;
             }
-            if (lowerLine.startsWith("address")) {
+            if (lowerLine.startsWith('address')) {
                 data.address = content;
                 return true;
             }
-            if (lowerLine.startsWith("payment")) {
+            if (lowerLine.startsWith('payment')) {
                 const payment = ContentExtractor.detectPaymentMethod(content);
                 if (payment)
                     data.paymentMethod = payment;
                 return true;
             }
-            if (lowerLine.startsWith("total")) {
+            if (lowerLine.startsWith('total')) {
                 const total = ContentExtractor.extractTotal(content);
                 if (total > 0) {
                     data.totalPaid = total;
@@ -623,39 +624,39 @@ class OrderExtractor {
         return false;
     }
     static processChineseField(line, data) {
-        if (line.includes("汇款人名字：")) {
-            data.customerName = line.replace("汇款人名字：", "").trim();
+        if (line.includes('汇款人名字：')) {
+            data.customerName = line.replace('汇款人名字：', '').trim();
             return true;
         }
-        if (line.includes("收件人名字：")) {
-            data.receiverName = line.replace("收件人名字：", "").trim();
+        if (line.includes('收件人名字：')) {
+            data.receiverName = line.replace('收件人名字：', '').trim();
             return true;
         }
-        if (line.includes("电话号码：")) {
-            const phone = PhoneNumberUtil.extract(line.replace("电话号码：", "").trim());
+        if (line.includes('电话号码：')) {
+            const phone = PhoneNumberUtil.extract(line.replace('电话号码：', '').trim());
             if (phone)
                 data.phoneNumber = PhoneNumberUtil.normalize(phone);
             return true;
         }
-        if (line.includes("地址：")) {
-            data.address = line.replace("地址：", "").trim();
+        if (line.includes('地址：')) {
+            data.address = line.replace('地址：', '').trim();
             return true;
         }
         return false;
     }
     static isAddressLine(line, data) {
         return Boolean(line &&
-            !line.includes("：") &&
-            !line.includes(":") &&
+            !line.includes('：') &&
+            !line.includes(':') &&
             !line.match(/^\d{1,2}[\/\-]\d{1,2}[\/\-](\d{2}|\d{4})/i) &&
             !ContentExtractor.detectPaymentMethod(line) &&
-            !line.toLowerCase().includes("total") &&
+            !line.toLowerCase().includes('total') &&
             !line.match(/^(?:rm\s*)?\d{2,4}$/i) &&
             !PhoneNumberUtil.extract(line) &&
             !line.match(/^[A-Za-z\s\(\)（）\-\.]+$/));
     }
     static buildOrderData(params) {
-        const baseRemark = `Order from WhatsApp${params.context.groupName ? ` (Group: ${params.context.groupName})` : ""}${params.isRepeat ? " (Repeat Customer)" : " (New Customer)"}`;
+        const baseRemark = `Order from WhatsApp${params.context.groupName ? ` (Group: ${params.context.groupName})` : ''}${params.isRepeat ? ' (Repeat Customer)' : ' (New Customer)'}`;
         return {
             orderDate: params.orderDate,
             customerName: params.customerName,
@@ -681,132 +682,132 @@ class OrderExtractor {
 // GOOGLE SHEETS INTEGRATION
 // ============================================================================
 class SheetsIntegration {
-    static appendOrder(orderData) {
-        return __awaiter(this, void 0, void 0, function* () {
-            var _a;
-            try {
-                const spreadsheetId = process.env.GOOGLE_SHEET_ID;
-                const sheetNames = JSON.parse(process.env.SHEET_NAMES || '["Test", "Test Aug 25"]');
-                const results = [];
-                for (const sheetName of sheetNames) {
-                    try {
-                        const response = yield sheets.spreadsheets.values.get({
-                            spreadsheetId,
-                            range: `${sheetName}!A:AD`,
-                        });
-                        const rows = response.data.values || [];
-                        if (rows.length === 0)
-                            continue;
-                        const headers = rows[0];
-                        const rowData = this.createRowData(orderData, headers);
-                        yield sheets.spreadsheets.values.append({
-                            spreadsheetId,
-                            range: `${sheetName}!A:AD`,
-                            valueInputOption: "RAW",
-                            requestBody: { values: [rowData] },
-                        });
-                        results.push({ sheetName, success: true, rowIndex: rows.length + 1 });
-                    }
-                    catch (error) {
-                        results.push({
-                            sheetName,
-                            success: false,
-                            error: error instanceof Error ? error.message : String(error),
-                        });
-                    }
+    static async appendOrder(orderData) {
+        var _a;
+        try {
+            const spreadsheetId = process.env.GOOGLE_SHEET_ID;
+            const sheetNames = JSON.parse(process.env.SHEET_NAMES || '["Test"]');
+            const results = [];
+            for (const sheetName of sheetNames) {
+                try {
+                    const response = await sheets.spreadsheets.values.get({
+                        spreadsheetId,
+                        range: `${sheetName}!A:AE`,
+                    });
+                    const rows = response.data.values || [];
+                    if (rows.length === 0)
+                        continue;
+                    const headers = rows[0];
+                    const rowData = this.createRowData(orderData, headers);
+                    await sheets.spreadsheets.values.append({
+                        spreadsheetId,
+                        range: `${sheetName}!A:AE`,
+                        valueInputOption: 'RAW',
+                        requestBody: { values: [rowData] },
+                    });
+                    results.push({ sheetName, success: true, rowIndex: rows.length + 1 });
                 }
-                const successful = results.filter((r) => r.success);
-                return {
-                    success: successful.length > 0,
-                    rowIndex: (_a = successful[0]) === null || _a === void 0 ? void 0 : _a.rowIndex,
-                    error: successful.length < results.length
-                        ? `Success: ${successful.length}/${results.length} sheets`
-                        : undefined,
-                };
+                catch (error) {
+                    results.push({
+                        sheetName,
+                        success: false,
+                        error: error instanceof Error ? error.message : String(error),
+                    });
+                }
             }
-            catch (error) {
-                return {
-                    success: false,
-                    error: error instanceof Error ? error.message : String(error),
-                };
-            }
-        });
+            const successful = results.filter((r) => r.success);
+            return {
+                success: successful.length > 0,
+                rowIndex: (_a = successful[0]) === null || _a === void 0 ? void 0 : _a.rowIndex,
+                error: successful.length < results.length
+                    ? `Success: ${successful.length}/${results.length} sheets`
+                    : undefined,
+            };
+        }
+        catch (error) {
+            return {
+                success: false,
+                error: error instanceof Error ? error.message : String(error),
+            };
+        }
     }
     static createRowData(orderData, headers) {
-        const rowData = new Array(headers.length).fill("");
+        const rowData = new Array(headers.length).fill('');
         headers.forEach((header, index) => {
             var _a;
             const key = header.toLowerCase().trim();
             switch (key) {
-                case "order date":
+                case 'order date':
                     rowData[index] = orderData.orderDate;
                     break;
-                case "fbname":
-                    rowData[index] = orderData.groupName || "";
+                case 'fbname':
+                    rowData[index] = orderData.groupName || '';
                     break;
-                case "name":
+                case 'name':
                     rowData[index] = orderData.customerName;
                     break;
-                case "payment method":
-                    rowData[index] = orderData.paymentMethod || "";
+                case 'payment method':
+                    rowData[index] = orderData.paymentMethod || '';
                     break;
-                case "total paid (rm)":
-                    rowData[index] = orderData.totalPaid || "";
+                case 'total paid (rm)':
+                    rowData[index] = orderData.totalPaid || '';
                     break;
-                case "shipment description":
-                    rowData[index] = orderData.productCode || "";
+                case 'shipment description':
+                    rowData[index] = orderData.productCode || '';
                     break;
-                case "address":
-                    rowData[index] = orderData.address || "";
+                case 'address':
+                    rowData[index] = orderData.address || '';
                     break;
-                case "city":
-                    rowData[index] = orderData.city || "";
+                case 'city':
+                    rowData[index] = orderData.city || '';
                     break;
-                case "postcode":
-                    rowData[index] = orderData.postcode || "";
+                case 'postcode':
+                    rowData[index] = orderData.postcode || '';
                     break;
-                case "state":
-                    rowData[index] = orderData.state || "";
+                case 'state':
+                    rowData[index] = orderData.state || '';
                     break;
-                case "phone number":
-                    rowData[index] = orderData.phoneNumber || "";
+                case 'phone number':
+                    rowData[index] = orderData.phoneNumber || '';
                     break;
-                case "new/repeat":
-                    rowData[index] = orderData.isRepeatCustomer ? "repeat" : "new";
+                case 'email':
+                    rowData[index] = orderData.email || '';
+                case 'new/repeat':
+                    rowData[index] = orderData.isRepeatCustomer ? 'repeat' : 'new';
                     break;
-                case "agent by / under":
-                    rowData[index] = "WhatsApp Bot";
+                case 'agent by / under':
+                    rowData[index] = 'WhatsApp Bot';
                     break;
-                case "currency":
-                    rowData[index] = ((_a = orderData.phoneNumber) === null || _a === void 0 ? void 0 : _a.startsWith("65"))
-                        ? "SGD"
-                        : "MYR";
+                case 'currency':
+                    rowData[index] = ((_a = orderData.phoneNumber) === null || _a === void 0 ? void 0 : _a.startsWith('65'))
+                        ? 'SGD'
+                        : 'MYR';
                     break;
-                case "status":
-                    rowData[index] = "Pending";
+                case 'status':
+                    rowData[index] = 'Pending';
                     break;
-                case "remark":
-                case "remarks":
-                    rowData[index] = orderData.remark || "";
+                case 'remark':
+                case 'remarks':
+                    rowData[index] = orderData.remark || '';
                     break;
                 // Product quantities
-                case "wash":
-                    rowData[index] = this.getProductQuantity(orderData.products, "wash");
+                case 'wash':
+                    rowData[index] = this.getProductQuantity(orderData.products, 'wash');
                     break;
-                case "femlift 30ml":
-                    rowData[index] = this.getProductQuantity(orderData.products, "femlift_30ml");
+                case 'femlift 30ml':
+                    rowData[index] = this.getProductQuantity(orderData.products, 'femlift_30ml');
                     break;
-                case "femlift 10ml":
-                    rowData[index] = this.getProductQuantity(orderData.products, "femlift_10ml");
+                case 'femlift 10ml':
+                    rowData[index] = this.getProductQuantity(orderData.products, 'femlift_10ml');
                     break;
-                case "wash 30ml":
-                    rowData[index] = this.getProductQuantity(orderData.products, "wash_30ml");
+                case 'wash 30ml':
+                    rowData[index] = this.getProductQuantity(orderData.products, 'wash_30ml');
                     break;
-                case "spray":
-                    rowData[index] = this.getProductQuantity(orderData.products, "spray");
+                case 'spray':
+                    rowData[index] = this.getProductQuantity(orderData.products, 'spray');
                     break;
-                case "blossom":
-                    rowData[index] = this.getProductQuantity(orderData.products, "blossom");
+                case 'blossom':
+                    rowData[index] = this.getProductQuantity(orderData.products, 'blossom');
                     break;
             }
         });
@@ -816,7 +817,7 @@ class SheetsIntegration {
         const qty = products
             .filter((p) => p.name === productName)
             .reduce((sum, p) => sum + p.quantity, 0);
-        return qty > 0 ? qty : "";
+        return qty > 0 ? qty : '';
     }
 }
 // ============================================================================
@@ -825,13 +826,11 @@ class SheetsIntegration {
 function extractOrderFromMessage(messageBody, context) {
     return OrderExtractor.extract(messageBody, context);
 }
-function appendOrderToSheet(orderData) {
-    return __awaiter(this, void 0, void 0, function* () {
-        return SheetsIntegration.appendOrder(orderData);
-    });
+async function appendOrderToSheet(orderData) {
+    return SheetsIntegration.appendOrder(orderData);
 }
 function createSheetRowData(orderData, headers) {
-    return SheetsIntegration["createRowData"](orderData, headers);
+    return SheetsIntegration['createRowData'](orderData, headers);
 }
 // Admin functions
 function addAuthorizedPhoneNumber(phoneNumber) {
@@ -859,5 +858,5 @@ function getAuthorizedPhoneNumbers() {
     return [...AUTHORIZED_PHONE_NUMBERS];
 }
 function getUnauthorizedMessage() {
-    return "Sorry, your phone number is not authorized to place orders through this bot. Please contact the administrator if you believe this is an error.";
+    return 'Sorry, your phone number is not authorized to place orders through this bot. Please contact the administrator if you believe this is an error.';
 }

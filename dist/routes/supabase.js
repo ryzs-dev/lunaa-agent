@@ -1,13 +1,4 @@
 "use strict";
-var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
-    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
-    return new (P || (P = Promise))(function (resolve, reject) {
-        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
-        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
-        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
-        step((generator = generator.apply(thisArg, _arguments || [])).next());
-    });
-};
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -17,7 +8,7 @@ const supabaseNormalized_1 = require("../database/supabaseNormalized"); // ✅ F
 const supabaseOrders_1 = require("../database/supabaseOrders");
 const supabaseRouter = express_1.default.Router();
 // GET /api/supabase/orders - Fetch orders from Supabase with filters
-supabaseRouter.get("/orders", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+supabaseRouter.get("/orders", async (req, res) => {
     try {
         const { limit = 100, offset = 0, startDate, endDate, status, currency, month // For processing specific months like August
          } = req.query;
@@ -40,7 +31,7 @@ supabaseRouter.get("/orders", (req, res) => __awaiter(void 0, void 0, void 0, fu
             searchQuery.startDate = monthStart;
             searchQuery.endDate = monthEnd;
         }
-        const { orders, totalCount } = yield (0, supabaseNormalized_1.searchOrders)(searchQuery);
+        const { orders, totalCount } = await (0, supabaseNormalized_1.searchOrders)(searchQuery);
         res.json({
             success: true,
             data: orders,
@@ -59,9 +50,9 @@ supabaseRouter.get("/orders", (req, res) => __awaiter(void 0, void 0, void 0, fu
             details: error instanceof Error ? error.message : String(error)
         });
     }
-}));
+});
 // POST /api/supabase/orders - Insert single order
-supabaseRouter.post("/orders", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+supabaseRouter.post("/orders", async (req, res) => {
     try {
         const orderData = req.body;
         // Validate required fields for normalized schema
@@ -79,7 +70,7 @@ supabaseRouter.post("/orders", (req, res) => __awaiter(void 0, void 0, void 0, f
             });
         }
         // Use createSimpleOrder from normalized schema with updated fields
-        const order = yield (0, supabaseNormalized_1.createSimpleOrder)({
+        const order = await (0, supabaseNormalized_1.createSimpleOrder)({
             customer_name: orderData.customer_name || 'Unknown',
             phone_number: orderData.phone_number,
             fb_name: orderData.fb_name,
@@ -142,9 +133,9 @@ supabaseRouter.post("/orders", (req, res) => __awaiter(void 0, void 0, void 0, f
             details: error instanceof Error ? error.message : String(error)
         });
     }
-}));
+});
 // POST /api/supabase/orders/bulk - Bulk insert orders (for data migration)
-supabaseRouter.post("/orders/bulk", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+supabaseRouter.post("/orders/bulk", async (req, res) => {
     try {
         const { orders, batchSize = 100 } = req.body;
         if (!Array.isArray(orders) || orders.length === 0) {
@@ -169,7 +160,7 @@ supabaseRouter.post("/orders/bulk", (req, res) => __awaiter(void 0, void 0, void
             postcode: order.postcode,
             state: order.state
         }));
-        yield (0, supabaseOrders_1.bulkInsertOrders)(transformedOrders);
+        await (0, supabaseOrders_1.bulkInsertOrders)(transformedOrders);
         res.json({
             success: true,
             data: {
@@ -188,9 +179,9 @@ supabaseRouter.post("/orders/bulk", (req, res) => __awaiter(void 0, void 0, void
             details: error instanceof Error ? error.message : String(error)
         });
     }
-}));
+});
 // GET /api/supabase/dashboard-stats - Dashboard statistics from Supabase
-supabaseRouter.get("/dashboard-stats", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+supabaseRouter.get("/dashboard-stats", async (req, res) => {
     try {
         const { startDate, endDate, month } = req.query;
         // Build filters for normalized schema
@@ -209,15 +200,15 @@ supabaseRouter.get("/dashboard-stats", (req, res) => __awaiter(void 0, void 0, v
                 filters.endDate = endDate;
         }
         // Use normalized schema dashboard stats function
-        const stats = yield (0, supabaseNormalized_1.getDashboardStats)(filters);
+        const stats = await (0, supabaseNormalized_1.getDashboardStats)(filters);
         // Get message stats (keeping existing logic)
-        const { data: messages, error: messagesError } = yield supabaseNormalized_1.supabase
+        const { data: messages, error: messagesError } = await supabaseNormalized_1.supabase
             .from("messages")
             .select("latest_status");
         if (messagesError)
             throw messagesError;
         // Get conversations count
-        const { count: conversationsCount, error: conversationsError } = yield supabaseNormalized_1.supabase
+        const { count: conversationsCount, error: conversationsError } = await supabaseNormalized_1.supabase
             .from("conversations")
             .select("*", { count: "exact", head: true });
         if (conversationsError)
@@ -260,9 +251,9 @@ supabaseRouter.get("/dashboard-stats", (req, res) => __awaiter(void 0, void 0, v
             details: error instanceof Error ? error.message : String(error)
         });
     }
-}));
+});
 // GET /api/supabase/orders/search - Search orders
-supabaseRouter.get("/orders/search", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+supabaseRouter.get("/orders/search", async (req, res) => {
     try {
         const { q, // general search query
         phone, trackingNumber, customerName, limit = 50 } = req.query;
@@ -273,7 +264,7 @@ supabaseRouter.get("/orders/search", (req, res) => __awaiter(void 0, void 0, voi
         if (q)
             searchQuery.searchTerm = q;
         // ✅ FIXED: Use normalized schema search which handles customer joins properly
-        const { orders, totalCount } = yield (0, supabaseNormalized_1.searchOrders)(searchQuery);
+        const { orders, totalCount } = await (0, supabaseNormalized_1.searchOrders)(searchQuery);
         // Additional filtering for specific fields (since normalized search might not cover all)
         let filteredOrders = orders;
         if (phone && !q) {
@@ -299,13 +290,13 @@ supabaseRouter.get("/orders/search", (req, res) => __awaiter(void 0, void 0, voi
             details: error instanceof Error ? error.message : String(error)
         });
     }
-}));
+});
 // GET /api/supabase/orders/:id - Get single order by ID
-supabaseRouter.get("/orders/:id", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+supabaseRouter.get("/orders/:id", async (req, res) => {
     try {
         const { id } = req.params;
         // ✅ FIXED: Query with customer join for normalized schema
-        const { data, error } = yield supabaseNormalized_1.supabase
+        const { data, error } = await supabaseNormalized_1.supabase
             .from("orders")
             .select(`
         *,
@@ -347,15 +338,15 @@ supabaseRouter.get("/orders/:id", (req, res) => __awaiter(void 0, void 0, void 0
             details: error instanceof Error ? error.message : String(error)
         });
     }
-}));
+});
 // PUT /api/supabase/orders/:id - Update order
-supabaseRouter.put("/orders/:id", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+supabaseRouter.put("/orders/:id", async (req, res) => {
     try {
         const { id } = req.params;
         const updates = req.body;
         // Add updated timestamp
         updates.updated_at = new Date().toISOString();
-        const { data, error } = yield supabaseNormalized_1.supabase
+        const { data, error } = await supabaseNormalized_1.supabase
             .from("orders")
             .update(updates)
             .eq("id", id)
@@ -391,12 +382,12 @@ supabaseRouter.put("/orders/:id", (req, res) => __awaiter(void 0, void 0, void 0
             details: error instanceof Error ? error.message : String(error)
         });
     }
-}));
+});
 // DELETE /api/supabase/orders/:id - Delete order
-supabaseRouter.delete("/orders/:id", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+supabaseRouter.delete("/orders/:id", async (req, res) => {
     try {
         const { id } = req.params;
-        const { error } = yield supabaseNormalized_1.supabase
+        const { error } = await supabaseNormalized_1.supabase
             .from("orders")
             .delete()
             .eq("id", id);
@@ -415,16 +406,16 @@ supabaseRouter.delete("/orders/:id", (req, res) => __awaiter(void 0, void 0, voi
             details: error instanceof Error ? error.message : String(error)
         });
     }
-}));
+});
 // GET /api/supabase/health - Health check for Supabase connection
-supabaseRouter.get("/health", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+supabaseRouter.get("/health", async (req, res) => {
     try {
         // ✅ FIXED: Test both orders and customers tables for normalized schema
-        const { data: ordersData, error: ordersError } = yield supabaseNormalized_1.supabase
+        const { data: ordersData, error: ordersError } = await supabaseNormalized_1.supabase
             .from("orders")
             .select("id")
             .limit(1);
-        const { data: customersData, error: customersError } = yield supabaseNormalized_1.supabase
+        const { data: customersData, error: customersError } = await supabaseNormalized_1.supabase
             .from("customers")
             .select("id")
             .limit(1);
@@ -449,9 +440,9 @@ supabaseRouter.get("/health", (req, res) => __awaiter(void 0, void 0, void 0, fu
             details: error instanceof Error ? error.message : String(error)
         });
     }
-}));
+});
 // GET /api/supabase/export/excel - Export orders to Excel
-supabaseRouter.get("/export/excel", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+supabaseRouter.get("/export/excel", async (req, res) => {
     try {
         const { startDate, endDate, month } = req.query;
         // Use normalized schema search for export
@@ -469,7 +460,7 @@ supabaseRouter.get("/export/excel", (req, res) => __awaiter(void 0, void 0, void
             if (endDate)
                 searchQuery.endDate = endDate;
         }
-        const { orders } = yield (0, supabaseNormalized_1.searchOrders)(searchQuery);
+        const { orders } = await (0, supabaseNormalized_1.searchOrders)(searchQuery);
         // ✅ FIXED: Map normalized schema fields for export
         const csvData = orders.map((order) => {
             var _a, _b;
@@ -502,5 +493,5 @@ supabaseRouter.get("/export/excel", (req, res) => __awaiter(void 0, void 0, void
             details: error instanceof Error ? error.message : String(error)
         });
     }
-}));
+});
 exports.default = supabaseRouter;

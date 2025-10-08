@@ -32,15 +32,6 @@ var __importStar = (this && this.__importStar) || (function () {
         return result;
     };
 })();
-var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
-    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
-    return new (P || (P = Promise))(function (resolve, reject) {
-        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
-        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
-        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
-        step((generator = generator.apply(thisArg, _arguments || [])).next());
-    });
-};
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -53,7 +44,7 @@ const path_1 = __importDefault(require("path"));
 const tracker_1 = require("../utils/tracker");
 dotenv_1.default.config({ path: path_1.default.resolve(__dirname, "../.env.local") });
 const trackRouter = express_1.default.Router();
-trackRouter.post("/track", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+trackRouter.post("/track", async (req, res) => {
     var _a, _b, _c;
     const sheetName = "Test";
     const spreadsheetId = process.env.GOOGLE_SHEET_ID;
@@ -68,14 +59,7 @@ trackRouter.post("/track", (req, res) => __awaiter(void 0, void 0, void 0, funct
             .json({ error: "GOOGLE_SHEET_ID environment variable is required" });
     }
     try {
-        console.log(`📋 Starting track process for sheet: ${sheetName}`);
-        console.log(`🔧 Options:`, {
-            includeUsageGuide,
-            includeUsageVideo,
-            delayBetweenMessages,
-            useSequence,
-        });
-        const rows = yield (0, googleSheet_1.fetchSheetData)(sheetName, spreadsheetId);
+        const rows = await (0, googleSheet_1.fetchSheetData)(sheetName, spreadsheetId);
         if (rows.length === 0) {
             return res.status(200).json({
                 success: true,
@@ -123,7 +107,7 @@ trackRouter.post("/track", (req, res) => __awaiter(void 0, void 0, void 0, funct
                 let additionalSids = {};
                 if (useSequence) {
                     // Send complete message sequence
-                    const result = yield (0, twilioClient_1.sendCompleteMessageSequence)(phone, trackingNumber, courierCompany, {
+                    const result = await (0, twilioClient_1.sendCompleteMessageSequence)(phone, trackingNumber, courierCompany, {
                         includeUsageGuide,
                         includeUsageVideo,
                         delayBetweenMessages,
@@ -137,17 +121,17 @@ trackRouter.post("/track", (req, res) => __awaiter(void 0, void 0, void 0, funct
                 }
                 else {
                     // Send only tracking message
-                    messageSid = yield (0, twilioClient_1.sendWhatsAppTemplate)(phone, trackingNumber, courierCompany);
+                    messageSid = await (0, twilioClient_1.sendWhatsAppTemplate)(phone, trackingNumber, courierCompany);
                     console.log(`✅ Row ${i}: Tracking message sent with SID: ${messageSid}`);
                 }
                 // Wait 5 seconds for status update on main tracking message
-                yield new Promise((resolve) => setTimeout(resolve, 5000));
+                await new Promise((resolve) => setTimeout(resolve, 5000));
                 // Check message status for the tracking message
-                const status = yield (0, twilioClient_1.getMessageStatusBySid)(messageSid);
+                const status = await (0, twilioClient_1.getMessageStatusBySid)(messageSid);
                 const finalStatus = status || "sent";
                 console.log(`📊 Row ${i}: Final tracking status: ${finalStatus}`);
                 // Update Google Sheets status
-                yield (0, googleSheet_1.updateSheetStatusByTracking)(sheetName, spreadsheetId, trackingNumber, finalStatus);
+                await (0, googleSheet_1.updateSheetStatusByTracking)(sheetName, spreadsheetId, trackingNumber, finalStatus);
                 // Mark as processed
                 processed.add(trackingNumber);
                 processedCount++;
@@ -166,7 +150,7 @@ trackRouter.post("/track", (req, res) => __awaiter(void 0, void 0, void 0, funct
                 console.error(`❌ Row ${i}: Error processing ${trackingNumber}:`, error);
                 // Update sheet with failed status
                 try {
-                    yield (0, googleSheet_1.updateSheetStatusByTracking)(sheetName, spreadsheetId, trackingNumber, "failed");
+                    await (0, googleSheet_1.updateSheetStatusByTracking)(sheetName, spreadsheetId, trackingNumber, "failed");
                 }
                 catch (sheetError) {
                     console.error(`❌ Failed to update sheet status for ${trackingNumber}:`, sheetError);
@@ -179,7 +163,7 @@ trackRouter.post("/track", (req, res) => __awaiter(void 0, void 0, void 0, funct
             if (i < rows.length - 1) {
                 const customerDelay = useSequence ? 60000 : 2000; // 1 minute for sequences, 2 seconds for single messages
                 console.log(`⏱️ Waiting ${customerDelay / 1000} seconds before next customer...`);
-                yield new Promise((resolve) => setTimeout(resolve, customerDelay));
+                await new Promise((resolve) => setTimeout(resolve, customerDelay));
             }
         }
         // Save processed tracking numbers
@@ -212,9 +196,9 @@ trackRouter.post("/track", (req, res) => __awaiter(void 0, void 0, void 0, funct
             details: error instanceof Error ? error.message : String(error),
         });
     }
-}));
+});
 // Route to test message sequence for a single phone number
-trackRouter.post("/track/test-sequence", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+trackRouter.post("/track/test-sequence", async (req, res) => {
     const body = req.body || {};
     const { phone, trackingNumber, courierCompany, includeUsageGuide = true, includeUsageVideo = true, delayBetweenMessages = 30000, } = body;
     if (!phone || !trackingNumber) {
@@ -225,7 +209,7 @@ trackRouter.post("/track/test-sequence", (req, res) => __awaiter(void 0, void 0,
     }
     try {
         console.log(`🧪 Testing message sequence for ${phone}`);
-        const result = yield (0, twilioClient_1.sendCompleteMessageSequence)(phone, trackingNumber, courierCompany, {
+        const result = await (0, twilioClient_1.sendCompleteMessageSequence)(phone, trackingNumber, courierCompany, {
             includeUsageGuide,
             includeUsageVideo,
             delayBetweenMessages,
@@ -244,11 +228,11 @@ trackRouter.post("/track/test-sequence", (req, res) => __awaiter(void 0, void 0,
             details: error instanceof Error ? error.message : String(error),
         });
     }
-}));
+});
 // Get tracking statistics
-trackRouter.get("/track/stats", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+trackRouter.get("/track/stats", async (req, res) => {
     try {
-        const { getStats } = yield Promise.resolve().then(() => __importStar(require("../utils/tracker")));
+        const { getStats } = await Promise.resolve().then(() => __importStar(require("../utils/tracker")));
         const stats = getStats();
         res.json({
             success: true,
@@ -265,11 +249,11 @@ trackRouter.get("/track/stats", (req, res) => __awaiter(void 0, void 0, void 0, 
             error: "Failed to get statistics",
         });
     }
-}));
+});
 // Clear processed tracking numbers (use with caution)
-trackRouter.delete("/track/processed", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+trackRouter.delete("/track/processed", async (req, res) => {
     try {
-        const { clearProcessed } = yield Promise.resolve().then(() => __importStar(require("../utils/tracker")));
+        const { clearProcessed } = await Promise.resolve().then(() => __importStar(require("../utils/tracker")));
         clearProcessed();
         res.json({
             success: true,
@@ -283,5 +267,5 @@ trackRouter.delete("/track/processed", (req, res) => __awaiter(void 0, void 0, v
             error: "Failed to clear processed tracking numbers",
         });
     }
-}));
+});
 exports.default = trackRouter;

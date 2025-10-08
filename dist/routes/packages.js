@@ -1,13 +1,4 @@
 "use strict";
-var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
-    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
-    return new (P || (P = Promise))(function (resolve, reject) {
-        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
-        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
-        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
-        step((generator = generator.apply(thisArg, _arguments || [])).next());
-    });
-};
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -20,7 +11,7 @@ const packagesRouter = express_1.default.Router();
 // PACKAGES ROUTES
 // ============================================================================
 // GET /api/packages - Get all packages
-packagesRouter.get("/", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+packagesRouter.get("/", async (req, res) => {
     try {
         const { is_active = "true", limit = 100, offset = 0, search } = req.query;
         let query = supabaseNormalized_1.supabase
@@ -36,7 +27,7 @@ packagesRouter.get("/", (req, res) => __awaiter(void 0, void 0, void 0, function
         }
         // Apply pagination
         query = query.range(Number(offset), Number(offset) + Number(limit) - 1);
-        const { data, error, count } = yield query;
+        const { data, error, count } = await query;
         if (error) {
             console.error("❌ Failed to fetch packages:", error);
             throw error;
@@ -59,12 +50,12 @@ packagesRouter.get("/", (req, res) => __awaiter(void 0, void 0, void 0, function
             details: error instanceof Error ? error.message : String(error),
         });
     }
-}));
+});
 // GET /api/packages/:id - Get single package
-packagesRouter.get("/:id", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+packagesRouter.get("/:id", async (req, res) => {
     try {
         const { id } = req.params;
-        const { data, error } = yield supabaseNormalized_1.supabase
+        const { data, error } = await supabaseNormalized_1.supabase
             .from("packages")
             .select("*")
             .eq("id", id)
@@ -91,9 +82,9 @@ packagesRouter.get("/:id", (req, res) => __awaiter(void 0, void 0, void 0, funct
             details: error instanceof Error ? error.message : String(error),
         });
     }
-}));
+});
 // POST /api/packages - Create new package
-packagesRouter.post("/", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+packagesRouter.post("/", async (req, res) => {
     var _a;
     try {
         const packageData = req.body;
@@ -106,7 +97,7 @@ packagesRouter.post("/", (req, res) => __awaiter(void 0, void 0, void 0, functio
         }
         // Check if package code already exists (if provided)
         if (packageData.package_code) {
-            const existingPackage = yield (0, supabaseNormalized_1.getPackageByCode)(packageData.package_code);
+            const existingPackage = await (0, supabaseNormalized_1.getPackageByCode)(packageData.package_code);
             if (existingPackage) {
                 return res.status(409).json({
                     success: false,
@@ -114,7 +105,7 @@ packagesRouter.post("/", (req, res) => __awaiter(void 0, void 0, void 0, functio
                 });
             }
         }
-        const { data, error } = yield supabaseNormalized_1.supabase
+        const { data, error } = await supabaseNormalized_1.supabase
             .from("packages")
             .insert(Object.assign(Object.assign({}, packageData), { is_active: (_a = packageData.is_active) !== null && _a !== void 0 ? _a : true, created_at: new Date().toISOString(), updated_at: new Date().toISOString() }))
             .select()
@@ -137,15 +128,15 @@ packagesRouter.post("/", (req, res) => __awaiter(void 0, void 0, void 0, functio
             details: error instanceof Error ? error.message : String(error),
         });
     }
-}));
+});
 // PUT /api/packages/:id - Update package
-packagesRouter.put("/:id", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+packagesRouter.put("/:id", async (req, res) => {
     try {
         const { id } = req.params;
         const updates = req.body;
         // Add updated timestamp
         updates.updated_at = new Date().toISOString();
-        const { data, error } = yield supabaseNormalized_1.supabase
+        const { data, error } = await supabaseNormalized_1.supabase
             .from("packages")
             .update(updates)
             .eq("id", id)
@@ -174,21 +165,21 @@ packagesRouter.put("/:id", (req, res) => __awaiter(void 0, void 0, void 0, funct
             details: error instanceof Error ? error.message : String(error),
         });
     }
-}));
+});
 // DELETE /api/packages/:id - Delete package
-packagesRouter.delete("/:id", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+packagesRouter.delete("/:id", async (req, res) => {
     try {
         const { id } = req.params;
         const { hard_delete = false } = req.query;
         if (hard_delete === "true") {
             // Hard delete
-            const { error } = yield supabaseNormalized_1.supabase.from("packages").delete().eq("id", id);
+            const { error } = await supabaseNormalized_1.supabase.from("packages").delete().eq("id", id);
             if (error)
                 throw error;
         }
         else {
             // Soft delete
-            const { error } = yield supabaseNormalized_1.supabase
+            const { error } = await supabaseNormalized_1.supabase
                 .from("packages")
                 .update({
                 is_active: false,
@@ -213,5 +204,5 @@ packagesRouter.delete("/:id", (req, res) => __awaiter(void 0, void 0, void 0, fu
             details: error instanceof Error ? error.message : String(error),
         });
     }
-}));
+});
 exports.default = packagesRouter;

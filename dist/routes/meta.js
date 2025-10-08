@@ -1,13 +1,4 @@
 "use strict";
-var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
-    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
-    return new (P || (P = Promise))(function (resolve, reject) {
-        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
-        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
-        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
-        step((generator = generator.apply(thisArg, _arguments || [])).next());
-    });
-};
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -20,28 +11,28 @@ const metaRouter = express_1.default.Router();
 // META/STATISTICS ROUTES
 // ============================================================================
 // GET /api/meta/stats - Get products and packages statistics
-metaRouter.get("/stats", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+metaRouter.get("/stats", async (req, res) => {
     try {
         // Get product stats
-        const { data: productStats, error: productError } = yield supabaseNormalized_1.supabase
+        const { data: productStats, error: productError } = await supabaseNormalized_1.supabase
             .from("products")
             .select("is_active, category");
         if (productError)
             throw productError;
         // Get package stats
-        const { data: packageStats, error: packageError } = yield supabaseNormalized_1.supabase
+        const { data: packageStats, error: packageError } = await supabaseNormalized_1.supabase
             .from("packages")
             .select("is_active");
         if (packageError)
             throw packageError;
         // Get order stats
-        const { data: orderStats, error: orderError } = yield supabaseNormalized_1.supabase
+        const { data: orderStats, error: orderError } = await supabaseNormalized_1.supabase
             .from("orders")
             .select("status, total_amount, currency, order_date");
         if (orderError)
             throw orderError;
         // Get customer stats
-        const { count: customersCount, error: customersError } = yield supabaseNormalized_1.supabase
+        const { count: customersCount, error: customersError } = await supabaseNormalized_1.supabase
             .from("customers")
             .select("*", { count: "exact", head: true });
         if (customersError)
@@ -93,11 +84,11 @@ metaRouter.get("/stats", (req, res) => __awaiter(void 0, void 0, void 0, functio
             details: error instanceof Error ? error.message : String(error),
         });
     }
-}));
+});
 // GET /api/meta/categories - Get unique product categories
-metaRouter.get("/categories", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+metaRouter.get("/categories", async (req, res) => {
     try {
-        const { data, error } = yield supabaseNormalized_1.supabase
+        const { data, error } = await supabaseNormalized_1.supabase
             .from("products")
             .select("category")
             .not("category", "is", null)
@@ -121,24 +112,24 @@ metaRouter.get("/categories", (req, res) => __awaiter(void 0, void 0, void 0, fu
             details: error instanceof Error ? error.message : String(error),
         });
     }
-}));
+});
 // GET /api/meta/health - System health check
-metaRouter.get("/health", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+metaRouter.get("/health", async (req, res) => {
     try {
         // Test database connections
-        const { error: productsError } = yield supabaseNormalized_1.supabase
+        const { error: productsError } = await supabaseNormalized_1.supabase
             .from("products")
             .select("id")
             .limit(1);
-        const { error: packagesError } = yield supabaseNormalized_1.supabase
+        const { error: packagesError } = await supabaseNormalized_1.supabase
             .from("packages")
             .select("id")
             .limit(1);
-        const { error: ordersError } = yield supabaseNormalized_1.supabase
+        const { error: ordersError } = await supabaseNormalized_1.supabase
             .from("orders")
             .select("id")
             .limit(1);
-        const { error: customersError } = yield supabaseNormalized_1.supabase
+        const { error: customersError } = await supabaseNormalized_1.supabase
             .from("customers")
             .select("id")
             .limit(1);
@@ -179,16 +170,16 @@ metaRouter.get("/health", (req, res) => __awaiter(void 0, void 0, void 0, functi
             details: error instanceof Error ? error.message : String(error),
         });
     }
-}));
+});
 // GET /api/meta/dashboard - Dashboard overview data
-metaRouter.get("/dashboard", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+metaRouter.get("/dashboard", async (req, res) => {
     try {
         const { period = "30" } = req.query; // Days to look back
         const daysBack = parseInt(period);
         const cutoffDate = new Date();
         cutoffDate.setDate(cutoffDate.getDate() - daysBack);
         // Get recent orders
-        const { data: recentOrders, error: ordersError } = yield supabaseNormalized_1.supabase
+        const { data: recentOrders, error: ordersError } = await supabaseNormalized_1.supabase
             .from("orders")
             .select("total_amount, currency, order_date, status")
             .gte("order_date", cutoffDate.toISOString())
@@ -196,16 +187,16 @@ metaRouter.get("/dashboard", (req, res) => __awaiter(void 0, void 0, void 0, fun
         if (ordersError)
             throw ordersError;
         // Get product/package counts
-        const { count: activeProducts } = yield supabaseNormalized_1.supabase
+        const { count: activeProducts } = await supabaseNormalized_1.supabase
             .from("products")
             .select("*", { count: "exact", head: true })
             .eq("is_active", true);
-        const { count: activePackages } = yield supabaseNormalized_1.supabase
+        const { count: activePackages } = await supabaseNormalized_1.supabase
             .from("packages")
             .select("*", { count: "exact", head: true })
             .eq("is_active", true);
         // Get customer count
-        const { count: totalCustomers } = yield supabaseNormalized_1.supabase
+        const { count: totalCustomers } = await supabaseNormalized_1.supabase
             .from("customers")
             .select("*", { count: "exact", head: true });
         // Calculate metrics
@@ -257,5 +248,5 @@ metaRouter.get("/dashboard", (req, res) => __awaiter(void 0, void 0, void 0, fun
             details: error instanceof Error ? error.message : String(error),
         });
     }
-}));
+});
 exports.default = metaRouter;

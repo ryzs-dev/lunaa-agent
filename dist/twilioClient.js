@@ -1,13 +1,4 @@
 "use strict";
-var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
-    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
-    return new (P || (P = Promise))(function (resolve, reject) {
-        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
-        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
-        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
-        step((generator = generator.apply(thisArg, _arguments || [])).next());
-    });
-};
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -139,42 +130,40 @@ function detectCourierAndLink(trackingNumber, courier) {
     };
 }
 // Send tracking template
-function sendWhatsAppTemplate(to, trackingNumber, courierCompany) {
-    return __awaiter(this, void 0, void 0, function* () {
-        try {
-            const formattedTo = `whatsapp:${formatPhoneNumber(to)}`;
-            const detected = detectCourierAndLink(trackingNumber, courierCompany);
-            const webhookUrl = getWebhookUrl();
-            const courier = (courierCompany === null || courierCompany === void 0 ? void 0 : courierCompany.trim()) || detected.name;
-            const link = detected.link || "https://example.com";
-            console.log(`📤 Sending tracking WhatsApp to: ${formattedTo}`);
-            console.log(`   📋 Tracking: ${trackingNumber}`);
-            console.log(`   🚚 Courier: ${courier}`);
-            console.log(`   🔗 Link: ${link}`);
-            const messageParams = {
-                messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID ||
-                    "MG8d0a3d7bfbafbbc2b04603198f64b71e",
-                to: formattedTo,
-                contentSid: process.env.TWILIO_WHATSAPP_TEMPLATE_ID,
-                contentVariables: JSON.stringify({
-                    "1": trackingNumber,
-                    "2": courier,
-                    "3": link,
-                }),
-            };
-            // Add statusCallback only if webhook URL is available
-            if (webhookUrl) {
-                messageParams.statusCallback = webhookUrl;
-            }
-            const message = yield client.messages.create(messageParams);
-            console.log(`✅ Tracking template message sent to ${formattedTo} via Messaging Service`);
-            return message.sid;
+async function sendWhatsAppTemplate(to, trackingNumber, courierCompany) {
+    try {
+        const formattedTo = `whatsapp:${formatPhoneNumber(to)}`;
+        const detected = detectCourierAndLink(trackingNumber, courierCompany);
+        const webhookUrl = getWebhookUrl();
+        const courier = (courierCompany === null || courierCompany === void 0 ? void 0 : courierCompany.trim()) || detected.name;
+        const link = detected.link || "https://example.com";
+        console.log(`📤 Sending tracking WhatsApp to: ${formattedTo}`);
+        console.log(`   📋 Tracking: ${trackingNumber}`);
+        console.log(`   🚚 Courier: ${courier}`);
+        console.log(`   🔗 Link: ${link}`);
+        const messageParams = {
+            messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID ||
+                "MG8d0a3d7bfbafbbc2b04603198f64b71e",
+            to: formattedTo,
+            contentSid: process.env.TWILIO_WHATSAPP_TEMPLATE_ID,
+            contentVariables: JSON.stringify({
+                "1": trackingNumber,
+                "2": courier,
+                "3": link,
+            }),
+        };
+        // Add statusCallback only if webhook URL is available
+        if (webhookUrl) {
+            messageParams.statusCallback = webhookUrl;
         }
-        catch (error) {
-            console.error(`❌ Failed to send tracking WhatsApp message to ${to}:`, error);
-            throw error;
-        }
-    });
+        const message = await client.messages.create(messageParams);
+        console.log(`✅ Tracking template message sent to ${formattedTo} via Messaging Service`);
+        return message.sid;
+    }
+    catch (error) {
+        console.error(`❌ Failed to send tracking WhatsApp message to ${to}:`, error);
+        throw error;
+    }
 }
 /**
  * Send a plain text WhatsApp message (without template)
@@ -182,41 +171,38 @@ function sendWhatsAppTemplate(to, trackingNumber, courierCompany) {
  * @param messageBody - The text message to send
  * @returns Message SID
  */
-function sendWhatsAppTextMessage(to, messageBody) {
-    return __awaiter(this, void 0, void 0, function* () {
-        try {
-            const formattedTo = `whatsapp:${formatPhoneNumber(to)}`;
-            const webhookUrl = getWebhookUrl();
-            console.log(`📤 Sending WhatsApp text message to: ${formattedTo}`);
-            console.log(`📝 Message preview: ${messageBody.substring(0, 100)}...`);
-            const messageParams = {
-                messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID ||
-                    "MG8d0a3d7bfbafbbc2b04603198f64b71e",
-                to: formattedTo,
-                body: messageBody,
-            };
-            // Add statusCallback only if webhook URL is available
-            if (webhookUrl) {
-                messageParams.statusCallback = webhookUrl;
-            }
-            const message = yield client.messages.create(messageParams);
-            console.log(`✅ Text message sent to ${formattedTo}`);
-            return message.sid;
+async function sendWhatsAppTextMessage(to, messageBody) {
+    try {
+        const formattedTo = `whatsapp:${formatPhoneNumber(to)}`;
+        const webhookUrl = getWebhookUrl();
+        console.log(`📤 Sending WhatsApp text message to: ${formattedTo}`);
+        console.log(`📝 Message preview: ${messageBody.substring(0, 100)}...`);
+        const messageParams = {
+            messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID ||
+                "MG8d0a3d7bfbafbbc2b04603198f64b71e",
+            to: formattedTo,
+            body: messageBody,
+        };
+        // Add statusCallback only if webhook URL is available
+        if (webhookUrl) {
+            messageParams.statusCallback = webhookUrl;
         }
-        catch (error) {
-            console.error(`❌ Failed to send WhatsApp text message to ${to}:`, error);
-            throw error;
-        }
-    });
+        const message = await client.messages.create(messageParams);
+        console.log(`✅ Text message sent to ${formattedTo}`);
+        return message.sid;
+    }
+    catch (error) {
+        console.error(`❌ Failed to send WhatsApp text message to ${to}:`, error);
+        throw error;
+    }
 }
 /**
  * Send the product usage instructions message
  * @param to - Phone number to send to
  * @returns Message SID
  */
-function sendProductUsageInstructions(to) {
-    return __awaiter(this, void 0, void 0, function* () {
-        const usageInstructions = `以下是产品用法：
+async function sendProductUsageInstructions(to) {
+    const usageInstructions = `以下是产品用法：
 
 ✨ 红色-Lunaa Foam Wash 泡泡慕斯用法 ✨ 
 每天使用 2次 ，挤 2 PUMP 的 Lunaa Foam Wash 就足够了哦
@@ -245,144 +231,131 @@ function sendProductUsageInstructions(to) {
 ☑️ 私密处搔痒不适
 ☑️ 天气闷热
 ☑️ 运动后`;
-        return yield sendWhatsAppTextMessage(to, usageInstructions);
-    });
+    return await sendWhatsAppTextMessage(to, usageInstructions);
 }
 // Send product usage guide template
-function sendProductUsageGuide(to) {
-    return __awaiter(this, void 0, void 0, function* () {
-        try {
-            const formattedTo = `whatsapp:${formatPhoneNumber(to)}`;
-            const webhookUrl = getWebhookUrl();
-            console.log(`📤 Sending product usage guide to: ${formattedTo}`);
-            console.log(`Using Content SID = ${process.env.TWILIO_PRODUCT_USAGE_GUIDE}`);
-            const messageParams = {
-                messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID ||
-                    "MG8d0a3d7bfbafbbc2b04603198f64b71e",
-                to: formattedTo,
-                contentSid: `${process.env.TWILIO_PRODUCT_USAGE_GUIDE}`,
-            };
-            if (webhookUrl) {
-                messageParams.statusCallback = webhookUrl;
-            }
-            const message = yield client.messages.create(messageParams);
-            console.log(`✅ Product usage guide sent to ${formattedTo} via Messaging Service`);
-            return message.sid;
+async function sendProductUsageGuide(to) {
+    try {
+        const formattedTo = `whatsapp:${formatPhoneNumber(to)}`;
+        const webhookUrl = getWebhookUrl();
+        console.log(`📤 Sending product usage guide to: ${formattedTo}`);
+        console.log(`Using Content SID = ${process.env.TWILIO_PRODUCT_USAGE_GUIDE}`);
+        const messageParams = {
+            messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID ||
+                "MG8d0a3d7bfbafbbc2b04603198f64b71e",
+            to: formattedTo,
+            contentSid: `${process.env.TWILIO_PRODUCT_USAGE_GUIDE}`,
+        };
+        if (webhookUrl) {
+            messageParams.statusCallback = webhookUrl;
         }
-        catch (error) {
-            console.error(`❌ Failed to send product usage guide to ${to}:`, error);
-            throw error;
-        }
-    });
+        const message = await client.messages.create(messageParams);
+        console.log(`✅ Product usage guide sent to ${formattedTo} via Messaging Service`);
+        return message.sid;
+    }
+    catch (error) {
+        console.error(`❌ Failed to send product usage guide to ${to}:`, error);
+        throw error;
+    }
 }
 // Send product usage video as media message
-function sendProductUsageVideo(to) {
-    return __awaiter(this, void 0, void 0, function* () {
-        try {
-            const formattedTo = `whatsapp:${formatPhoneNumber(to)}`;
-            const videoUrl = "https://pub-65511469d2a34a99b9509753f9ac0434.r2.dev/lunaa-product-usage-guide.MP4";
-            const webhookUrl = getWebhookUrl();
-            console.log(`📤 Sending product usage video to: ${formattedTo}`);
-            console.log(`🎥 Video URL: ${videoUrl}`);
-            const messageParams = {
-                messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID ||
-                    "MG8d0a3d7bfbafbbc2b04603198f64b71e",
-                to: formattedTo,
-                body: "Here's your product usage guide video! 🎥",
-                mediaUrl: [videoUrl],
-            };
-            if (webhookUrl) {
-                messageParams.statusCallback = webhookUrl;
-            }
-            const message = yield client.messages.create(messageParams);
-            console.log(`✅ Product usage video sent to ${formattedTo} via Messaging Service`);
-            return message.sid;
+async function sendProductUsageVideo(to) {
+    try {
+        const formattedTo = `whatsapp:${formatPhoneNumber(to)}`;
+        const videoUrl = "https://pub-65511469d2a34a99b9509753f9ac0434.r2.dev/lunaa-product-usage-guide.MP4";
+        const webhookUrl = getWebhookUrl();
+        console.log(`📤 Sending product usage video to: ${formattedTo}`);
+        console.log(`🎥 Video URL: ${videoUrl}`);
+        const messageParams = {
+            messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID ||
+                "MG8d0a3d7bfbafbbc2b04603198f64b71e",
+            to: formattedTo,
+            body: "Here's your product usage guide video! 🎥",
+            mediaUrl: [videoUrl],
+        };
+        if (webhookUrl) {
+            messageParams.statusCallback = webhookUrl;
         }
-        catch (error) {
-            console.error(`❌ Failed to send product usage video to ${to}:`, error);
-            throw error;
-        }
-    });
+        const message = await client.messages.create(messageParams);
+        console.log(`✅ Product usage video sent to ${formattedTo} via Messaging Service`);
+        return message.sid;
+    }
+    catch (error) {
+        console.error(`❌ Failed to send product usage video to ${to}:`, error);
+        throw error;
+    }
 }
 // Send complete message sequence
-function sendCompleteMessageSequence(to_1, trackingNumber_1, courierCompany_1) {
-    return __awaiter(this, arguments, void 0, function* (to, trackingNumber, courierCompany, options = {}) {
-        const { includeUsageGuide = true, includeUsageVideo = true, delayBetweenMessages = 30000, } = options;
-        const result = {
-            trackingSid: "",
-        };
-        try {
-            console.log(`🚀 Starting message sequence for ${to}`);
-            result.trackingSid = yield sendWhatsAppTemplate(to, trackingNumber, courierCompany);
-            if (includeUsageGuide || includeUsageVideo) {
-                console.log(`⏱️ Waiting ${delayBetweenMessages / 1000} seconds before next message...`);
-                yield new Promise((resolve) => setTimeout(resolve, delayBetweenMessages));
-            }
-            if (includeUsageGuide) {
-                result.usageGuideSid = yield sendProductUsageGuide(to);
-                if (includeUsageVideo) {
-                    console.log(`⏱️ Waiting ${delayBetweenMessages / 1000} seconds before video...`);
-                    yield new Promise((resolve) => setTimeout(resolve, delayBetweenMessages));
-                }
-            }
+async function sendCompleteMessageSequence(to, trackingNumber, courierCompany, options = {}) {
+    const { includeUsageGuide = true, includeUsageVideo = true, delayBetweenMessages = 30000, } = options;
+    const result = {
+        trackingSid: "",
+    };
+    try {
+        console.log(`🚀 Starting message sequence for ${to}`);
+        result.trackingSid = await sendWhatsAppTemplate(to, trackingNumber, courierCompany);
+        if (includeUsageGuide || includeUsageVideo) {
+            console.log(`⏱️ Waiting ${delayBetweenMessages / 1000} seconds before next message...`);
+            await new Promise((resolve) => setTimeout(resolve, delayBetweenMessages));
+        }
+        if (includeUsageGuide) {
+            result.usageGuideSid = await sendProductUsageGuide(to);
             if (includeUsageVideo) {
-                result.usageVideoSid = yield sendProductUsageVideo(to);
+                console.log(`⏱️ Waiting ${delayBetweenMessages / 1000} seconds before video...`);
+                await new Promise((resolve) => setTimeout(resolve, delayBetweenMessages));
             }
-            console.log(`✅ Complete message sequence sent to ${to}:`, result);
-            return result;
         }
-        catch (error) {
-            console.error(`❌ Failed to send complete message sequence to ${to}:`, error);
-            throw error;
+        if (includeUsageVideo) {
+            result.usageVideoSid = await sendProductUsageVideo(to);
         }
-    });
+        console.log(`✅ Complete message sequence sent to ${to}:`, result);
+        return result;
+    }
+    catch (error) {
+        console.error(`❌ Failed to send complete message sequence to ${to}:`, error);
+        throw error;
+    }
 }
-function getMessageStatusBySid(messageSid) {
-    return __awaiter(this, void 0, void 0, function* () {
-        try {
-            console.log(`🔍 Checking status for message SID: ${messageSid}`);
-            const message = yield client.messages(messageSid).fetch();
-            console.log(`📊 Message details:`);
-            console.log(`   Status: ${message.status}`);
-            console.log(`   Error Code: ${message.errorCode || "none"}`);
-            console.log(`   Error Message: ${message.errorMessage || "none"}`);
-            return message.status;
-        }
-        catch (error) {
-            console.error("❌ Failed to fetch message status:", error);
-            return null;
-        }
-    });
+async function getMessageStatusBySid(messageSid) {
+    try {
+        console.log(`🔍 Checking status for message SID: ${messageSid}`);
+        const message = await client.messages(messageSid).fetch();
+        console.log(`📊 Message details:`);
+        console.log(`   Status: ${message.status}`);
+        console.log(`   Error Code: ${message.errorCode || "none"}`);
+        console.log(`   Error Message: ${message.errorMessage || "none"}`);
+        return message.status;
+    }
+    catch (error) {
+        console.error("❌ Failed to fetch message status:", error);
+        return null;
+    }
 }
-function getRecentMessageStatus(phoneNumber) {
-    return __awaiter(this, void 0, void 0, function* () {
-        try {
-            const formattedTo = `whatsapp:${formatPhoneNumber(phoneNumber)}`;
-            const messages = yield client.messages.list({
-                to: formattedTo,
-                limit: 1,
-                dateSentAfter: new Date(Date.now() - 10 * 60 * 1000),
-            });
-            if (messages.length > 0) {
-                return messages[0].status;
-            }
-            return null;
+async function getRecentMessageStatus(phoneNumber) {
+    try {
+        const formattedTo = `whatsapp:${formatPhoneNumber(phoneNumber)}`;
+        const messages = await client.messages.list({
+            to: formattedTo,
+            limit: 1,
+            dateSentAfter: new Date(Date.now() - 10 * 60 * 1000),
+        });
+        if (messages.length > 0) {
+            return messages[0].status;
         }
-        catch (error) {
-            console.error("❌ Failed to fetch recent message status:", error);
-            return null;
-        }
-    });
+        return null;
+    }
+    catch (error) {
+        console.error("❌ Failed to fetch recent message status:", error);
+        return null;
+    }
 }
-function getMessagingService() {
-    return __awaiter(this, void 0, void 0, function* () {
-        const services = yield client.messaging.v1.services.list({ limit: 20 });
-        return services.map((s) => ({
-            sid: s.sid,
-            friendlyName: s.friendlyName,
-            accountSid: s.accountSid,
-            dateCreated: s.dateCreated,
-            dateUpdated: s.dateUpdated,
-        }));
-    });
+async function getMessagingService() {
+    const services = await client.messaging.v1.services.list({ limit: 20 });
+    return services.map((s) => ({
+        sid: s.sid,
+        friendlyName: s.friendlyName,
+        accountSid: s.accountSid,
+        dateCreated: s.dateCreated,
+        dateUpdated: s.dateUpdated,
+    }));
 }

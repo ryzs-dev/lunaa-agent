@@ -32,15 +32,6 @@ var __importStar = (this && this.__importStar) || (function () {
         return result;
     };
 })();
-var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
-    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
-    return new (P || (P = Promise))(function (resolve, reject) {
-        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
-        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
-        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
-        step((generator = generator.apply(thisArg, _arguments || [])).next());
-    });
-};
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -50,12 +41,12 @@ const supabaseOrders_1 = require("../database/supabaseOrders");
 const twilioClient_1 = require("../twilioClient");
 const inboxRouter = express_1.default.Router();
 // Get all conversations for shared inbox
-inboxRouter.get("/conversations", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+inboxRouter.get("/conversations", async (req, res) => {
     try {
         const limit = parseInt(req.query.limit) || 100;
         const status = req.query.status;
         console.log(`📋 Fetching conversations (limit: ${limit}${status ? `, status: ${status}` : ""})`);
-        let conversations = yield (0, supabaseOrders_1.getConversations)(limit);
+        let conversations = await (0, supabaseOrders_1.getConversations)(limit);
         // Filter by status if provided
         if (status) {
             conversations = conversations.filter((conv) => conv.status === status);
@@ -76,10 +67,10 @@ inboxRouter.get("/conversations", (req, res) => __awaiter(void 0, void 0, void 0
             details: error instanceof Error ? error.message : String(error),
         });
     }
-}));
+});
 // Get specific conversation with messages
 // Fixed: Use query parameter instead of path parameter for phone numbers
-inboxRouter.get("/conversation", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+inboxRouter.get("/conversation", async (req, res) => {
     try {
         const phoneNumber = req.query.phone;
         const limit = parseInt(req.query.limit) || 50;
@@ -90,8 +81,8 @@ inboxRouter.get("/conversation", (req, res) => __awaiter(void 0, void 0, void 0,
             });
         }
         console.log(`💬 Fetching conversation for ${phoneNumber} (limit: ${limit})`);
-        const conversation = yield (0, supabaseOrders_1.getConversationWithLatestMessage)(phoneNumber);
-        const messages = yield (0, supabaseOrders_1.getMessagesByPhoneNumber)(phoneNumber, limit);
+        const conversation = await (0, supabaseOrders_1.getConversationWithLatestMessage)(phoneNumber);
+        const messages = await (0, supabaseOrders_1.getMessagesByPhoneNumber)(phoneNumber, limit);
         res.json({
             success: true,
             conversation,
@@ -110,10 +101,10 @@ inboxRouter.get("/conversation", (req, res) => __awaiter(void 0, void 0, void 0,
             details: error instanceof Error ? error.message : String(error),
         });
     }
-}));
+});
 // Get messages for a specific phone number
 // Fixed: Use query parameter instead of path parameter
-inboxRouter.get("/messages", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+inboxRouter.get("/messages", async (req, res) => {
     try {
         const phoneNumber = req.query.phone;
         const limit = parseInt(req.query.limit) || 50;
@@ -124,7 +115,7 @@ inboxRouter.get("/messages", (req, res) => __awaiter(void 0, void 0, void 0, fun
             });
         }
         console.log(`📨 Fetching messages for ${phoneNumber} (limit: ${limit})`);
-        const messages = yield (0, supabaseOrders_1.getMessagesByPhoneNumber)(phoneNumber, limit);
+        const messages = await (0, supabaseOrders_1.getMessagesByPhoneNumber)(phoneNumber, limit);
         res.json({
             success: true,
             messages,
@@ -141,9 +132,9 @@ inboxRouter.get("/messages", (req, res) => __awaiter(void 0, void 0, void 0, fun
             details: error instanceof Error ? error.message : String(error),
         });
     }
-}));
+});
 // Send a new WhatsApp message
-inboxRouter.post("/send-message", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+inboxRouter.post("/send-message", async (req, res) => {
     try {
         const { to, message, tracking_number, courier_company } = req.body;
         if (!to) {
@@ -157,12 +148,12 @@ inboxRouter.post("/send-message", (req, res) => __awaiter(void 0, void 0, void 0
         let messageContent;
         if (tracking_number) {
             // Send tracking template message
-            messageSid = yield (0, twilioClient_1.sendWhatsAppTemplate)(to, tracking_number, courier_company);
+            messageSid = await (0, twilioClient_1.sendWhatsAppTemplate)(to, tracking_number, courier_company);
             messageContent = `Tracking: ${tracking_number}`;
         }
         else if (message) {
             // Send regular text message
-            messageSid = yield (0, twilioClient_1.sendWhatsAppTextMessage)(to, message);
+            messageSid = await (0, twilioClient_1.sendWhatsAppTextMessage)(to, message);
             messageContent = message;
         }
         else {
@@ -172,7 +163,7 @@ inboxRouter.post("/send-message", (req, res) => __awaiter(void 0, void 0, void 0
             });
         }
         // Update conversation
-        yield (0, supabaseOrders_1.upsertConversation)(to);
+        await (0, supabaseOrders_1.upsertConversation)(to);
         res.json({
             success: true,
             data: {
@@ -191,9 +182,9 @@ inboxRouter.post("/send-message", (req, res) => __awaiter(void 0, void 0, void 0
             details: error instanceof Error ? error.message : String(error),
         });
     }
-}));
+});
 // Update conversation details - Fixed: Use query parameter
-inboxRouter.patch("/conversation", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+inboxRouter.patch("/conversation", async (req, res) => {
     try {
         const phoneNumber = req.query.phone;
         const updates = req.body;
@@ -205,8 +196,8 @@ inboxRouter.patch("/conversation", (req, res) => __awaiter(void 0, void 0, void 
         }
         console.log(`🔄 Updating conversation ${phoneNumber}:`, updates);
         // Import supabase client directly for this update
-        const { supabase } = yield Promise.resolve().then(() => __importStar(require("../database/supabaseOrders")));
-        const { error } = yield supabase
+        const { supabase } = await Promise.resolve().then(() => __importStar(require("../database/supabaseOrders")));
+        const { error } = await supabase
             .from("conversations")
             .update(Object.assign(Object.assign({}, updates), { updated_at: new Date().toISOString() }))
             .eq("phone_number", phoneNumber);
@@ -230,9 +221,9 @@ inboxRouter.patch("/conversation", (req, res) => __awaiter(void 0, void 0, void 
             details: error instanceof Error ? error.message : String(error),
         });
     }
-}));
+});
 // Search conversations by customer name or phone number
-inboxRouter.get("/search", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+inboxRouter.get("/search", async (req, res) => {
     try {
         const query = req.query.q;
         const limit = parseInt(req.query.limit) || 50;
@@ -243,8 +234,8 @@ inboxRouter.get("/search", (req, res) => __awaiter(void 0, void 0, void 0, funct
             });
         }
         console.log(`🔍 Searching conversations for: ${query}`);
-        const { supabase } = yield Promise.resolve().then(() => __importStar(require("../database/supabaseOrders")));
-        const { data: conversations, error } = yield supabase
+        const { supabase } = await Promise.resolve().then(() => __importStar(require("../database/supabaseOrders")));
+        const { data: conversations, error } = await supabase
             .from("conversations")
             .select("*")
             .or(`phone_number.ilike.%${query}%,customer_name.ilike.%${query}%`)
@@ -269,28 +260,28 @@ inboxRouter.get("/search", (req, res) => __awaiter(void 0, void 0, void 0, funct
             details: error instanceof Error ? error.message : String(error),
         });
     }
-}));
+});
 // Get conversation statistics
-inboxRouter.get("/stats", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+inboxRouter.get("/stats", async (req, res) => {
     try {
         console.log(`📊 Fetching inbox statistics`);
-        const { supabase } = yield Promise.resolve().then(() => __importStar(require("../database/supabaseOrders")));
+        const { supabase } = await Promise.resolve().then(() => __importStar(require("../database/supabaseOrders")));
         // Get conversation counts by status
-        const { data: conversationStats, error: convError } = yield supabase
+        const { data: conversationStats, error: convError } = await supabase
             .from("conversations")
             .select("status")
             .not("status", "is", null);
         if (convError)
             throw convError;
         // Get message counts by status for last 24 hours
-        const { data: messageStats, error: msgError } = yield supabase
+        const { data: messageStats, error: msgError } = await supabase
             .from("messages")
             .select("latest_status")
             .gte("sent_at", new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
         if (msgError)
             throw msgError;
         // Get total orders count
-        const { count: ordersCount, error: ordersError } = yield supabase
+        const { count: ordersCount, error: ordersError } = await supabase
             .from("orders")
             .select("*", { count: "exact", head: true });
         if (ordersError)
@@ -331,5 +322,5 @@ inboxRouter.get("/stats", (req, res) => __awaiter(void 0, void 0, void 0, functi
             details: error instanceof Error ? error.message : String(error),
         });
     }
-}));
+});
 exports.default = inboxRouter;

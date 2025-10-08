@@ -32,15 +32,6 @@ var __importStar = (this && this.__importStar) || (function () {
         return result;
     };
 })();
-var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
-    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
-    return new (P || (P = Promise))(function (resolve, reject) {
-        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
-        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
-        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
-        step((generator = generator.apply(thisArg, _arguments || [])).next());
-    });
-};
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -50,7 +41,7 @@ const supabaseOrders_1 = require("../database/supabaseOrders");
 const twilioClient_1 = require("../twilioClient");
 const twilioRouter = express_1.default.Router();
 // Twilio webhook for status updates
-twilioRouter.post("/twilio/status", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+twilioRouter.post("/twilio/status", async (req, res) => {
     try {
         // Immediately respond with 200 to acknowledge receipt
         res.status(200).send("OK");
@@ -70,7 +61,7 @@ twilioRouter.post("/twilio/status", (req, res) => __awaiter(void 0, void 0, void
         // Save to database asynchronously
         if (MessageSid) {
             try {
-                yield (0, supabaseOrders_1.updateMessageStatusInDB)(MessageSid, status, To || "", From || "", timestamp);
+                await (0, supabaseOrders_1.updateMessageStatusInDB)(MessageSid, status, To || "", From || "", timestamp);
                 console.log(`✅ Status updated in DB: ${MessageSid} → ${status}`);
             }
             catch (dbError) {
@@ -85,7 +76,7 @@ twilioRouter.post("/twilio/status", (req, res) => __awaiter(void 0, void 0, void
             res.status(200).send("OK");
         }
     }
-}));
+});
 // Health check for webhook
 twilioRouter.get("/twilio/status", (req, res) => {
     res.json({
@@ -95,12 +86,12 @@ twilioRouter.get("/twilio/status", (req, res) => {
     });
 });
 // Endpoint to get message history for a phone number (for shared inbox)
-twilioRouter.get("/messages/:phoneNumber", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+twilioRouter.get("/messages/:phoneNumber", async (req, res) => {
     try {
         const { phoneNumber } = req.params;
         const limit = parseInt(req.query.limit) || 50;
-        const { getMessagesByPhoneNumber } = yield Promise.resolve().then(() => __importStar(require("../database/supabaseOrders")));
-        const messages = yield getMessagesByPhoneNumber(phoneNumber, limit);
+        const { getMessagesByPhoneNumber } = await Promise.resolve().then(() => __importStar(require("../database/supabaseOrders")));
+        const messages = await getMessagesByPhoneNumber(phoneNumber, limit);
         res.json({
             success: true,
             messages,
@@ -115,13 +106,13 @@ twilioRouter.get("/messages/:phoneNumber", (req, res) => __awaiter(void 0, void 
             details: error instanceof Error ? error.message : String(error),
         });
     }
-}));
+});
 // Endpoint to get all conversations (for shared inbox listing)
-twilioRouter.get("/conversations", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+twilioRouter.get("/conversations", async (req, res) => {
     try {
         const limit = parseInt(req.query.limit) || 100;
-        const { getConversations } = yield Promise.resolve().then(() => __importStar(require("../database/supabaseOrders")));
-        const conversations = yield getConversations(limit);
+        const { getConversations } = await Promise.resolve().then(() => __importStar(require("../database/supabaseOrders")));
+        const conversations = await getConversations(limit);
         res.json({
             success: true,
             conversations,
@@ -136,14 +127,14 @@ twilioRouter.get("/conversations", (req, res) => __awaiter(void 0, void 0, void 
             details: error instanceof Error ? error.message : String(error),
         });
     }
-}));
+});
 // Endpoint to get conversation details with messages
-twilioRouter.get("/conversations/:phoneNumber", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+twilioRouter.get("/conversations/:phoneNumber", async (req, res) => {
     try {
         const { phoneNumber } = req.params;
-        const { getConversationWithLatestMessage, getMessagesByPhoneNumber } = yield Promise.resolve().then(() => __importStar(require("../database/supabaseOrders")));
-        const conversation = yield getConversationWithLatestMessage(phoneNumber);
-        const messages = yield getMessagesByPhoneNumber(phoneNumber, 50);
+        const { getConversationWithLatestMessage, getMessagesByPhoneNumber } = await Promise.resolve().then(() => __importStar(require("../database/supabaseOrders")));
+        const conversation = await getConversationWithLatestMessage(phoneNumber);
+        const messages = await getMessagesByPhoneNumber(phoneNumber, 50);
         res.json({
             success: true,
             conversation,
@@ -159,10 +150,10 @@ twilioRouter.get("/conversations/:phoneNumber", (req, res) => __awaiter(void 0, 
             details: error instanceof Error ? error.message : String(error),
         });
     }
-}));
-twilioRouter.get("/twilio/services", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+});
+twilioRouter.get("/twilio/services", async (req, res) => {
     try {
-        const services = yield (0, twilioClient_1.getMessagingService)();
+        const services = await (0, twilioClient_1.getMessagingService)();
         res.json({
             success: true,
             count: services.length,
@@ -177,5 +168,5 @@ twilioRouter.get("/twilio/services", (req, res) => __awaiter(void 0, void 0, voi
             details: error instanceof Error ? error.message : String(error),
         });
     }
-}));
+});
 exports.default = twilioRouter;

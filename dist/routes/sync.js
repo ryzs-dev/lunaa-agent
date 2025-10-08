@@ -1,13 +1,4 @@
 "use strict";
-var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
-    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
-    return new (P || (P = Promise))(function (resolve, reject) {
-        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
-        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
-        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
-        step((generator = generator.apply(thisArg, _arguments || [])).next());
-    });
-};
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -18,12 +9,12 @@ const dotenv_1 = __importDefault(require("dotenv"));
 const sync_1 = require("../sheets-db/sync");
 dotenv_1.default.config({ path: path_1.default.resolve(__dirname, "../../.env.local") });
 const syncRouter = express_1.default.Router();
-syncRouter.post("/", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+syncRouter.post("/", async (req, res) => {
     var _a;
     const sheetName = ((_a = req.body) === null || _a === void 0 ? void 0 : _a.sheetName) || "Test";
     try {
         console.log(`📦 Starting sync for sheet: ${sheetName}`);
-        yield (0, sync_1.syncNewOrdersOnly)(sheetName);
+        await (0, sync_1.syncNewOrdersOnly)(sheetName);
         res.json({
             success: true,
             message: `✅ Successfully synced new orders from sheet: ${sheetName}`,
@@ -37,13 +28,13 @@ syncRouter.post("/", (req, res) => __awaiter(void 0, void 0, void 0, function* (
             details: error instanceof Error ? error.message : String(error),
         });
     }
-}));
-syncRouter.post("/full-sync", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+});
+syncRouter.post("/full-sync", async (req, res) => {
     var _a;
     const sheetName = ((_a = req.body) === null || _a === void 0 ? void 0 : _a.sheetName) || "Test";
     try {
         console.log(`📦 Starting sync for sheet: ${sheetName}`);
-        yield (0, sync_1.syncSheetsToD1)(sheetName);
+        await (0, sync_1.syncSheetsToD1)(sheetName);
         res.json({
             success: true,
             message: `✅ Successfully synced new orders from sheet: ${sheetName}`,
@@ -57,13 +48,13 @@ syncRouter.post("/full-sync", (req, res) => __awaiter(void 0, void 0, void 0, fu
             details: error instanceof Error ? error.message : String(error),
         });
     }
-}));
+});
 // Optionally add structure validation route
-syncRouter.get("/validate-sheet", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+syncRouter.get("/validate-sheet", async (req, res) => {
     var _a, _b;
     const sheetName = ((_b = (_a = req.query) === null || _a === void 0 ? void 0 : _a.sheetName) === null || _b === void 0 ? void 0 : _b.toString()) || "Test";
     try {
-        const isValid = yield (0, sync_1.validateSheetStructure)(sheetName);
+        const isValid = await (0, sync_1.validateSheetStructure)(sheetName);
         res.json({ success: isValid });
     }
     catch (error) {
@@ -74,5 +65,5 @@ syncRouter.get("/validate-sheet", (req, res) => __awaiter(void 0, void 0, void 0
             details: error instanceof Error ? error.message : String(error),
         });
     }
-}));
+});
 exports.default = syncRouter;

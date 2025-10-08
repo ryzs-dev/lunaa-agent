@@ -5,10 +5,10 @@ export interface OrderInput {
   address_id?: UUID;
   customer_id: UUID;
   order_date: Date;
-  status: 'unpaid' | 'paid' | 'refunded';
-  currency: string;
+  status?: 'unpaid' | 'paid' | 'refunded';
+  currency?: string;
   total_amount: number;
-  payment_method: string;
+  payment_method?: string;
   order_items: OrderItemsInput[];
 }
 

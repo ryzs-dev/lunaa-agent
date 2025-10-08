@@ -10,7 +10,8 @@
     "test:whatsapp": "ts-node test-script/whatsappBotTest.ts",
     "test": "jest",
     "test:watch": "jest --watch",
-    "test:coverage": "jest --coverage"
+    "test:coverage": "jest --coverage",
+    "start:worker": "npx ts-node src/modules/queue/service.ts"
   },
   "keywords": [],
   "author": "",
@@ -22,11 +23,13 @@
     "@supabase/supabase-js": "^2.52.1",
     "@types/node-cron": "^3.0.11",
     "axios": "^1.11.0",
+    "bullmq": "^5.61.0",
     "cors": "^2.8.5",
     "dotenv": "^17.2.0",
     "express": "^5.1.0",
     "fs": "^0.0.1-security",
     "googleapis": "^153.0.0",
+    "ioredis": "^5.8.1",
     "malaysia-postcodes": "^2.7.3",
     "multer": "^2.0.2",
     "node-cron": "^4.2.1",

@@ -16,24 +16,24 @@ class CustomerService {
     }
     async saveToFile() {
         try {
-            console.log("Saving customers to JSON File...");
-            const filePath = path_1.default.resolve(__dirname, "../constants/phone_numbers.json");
-            const data = Array.from(this.customers.values()).map(c => ({
+            console.log('Saving customers to JSON File...');
+            const filePath = path_1.default.resolve(__dirname, '../constants/phone_numbers.json');
+            const data = Array.from(this.customers.values()).map((c) => ({
                 name: c.customerName,
                 number: c.phoneNumber,
                 isRepeatCustomer: c.isRepeatCustomer,
             }));
-            await fs_1.promises.writeFile(filePath, JSON.stringify(data, null, 2), "utf-8");
-            console.log("Customers saved to JSON");
+            await fs_1.promises.writeFile(filePath, JSON.stringify(data, null, 2), 'utf-8');
+            console.log('Customers saved to JSON');
         }
         catch (err) {
-            console.error("Failed to save customers:", err);
+            console.error('Failed to save customers:', err);
         }
     }
     async init() {
         try {
-            const filePath = path_1.default.resolve(__dirname, "../constants/phone_numbers.json");
-            const raw = await fs_1.promises.readFile(filePath, "utf-8");
+            const filePath = path_1.default.resolve(__dirname, '../constants/phone_numbers.json');
+            const raw = await fs_1.promises.readFile(filePath, 'utf-8');
             const json = JSON.parse(raw);
             json.forEach((entry) => {
                 this.customers.set(entry.number, {
@@ -46,7 +46,7 @@ class CustomerService {
             console.log(`Loaded ${this.customers.size} customers from JSON`);
         }
         catch (err) {
-            console.error("Failed to load phone_numbers.json:", err);
+            console.error('Failed to load phone_numbers.json:', err);
         }
     }
     async findByPhone(phoneNumber) {
@@ -63,7 +63,7 @@ class CustomerService {
                 await this.supabaseCustomerService.upsert(existing);
             }
             catch (error) {
-                throw new Error("Failed to upsert customer to Supabase: " + error.message);
+                throw new Error('Failed to upsert customer to Supabase: ' + error.message);
             }
             return existing;
         }
@@ -74,7 +74,7 @@ class CustomerService {
             await this.supabaseCustomerService.upsert(newCustomer);
         }
         catch (error) {
-            throw new Error("Failed to upsert customer to Supabase: " + error.message);
+            throw new Error('Failed to upsert customer to Supabase: ' + error.message);
         }
         return newCustomer;
     }

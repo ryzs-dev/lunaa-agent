@@ -117,6 +117,7 @@ class CustomerService {
   }
 
   async createCustomer(data: CustomerInput) {
+    console.log('Creating customer with data:', data);
     const phoneNumber = this.normalizePhoneNumber(data.phone_number);
     if (!phoneNumber) throw new Error('Invalid phone number');
 

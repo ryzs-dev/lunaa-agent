@@ -772,6 +772,7 @@ class SheetsIntegration {
                     break;
                 case 'email':
                     rowData[index] = orderData.email || '';
+                    break;
                 case 'new/repeat':
                     rowData[index] = orderData.isRepeatCustomer ? 'repeat' : 'new';
                     break;

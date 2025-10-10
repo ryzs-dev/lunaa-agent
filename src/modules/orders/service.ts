@@ -52,6 +52,7 @@ class OrderService {
   }
 
   async updateOrder(orderId: UUID, updates: Partial<OrderInput>) {
+
     return await this.orderDatabase.updateOrder(orderId, updates);
   }
 

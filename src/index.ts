@@ -22,6 +22,7 @@ import { webhookRouter } from './routes/webhook/parcel-daily/route';
 import importRouter from './routes/import';
 import { messageRouter } from './routes/message/route';
 import { statsRouter } from './routes/stats/route';
+import { initParcelDailySubscribers } from './modules/pubsub/subscriber';
 
 dotenv.config({ path: path.resolve(__dirname, '../.env.local') });
 
@@ -33,6 +34,8 @@ app.use(express.json({ limit: '10mb' })); // Parse JSON bodies
 app.use(express.urlencoded({ extended: true, limit: '10mb' })); // Parse URL-encoded bodies
 
 app.use(cors());
+
+initParcelDailySubscribers();
 
 // Mount the routes
 app.use('/api', trackRouter);

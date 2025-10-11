@@ -26,6 +26,7 @@ const route_2 = require("./routes/webhook/parcel-daily/route");
 const import_1 = __importDefault(require("./routes/import"));
 const route_3 = require("./routes/message/route");
 const route_4 = require("./routes/stats/route");
+const subscriber_1 = require("./modules/pubsub/subscriber");
 dotenv_1.default.config({ path: path_1.default.resolve(__dirname, '../.env.local') });
 const app = (0, express_1.default)();
 const port = Number(process.env.PORT) || 3001;
@@ -33,6 +34,7 @@ const port = Number(process.env.PORT) || 3001;
 app.use(express_1.default.json({ limit: '10mb' })); // Parse JSON bodies
 app.use(express_1.default.urlencoded({ extended: true, limit: '10mb' })); // Parse URL-encoded bodies
 app.use((0, cors_1.default)());
+(0, subscriber_1.initParcelDailySubscribers)();
 // Mount the routes
 app.use('/api', track_1.default);
 app.use('/api', twilio_1.default);

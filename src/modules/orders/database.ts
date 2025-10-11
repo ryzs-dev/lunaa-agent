@@ -20,9 +20,12 @@ class OrderDatabase {
   }: QueryParams) {
     let query = supabase
       .from('orders')
-      .select('*, order_items(*), customers(*), order_tracking(*)', {
-        count: 'exact',
-      })
+      .select(
+        '*, order_items(*), customers(*), addresses(*), order_tracking(*)',
+        {
+          count: 'exact',
+        }
+      )
       .order(sortBy, { ascending: sortOrder === 'asc' })
       .range(offset, offset + limit - 1);
 

@@ -16,7 +16,7 @@ class OrderDatabase {
     async getAllOrders({ limit, offset, search, sortBy, sortOrder, }) {
         let query = supabase_1.supabase
             .from('orders')
-            .select('*, order_items(*), customers(*), order_tracking(*)', {
+            .select('*, order_items(*), customers(*), addresses(*), order_tracking(*)', {
             count: 'exact',
         })
             .order(sortBy, { ascending: sortOrder === 'asc' })

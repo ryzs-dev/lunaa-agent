@@ -1,52 +1,23 @@
 import express from 'express';
+import dotenv from 'dotenv';
+import { ParcelDailyService } from '../../modules/parcel-daily/service';
+import path from 'path';
+import { UUID } from 'crypto';
+
+dotenv.config({ path: path.resolve(__dirname, '../../../.env.local') });
 
 export const parcelDailyRouter = express.Router();
 
-// Parcel Daily API details
-const BASE_URL = 'https://api.parceldaily.com/v1/partner';
-const TOKEN_KEY = process.env.PARCEL_DAILY_TOKEN_KEY;
-const MERCHANT_ID = process.env.PARCEL_DAILY_MERCHANT_ID;
+const PARCEL_DAILY_API_URL =
+  process.env.PARCEL_DAILY_API_URL || 'http://localhost:4002/api/parceldaily';
 
-const SERVICE_PROVIDERS = [
-  'dhl',
-  'flash',
-  'jnt',
-  'ninjavan',
-  'citylink',
-  'teleport',
-  'poslaju',
-  'sfstandard',
-  'sfeconomy',
-  'aramex',
-  'best',
-  'lineclear',
-  'redly',
-  'spx',
-] as const;
+const parcelDailyService = new ParcelDailyService(PARCEL_DAILY_API_URL);
 
 // GET /account-info - Fetch account information from Parcel Daily
 parcelDailyRouter.get('/account-info', async (req, res) => {
-  if (!TOKEN_KEY || !MERCHANT_ID) {
-    return res
-      .status(500)
-      .json({ error: 'Missing Parcel Daily API credentials' });
-  }
-
   try {
-    const response = await fetch(`${BASE_URL}/account-info`, {
-      headers: {
-        token: TOKEN_KEY,
-        merchantid: MERCHANT_ID,
-      },
-    });
+    const { data } = await parcelDailyService.getAccountInfo();
 
-    if (!response.ok) {
-      throw new Error(
-        `ParcelDaily API error: ${response.status} ${response.statusText}`
-      );
-    }
-
-    const { data } = await response.json();
     return res.status(200).json({ success: true, data: data });
   } catch (error: any) {
     console.error('Error fetching account info:', error);
@@ -54,60 +25,49 @@ parcelDailyRouter.get('/account-info', async (req, res) => {
   }
 });
 
-// ORDER
-// POST /create-order - Create a new order in Parcel Daily
-parcelDailyRouter.post('/create', async (req, res) => {
-  if (!TOKEN_KEY || !MERCHANT_ID) {
-    return res
-      .status(500)
-      .json({ error: 'Missing Parcel Daily API credentials' });
-  }
-
-  const body = req.body ?? {};
-  const errors: string[] = [];
-  const sp = body.serviceProvider;
-
-  // required fields check (simplified for this demo)
-  if (!body.pickupAddress) errors.push('pickupAddress required');
-  if (!body.clientAddress) errors.push('clientAddress required');
-
-  if (errors.length) return res.status(400).json({ errors });
-
-  // Build request payload
-  const payload: any = {
-    merchant_id: MERCHANT_ID,
-    service_provider: sp,
-    pickup_address: body.pickupAddress,
-    client_address: body.clientAddress,
-    is_dropoff: body.isDropoff,
-    kg: body.kg,
-    price: body.price,
-    content: body.content,
-    content_value: body.content_value,
-    reference: body.reference,
-  };
-
-  Object.keys(payload).forEach(
-    (k) => payload[k] === undefined && delete payload[k]
-  );
+// POST /order/create - Create a new shipment
+parcelDailyRouter.post('/order/create', async (req, res) => {
+  const { shipmentData, orderId } = req.body;
 
   try {
-    const resp = await fetch(`${BASE_URL}/create`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        token: TOKEN_KEY,
-        merchantid: MERCHANT_ID,
-      },
-      body: JSON.stringify(payload),
-    });
+    const result = await parcelDailyService.createShipment(
+      shipmentData,
+      orderId
+    );
+    return res.status(200).json({ success: true, data: result });
+  } catch (error) {
+    console.error('Error creating shipment:', error);
+    return res.status(500).json({ error: 'Failed to create shipment' });
+  }
+});
 
-    const data = await resp.json();
-    return res.status(resp.status).json(data);
-  } catch (err: any) {
-    console.error('ParcelDaily create error:', err);
-    return res
-      .status(500)
-      .json({ error: 'Failed to create order', details: err.message });
+// POST /order/create/bulk - Create multiple shipments in bulk
+parcelDailyRouter.post('/order/create/bulk', async (req, res) => {
+  const orders = req.body.shipments;
+
+  if (!Array.isArray(orders) || orders.length === 0) {
+    return res.status(400).json({ error: 'Invalid orders array' });
+  }
+
+  try {
+    const results = await parcelDailyService.createBulkShipments(orders);
+    return res.status(200).json({ success: true, data: results });
+  } catch (error) {
+    console.error('Error creating bulk shipments:', error);
+    return res.status(500).json({ error: 'Failed to create bulk shipments' });
+  }
+});
+
+// GET /order/status
+parcelDailyRouter.get('/order/:id', async (req, res) => {
+  const { id } = req.params;
+  const orderId = id as UUID;
+
+  try {
+    const result = await parcelDailyService.getOrderStatus(orderId);
+    return res.status(200).json({ success: true, data: result });
+  } catch (error) {
+    console.error('Error fetching order status:', error);
+    return res.status(500).json({ error: 'Failed to fetch order status' });
   }
 });

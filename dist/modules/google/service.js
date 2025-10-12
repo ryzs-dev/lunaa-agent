@@ -28,7 +28,7 @@ class GoogleSheetService {
             return '';
         });
     }
-    async createOrder({ customer, order, address }) {
+    async createOrder({ customer, order, address, remark }) {
         var _a;
         try {
             const sheet = this.sheetNames[0];
@@ -50,7 +50,7 @@ class GoogleSheetService {
                 }
             }
             const headers = ((_a = headerResponse.data.values) === null || _a === void 0 ? void 0 : _a[0]) || [];
-            const payload = { customer, order, address, productQuantityMap };
+            const payload = { customer, order, address, productQuantityMap, remark };
             const rowData = this.buildRowData(payload, headers);
             await _1.googleClient.spreadsheets.values.append({
                 spreadsheetId: this.spreadSheetId,

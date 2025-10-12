@@ -31,7 +31,7 @@ const worker = new bullmq_1.Worker('orders', async (job) => {
         const _a = job.data.order, { shipment_description } = _a, orderData = __rest(_a, ["shipment_description"]);
         // Run DB + Google Sheets concurrently
         const [dbResult, sheetResult] = await Promise.all([
-            orderService.createOrder(Object.assign({ customer_id: customer.id, address_id: address.id }, orderData)),
+            orderService.createOrder(Object.assign({ customer_id: customer.id, address_id: address.id, remark: job.data.remark }, orderData)),
             googleSheetService.createOrder(job.data),
         ]);
         console.log('Both operations completed:', { dbResult, sheetResult });

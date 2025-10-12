@@ -1,6 +1,6 @@
 import { ExtractedData } from '../modules/google/types';
 
-type Resolver = ({ customer, address, order }: ExtractedData) => any;
+type Resolver = ({ customer, address, order, remark }: ExtractedData) => any;
 
 export const sheetFieldMap: Record<string, Resolver> = {
   'order date': ({ order }) => order.order_date || '',
@@ -20,4 +20,5 @@ export const sheetFieldMap: Record<string, Resolver> = {
   currency: ({ customer }) =>
     customer.phone_number?.startsWith('65') ? 'SGD' : 'MYR',
   status: () => 'Pending',
+  remark: ({ remark }) => remark || '',
 };

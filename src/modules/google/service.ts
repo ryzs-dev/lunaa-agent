@@ -32,7 +32,7 @@ export class GoogleSheetService {
     });
   }
 
-  async createOrder({ customer, order, address }: ExtractedData) {
+  async createOrder({ customer, order, address, remark }: ExtractedData) {
     try {
       const sheet = this.sheetNames[0];
 
@@ -64,7 +64,7 @@ export class GoogleSheetService {
       }
 
       const headers = headerResponse.data.values?.[0] || [];
-      const payload = { customer, order, address, productQuantityMap };
+      const payload = { customer, order, address, productQuantityMap, remark };
 
       const rowData = this.buildRowData(payload, headers);
 

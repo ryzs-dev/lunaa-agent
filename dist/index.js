@@ -30,9 +30,8 @@ const subscriber_1 = require("./modules/pubsub/subscriber");
 dotenv_1.default.config({ path: path_1.default.resolve(__dirname, '../.env.local') });
 const app = (0, express_1.default)();
 const port = Number(process.env.PORT) || 3001;
-// IMPORTANT: Add these middleware to parse request bodies
-app.use(express_1.default.json({ limit: '10mb' })); // Parse JSON bodies
-app.use(express_1.default.urlencoded({ extended: true, limit: '10mb' })); // Parse URL-encoded bodies
+app.use(express_1.default.json({ limit: '10mb' }));
+app.use(express_1.default.urlencoded({ extended: true, limit: '10mb' }));
 app.use((0, cors_1.default)());
 (0, subscriber_1.initParcelDailySubscribers)();
 // Mount the routes

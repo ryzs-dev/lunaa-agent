@@ -21,5 +21,6 @@ export interface ExtractedData {
     total_amount?: number;
     shipment_description?: string;
   };
+  remark?: string;
   productQuantityMap?: Record<string, number>;
 }

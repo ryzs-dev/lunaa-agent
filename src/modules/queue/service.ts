@@ -27,6 +27,7 @@ const worker = new Worker(
         orderService.createOrder({
           customer_id: customer.id,
           address_id: address.id,
+          remark: job.data.remark,
           ...orderData,
         }),
         googleSheetService.createOrder(job.data),

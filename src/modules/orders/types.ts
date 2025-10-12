@@ -10,6 +10,7 @@ export interface OrderInput {
   total_amount: number;
   payment_method?: string;
   order_items: OrderItemsInput[];
+  remark?: string;
 }
 
 export interface OrderItemsInput {

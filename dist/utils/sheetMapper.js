@@ -18,4 +18,5 @@ exports.sheetFieldMap = {
     'agent by / under': () => 'WhatsApp Bot',
     currency: ({ customer }) => { var _a; return ((_a = customer.phone_number) === null || _a === void 0 ? void 0 : _a.startsWith('65')) ? 'SGD' : 'MYR'; },
     status: () => 'Pending',
+    remark: ({ remark }) => remark || '',
 };

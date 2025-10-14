@@ -118,6 +118,7 @@ customersRouter.delete('/:id', async (req, res) => {
 customersRouter.patch('/:id', async (req, res) => {
   const { id } = req.params;
   const updates = req.body;
+
   if (!id) {
     return res.status(400).json({ error: 'Customer ID is required' });
   }
@@ -127,6 +128,7 @@ customersRouter.patch('/:id', async (req, res) => {
       id as UUID,
       updates
     );
+
     return res.status(200).json({
       success: 'Customer successfully updated',
       data: updatedCustomer,

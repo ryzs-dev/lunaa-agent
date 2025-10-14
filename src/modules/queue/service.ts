@@ -20,15 +20,13 @@ const worker = new Worker(
         ...job.data.address,
       });
 
-      const { shipment_description, ...orderData } = job.data.order;
-
       // Run DB + Google Sheets concurrently
       const [dbResult, sheetResult] = await Promise.all([
         orderService.createOrder({
           customer_id: customer.id,
           address_id: address.id,
           remark: job.data.remark,
-          ...orderData,
+          ...job.data.order,
         }),
         googleSheetService.createOrder(job.data),
       ]);

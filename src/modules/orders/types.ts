@@ -11,6 +11,7 @@ export interface OrderInput {
   payment_method?: string;
   order_items: OrderItemsInput[];
   remark?: string;
+  shipment_description?: string;
 }
 
 export interface OrderItemsInput {

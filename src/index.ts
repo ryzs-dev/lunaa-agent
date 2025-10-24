@@ -55,6 +55,7 @@ app.use('/api/parcel-daily', parcelDailyRouter);
 app.use('/webhook', webhookRouter);
 app.use('/api/message', messageRouter);
 app.use('/api/stats', statsRouter);
+app.use('/api/whatsapp', messageRouter);
 
 app.get('/health', (req, res) => {
   res.json({

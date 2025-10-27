@@ -4,9 +4,12 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.GoogleSheetService = void 0;
+const path_1 = __importDefault(require("path"));
 const _1 = require(".");
 const sheetMapper_1 = require("../../utils/sheetMapper");
 const service_1 = __importDefault(require("../product/service"));
+const dotenv_1 = __importDefault(require("dotenv"));
+dotenv_1.default.config({ path: path_1.default.resolve(__dirname, '../../../.env.local') });
 class GoogleSheetService {
     constructor() {
         this.sheetNames = [];

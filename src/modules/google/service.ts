@@ -1,7 +1,11 @@
+import path from 'path';
 import { googleClient } from '.';
 import { sheetFieldMap } from '../../utils/sheetMapper';
 import ProductService from '../product/service';
 import { ExtractedData } from './types';
+import dotenv from 'dotenv';
+
+dotenv.config({ path: path.resolve(__dirname, '../../../.env.local') });
 
 export class GoogleSheetService {
   private productService: ProductService;
@@ -87,22 +91,19 @@ export class GoogleSheetService {
 
   async getSheetData(sheetName: string) {
     console.log(`📋 Fetching data from sheet: ${sheetName}`);
-     try {
+    try {
+      const response = await googleClient.spreadsheets.values.get({
+        spreadsheetId: this.spreadSheetId,
+        range: `${sheetName}!A:AE`,
+      });
 
-       const response = await googleClient.spreadsheets.values.get({
-         spreadsheetId: this.spreadSheetId,
-         range: `${sheetName}!A:AE`, 
-       });
+      const rows = response.data.values || [];
+      console.log(`✅ Fetched ${rows.length} rows from ${sheetName}`);
 
-       const rows = response.data.values || [];
-       console.log(`✅ Fetched ${rows.length} rows from ${sheetName}`);
-
-       return rows;
-     } catch (error) {
-       console.error(`❌ Error fetching sheet data:`, error);
-       throw error;
-     }
+      return rows;
+    } catch (error) {
+      console.error(`❌ Error fetching sheet data:`, error);
+      throw error;
+    }
   }
-
-  
 }

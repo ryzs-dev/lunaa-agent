@@ -53,6 +53,7 @@ app.use('/api/parcel-daily', route_1.parcelDailyRouter);
 app.use('/webhook', route_2.webhookRouter);
 app.use('/api/message', route_3.messageRouter);
 app.use('/api/stats', route_4.statsRouter);
+app.use('/api/whatsapp', route_3.messageRouter);
 app.get('/health', (req, res) => {
     res.json({
         status: 'ok',

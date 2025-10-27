@@ -1,10 +1,12 @@
 import express from 'express';
 import { WhatsappSendService } from '../../modules/whatsapp/services/SendService';
 import { enqueueTrackingJobs } from '../../modules/queue/tracking_queue/queue';
+import { MessageService } from '../../modules/message_service/service';
 
 export const messageRouter = express.Router();
 
 const whatsappSendService = new WhatsappSendService();
+const messageService = new MessageService();
 
 messageRouter.post('/', async (req, res) => {
   const { to_number, body } = req.body;
@@ -67,5 +69,50 @@ messageRouter.post('/track/manual', async (req, res) => {
   } catch (error) {
     console.error('Error tracking message:', error);
     res.status(500).json({ error: 'Failed to track message', details: error });
+  }
+});
+
+messageRouter.get('/', async (req, res) => {
+  try {
+    const { data } = await messageService.getMessages();
+    res.status(200).json({ success: true, data });
+  } catch (error) {
+    console.error('Error fetching messages:', error);
+    res.status(500).json({ error: 'Failed to fetch messages', details: error });
+  }
+});
+
+messageRouter.get('/conversations/:id', async (req, res) => {
+  const conversationId = Number(req.params.id);
+  try {
+    const { data } =
+      await messageService.getMessagesByConversationId(conversationId);
+    res.status(200).json({ success: true, data });
+  } catch (error) {
+    console.error('Error fetching messages by conversation ID:', error);
+    res.status(500).json({ error: 'Failed to fetch messages', details: error });
+  }
+});
+
+messageRouter.get('/conversations', async (req, res) => {
+  try {
+    const { data } = await messageService.getConversations();
+    res.status(200).json({ success: true, data });
+  } catch (error) {
+    console.error('Error fetching conversations:', error);
+    res
+      .status(500)
+      .json({ error: 'Failed to fetch conversations', details: error });
+  }
+});
+
+messageRouter.get('/:wamid', async (req, res) => {
+  const wamid = req.params.wamid;
+  try {
+    const { data } = await messageService.getMessageByWamid(wamid);
+    res.status(200).json({ success: true, data });
+  } catch (error) {
+    console.error('Error fetching message by WAMID:', error);
+    res.status(500).json({ error: 'Failed to fetch message', details: error });
   }
 });

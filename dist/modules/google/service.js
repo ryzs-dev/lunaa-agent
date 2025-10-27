@@ -68,5 +68,21 @@ class GoogleSheetService {
             };
         }
     }
+    async getSheetData(sheetName) {
+        console.log(`📋 Fetching data from sheet: ${sheetName}`);
+        try {
+            const response = await _1.googleClient.spreadsheets.values.get({
+                spreadsheetId: this.spreadSheetId,
+                range: `${sheetName}!A:AE`,
+            });
+            const rows = response.data.values || [];
+            console.log(`✅ Fetched ${rows.length} rows from ${sheetName}`);
+            return rows;
+        }
+        catch (error) {
+            console.error(`❌ Error fetching sheet data:`, error);
+            throw error;
+        }
+    }
 }
 exports.GoogleSheetService = GoogleSheetService;

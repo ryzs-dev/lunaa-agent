@@ -12,6 +12,9 @@ export async function enqueueTrackingJobs() {
   const rows = await googleSheetService.getSheetData('Test');
   const header = rows[0];
 
+  const nameCol = header.findIndex((c: string) =>
+    c.toLowerCase().includes('name')
+  );
   const phoneCol = header.findIndex((c: string) =>
     c.toLowerCase().includes('phone')
   );
@@ -29,17 +32,19 @@ export async function enqueueTrackingJobs() {
 
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i];
+    const name = row[nameCol]?.trim();
     const phone = row[phoneCol]?.trim();
     const tracking = row[trackingCol]?.trim();
     const courier = row[courierCol]?.trim();
 
     console.log(
-      `Row ${i}: phone=${phone}, tracking=${tracking}, courier=${courier}`
+      `Row ${i}: name=${name}, phone=${phone}, tracking=${tracking}, courier=${courier}`
     );
 
     if (!phone || !tracking) continue;
 
     jobs.push({
+      name,
       phone,
       tracking,
       courier,

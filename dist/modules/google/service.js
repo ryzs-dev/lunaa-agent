@@ -34,16 +34,12 @@ class GoogleSheetService {
     async createOrder({ customer, order, address, remark }) {
         var _a;
         try {
-            const sheet = this.sheetNames[0];
-            const [enrichedItems, headerResponse] = await Promise.all([
+            const sheets = this.sheetNames;
+            const [enrichedItems] = await Promise.all([
                 Promise.all((order.order_items || []).map(async (item) => {
                     const product = await this.productService.getProductById(item.product_id);
                     return Object.assign(Object.assign({}, item), { product_name: (product === null || product === void 0 ? void 0 : product.name) || 'Unknown Product' });
                 })),
-                _1.googleClient.spreadsheets.values.get({
-                    spreadsheetId: this.spreadSheetId,
-                    range: `${sheet}!A:AE`,
-                }),
             ]);
             order.order_items = enrichedItems;
             const productQuantityMap = {};
@@ -52,15 +48,28 @@ class GoogleSheetService {
                     productQuantityMap[item.product_name] = item.quantity;
                 }
             }
-            const headers = ((_a = headerResponse.data.values) === null || _a === void 0 ? void 0 : _a[0]) || [];
-            const payload = { customer, order, address, productQuantityMap, remark };
-            const rowData = this.buildRowData(payload, headers);
-            await _1.googleClient.spreadsheets.values.append({
-                spreadsheetId: this.spreadSheetId,
-                range: `${sheet}!A:AE`,
-                valueInputOption: 'RAW',
-                requestBody: { values: [rowData] },
-            });
+            // Iterate over all sheets
+            for (const sheet of sheets) {
+                const headerResponse = await _1.googleClient.spreadsheets.values.get({
+                    spreadsheetId: this.spreadSheetId,
+                    range: `${sheet}!A:AE`,
+                });
+                const headers = ((_a = headerResponse.data.values) === null || _a === void 0 ? void 0 : _a[0]) || [];
+                const payload = {
+                    customer,
+                    order,
+                    address,
+                    productQuantityMap,
+                    remark,
+                };
+                const rowData = this.buildRowData(payload, headers);
+                await _1.googleClient.spreadsheets.values.append({
+                    spreadsheetId: this.spreadSheetId,
+                    range: `${sheet}!A:AE`,
+                    valueInputOption: 'RAW',
+                    requestBody: { values: [rowData] },
+                });
+            }
             return { success: true };
         }
         catch (error) {

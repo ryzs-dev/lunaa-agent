@@ -20,7 +20,6 @@ const worker = new Worker(
         ...job.data.address,
       });
 
-      // Run DB + Google Sheets concurrently
       const [dbResult, sheetResult] = await Promise.all([
         orderService.createOrder({
           customer_id: customer.id,

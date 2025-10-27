@@ -38,9 +38,9 @@ export class GoogleSheetService {
 
   async createOrder({ customer, order, address, remark }: ExtractedData) {
     try {
-      const sheet = this.sheetNames[0];
+      const sheets = this.sheetNames;
 
-      const [enrichedItems, headerResponse] = await Promise.all([
+      const [enrichedItems] = await Promise.all([
         Promise.all(
           (order.order_items || []).map(async (item: any) => {
             const product = await this.productService.getProductById(
@@ -52,10 +52,6 @@ export class GoogleSheetService {
             };
           })
         ),
-        googleClient.spreadsheets.values.get({
-          spreadsheetId: this.spreadSheetId,
-          range: `${sheet}!A:AE`,
-        }),
       ]);
 
       order.order_items = enrichedItems;
@@ -67,17 +63,30 @@ export class GoogleSheetService {
         }
       }
 
-      const headers = headerResponse.data.values?.[0] || [];
-      const payload = { customer, order, address, productQuantityMap, remark };
+      // Iterate over all sheets
+      for (const sheet of sheets) {
+        const headerResponse = await googleClient.spreadsheets.values.get({
+          spreadsheetId: this.spreadSheetId,
+          range: `${sheet}!A:AE`,
+        });
 
-      const rowData = this.buildRowData(payload, headers);
+        const headers = headerResponse.data.values?.[0] || [];
+        const payload = {
+          customer,
+          order,
+          address,
+          productQuantityMap,
+          remark,
+        };
+        const rowData = this.buildRowData(payload, headers);
 
-      await googleClient.spreadsheets.values.append({
-        spreadsheetId: this.spreadSheetId,
-        range: `${sheet}!A:AE`,
-        valueInputOption: 'RAW',
-        requestBody: { values: [rowData] },
-      });
+        await googleClient.spreadsheets.values.append({
+          spreadsheetId: this.spreadSheetId,
+          range: `${sheet}!A:AE`,
+          valueInputOption: 'RAW',
+          requestBody: { values: [rowData] },
+        });
+      }
 
       return { success: true };
     } catch (error) {

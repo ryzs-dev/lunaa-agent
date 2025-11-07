@@ -16,7 +16,7 @@ class OrderService {
     sortBy?: string;
     sortOrder?: 'asc' | 'desc';
   }) {
-    const limit = !options.limit || options.limit > 100 ? 20 : options.limit;
+    const limit = !options.limit ? 20 : options.limit;
     const offset = options.offset ?? 0;
     const sortBy = options.sortBy ?? 'created_at';
     const sortOrder = options.sortOrder ?? 'desc';
@@ -52,7 +52,6 @@ class OrderService {
   }
 
   async updateOrder(orderId: UUID, updates: Partial<OrderInput>) {
-
     return await this.orderDatabase.updateOrder(orderId, updates);
   }
 

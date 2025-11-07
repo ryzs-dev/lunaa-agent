@@ -5,14 +5,6 @@ import { PubSubEvents } from './events';
 const orderTrackingService = new OrderTrackingService();
 
 export const initParcelDailySubscribers = () => {
-  sub.subscribe(PubSubEvents.ORDER_UPDATED, (err, count) => {
-    if (err) {
-      console.error('❌ Failed to subscribe to ORDER_UPDATED:', err);
-      return;
-    }
-    console.log(`📡 Subscribed to ${count} channel(s): ORDER_UPDATED`);
-  });
-
   sub.subscribe(PubSubEvents.TRACKING_UPDATED, (err, count) => {
     if (err) {
       console.error('❌ Failed to subscribe to TRACKING_UPDATED:', err);
@@ -21,25 +13,42 @@ export const initParcelDailySubscribers = () => {
     console.log(`📡 Subscribed to ${count} channel(s): TRACKING_UPDATED`);
   });
 
-  sub.on('message', async (channel, message) => {
-    const payload = JSON.parse(message);
-    if (channel === PubSubEvents.ORDER_UPDATED) {
-      const entryData = {
-        tracking_number: payload.tracking_number,
-        courier: payload.courier,
-        status: payload.status || ('pending' as const),
-      };
+  sub.subscribe(PubSubEvents.ORDER_CREATED, (err, count) => {
+    if (err) {
+      console.error('❌ Failed to subscribe to ORDER_CREATED:', err);
+      return;
+    }
+    console.log(`📡 Subscribed to ${count} channel(s): ORDER_CREATED`);
+  });
 
-      // 🔄 Update CRM DB
+  sub.on('message',async (channel, message) => {
+    console.log(`📨 Received message from channel ${channel}: ${message}`);
+    if (channel === PubSubEvents.ORDER_CREATED) {
       try {
-        const result = await orderTrackingService.addTrackingEntry(
-          entryData,
+        const payload = JSON.parse(message);
+        console.log('Payload From Parcel Daily', payload);
+        // Save to DB order_tracking table
+        await orderTrackingService.addTrackingEntry(
+          {
+            status: payload.status,
+            courier: payload.courier,
+            tracking_number: payload.tracking_number,
+          },
           payload.crm_order_id
         );
       } catch (error) {
-        console.error('❌ Error updating CRM tracking entry:', error);
+        console.error(
+          '❌ Error processing ORDER_CREATED message:',
+          error
+        );
       }
     }
+  });
+
+  sub.on('message', async (channel, message) => {
+    const payload = JSON.parse(message);
+
+    console.log('Payload From Parcel Daily', payload);
 
     if (channel === PubSubEvents.TRACKING_UPDATED) {
       try {

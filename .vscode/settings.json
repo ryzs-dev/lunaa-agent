@@ -1,4 +1,21 @@
 {
-  "files.autoSave": "afterDelay",
-  "editor.fontSize": 12
+  "editor.fontSize": 16,
+  "editor.fontFamily": "JetBrains Mono, Menlo, Monaco, monospace",
+  "editor.fontLigatures": true,
+  "editor.tabSize": 4,
+  "editor.formatOnSave": true,
+  "files.autoSave": "onFocusChange",
+  "terminal.integrated.fontSize": 16,
+  "terminal.integrated.defaultProfile.osx": "zsh",
+  "git.autofetch": true,
+  "git.confirmSync": false,
+  "explorer.confirmDelete": false,
+  "explorer.confirmDragAndDrop": false,
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "[javascript]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+  "[typescript]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+  "[json]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+  "editor.codeActionsOnSave": {
+    "source.fixAll.eslint": "always"
+  }
 }

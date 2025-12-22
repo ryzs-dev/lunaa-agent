@@ -13,16 +13,19 @@ var __rest = (this && this.__rest) || function (s, e) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const supabase_1 = require("../supabase");
 class OrderDatabase {
-    async getAllOrders({ limit, offset, search, sortBy, sortOrder, }) {
+    async getAllOrders({ limit, offset, search, sortBy, sortOrder, createdAt, }) {
         let query = supabase_1.supabase
             .from('orders')
-            .select('*, order_items(*), customers(*), addresses(*), order_tracking(*)', {
-            count: 'exact',
-        })
-            .order(sortBy, { ascending: sortOrder === 'asc' })
-            .range(offset, offset + limit - 1);
-        if (search) {
-            query = query.ilike('name', `%${search}%`);
+            .select('*, order_items(*), customers(*), addresses(*), order_tracking(*)', { count: 'exact' })
+            .order(sortBy, { ascending: sortOrder === 'asc' });
+        if (search)
+            query = query.ilike('order_number', `%${search}%`);
+        if (createdAt === null || createdAt === void 0 ? void 0 : createdAt.gte)
+            query = query.gte('created_at', createdAt.gte.toISOString());
+        if (createdAt === null || createdAt === void 0 ? void 0 : createdAt.lt)
+            query = query.lt('created_at', createdAt.lt.toISOString());
+        if (limit !== undefined) {
+            query = query.range(offset, offset + limit - 1);
         }
         const { data: orders, error, count } = await query;
         if (error)

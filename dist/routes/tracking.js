@@ -16,8 +16,8 @@ exports.orderTrackingRouter.patch('/:entryId', async (req, res) => {
         res.status(200).json({ success: true, entry: updatedEntry });
     }
     catch (error) {
-        console.error("Error updating tracking entry:", error);
-        res.status(500).json({ error: "Internal server error" });
+        console.error('Error updating tracking entry:', error);
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
 exports.orderTrackingRouter.delete('/:entryId', async (req, res) => {
@@ -25,10 +25,12 @@ exports.orderTrackingRouter.delete('/:entryId', async (req, res) => {
     const id = entryId;
     try {
         await orderTrackingService.deleteTrackingEntry(id);
-        res.status(200).json({ success: true, message: "Tracking entry deleted successfully" });
+        res
+            .status(200)
+            .json({ success: true, message: 'Tracking entry deleted successfully' });
     }
     catch (error) {
-        console.error("Error deleting tracking entry:", error);
-        res.status(500).json({ error: "Internal server error" });
+        console.error('Error deleting tracking entry:', error);
+        res.status(500).json({ error: 'Internal server error' });
     }
 });

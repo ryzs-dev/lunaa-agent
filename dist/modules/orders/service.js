@@ -9,23 +9,26 @@ class OrderService {
         this.orderDatabase = new database_1.default();
     }
     async getAllOrders(options) {
-        var _a, _b, _c;
-        const limit = !options.limit || options.limit > 100 ? 20 : options.limit;
-        const offset = (_a = options.offset) !== null && _a !== void 0 ? _a : 0;
-        const sortBy = (_b = options.sortBy) !== null && _b !== void 0 ? _b : 'created_at';
-        const sortOrder = (_c = options.sortOrder) !== null && _c !== void 0 ? _c : 'desc';
+        var _a, _b, _c, _d, _e;
+        const sortBy = (_a = options.sortBy) !== null && _a !== void 0 ? _a : 'created_at';
+        const sortOrder = (_b = options.sortOrder) !== null && _b !== void 0 ? _b : 'desc';
+        let createdAtFilter;
+        if (options.dateFrom && options.dateTo) {
+            createdAtFilter = { gte: options.dateFrom, lt: options.dateTo };
+        }
         const { orders, count } = await this.orderDatabase.getAllOrders({
-            limit,
-            offset,
+            limit: options.limit,
+            offset: (_c = options.offset) !== null && _c !== void 0 ? _c : 0,
             search: options.search,
             sortBy,
             sortOrder,
+            createdAt: createdAtFilter,
         });
         return {
             orders,
             pagination: {
-                limit,
-                offset,
+                limit: (_d = options.limit) !== null && _d !== void 0 ? _d : count,
+                offset: (_e = options.offset) !== null && _e !== void 0 ? _e : 0,
                 total: count !== null && count !== void 0 ? count : 0,
             },
         };

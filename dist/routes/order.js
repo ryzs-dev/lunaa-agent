@@ -12,20 +12,18 @@ const orderService = new service_1.default();
 const orderTrackingService = new service_2.default();
 // GET /api/orders - Get all orders with optional pagination, search, and sorting
 exports.orderRouter.get('/', async (req, res) => {
-    const { limit, offset, search, sortBy, sortOrder } = req.query;
+    const { limit, offset, search, sortBy, sortOrder, dateFrom, dateTo } = req.query;
     try {
         const { orders, pagination } = await orderService.getAllOrders({
             limit: limit ? Number(limit) : undefined,
-            offset: offset ? Number(offset) : undefined,
+            offset: offset ? Number(offset) : 0,
             search: search,
             sortBy: sortBy,
             sortOrder: sortOrder,
+            dateFrom: dateFrom ? new Date(dateFrom) : undefined,
+            dateTo: dateTo ? new Date(dateTo) : undefined,
         });
-        res.status(200).json({
-            success: true,
-            orders: orders,
-            pagination,
-        });
+        res.status(200).json({ success: true, orders, pagination });
     }
     catch (error) {
         console.error('Error fetching orders:', error);

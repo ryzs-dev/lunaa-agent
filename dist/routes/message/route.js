@@ -70,6 +70,17 @@ exports.messageRouter.post('/track/manual', async (req, res) => {
         res.status(500).json({ error: 'Failed to track message', details: error });
     }
 });
+exports.messageRouter.post('/track/admin', async (req, res) => {
+    const body = req.body;
+    try {
+        await (0, queue_1.enqueueTrackingFromAdmin)(body);
+        res.status(200).json({ success: true, message: 'Tracking jobs enqueued' });
+    }
+    catch (error) {
+        console.error('Error tracking message from admin:', error);
+        res.status(500).json({ error: 'Failed to track message', details: error });
+    }
+});
 exports.messageRouter.get('/', async (req, res) => {
     try {
         const { data } = await messageService.getMessages();

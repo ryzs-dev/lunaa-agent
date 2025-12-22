@@ -4,6 +4,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.enqueueTrackingJobs = enqueueTrackingJobs;
+exports.enqueueTrackingFromAdmin = enqueueTrackingFromAdmin;
 const bullmq_1 = require("bullmq");
 const __1 = __importDefault(require(".."));
 const service_1 = require("../../google/service");
@@ -28,7 +29,6 @@ async function enqueueTrackingJobs() {
         const phone = (_b = row[phoneCol]) === null || _b === void 0 ? void 0 : _b.trim();
         const tracking = (_c = row[trackingCol]) === null || _c === void 0 ? void 0 : _c.trim();
         const courier = (_d = row[courierCol]) === null || _d === void 0 ? void 0 : _d.trim();
-        console.log(`Row ${i}: name=${name}, phone=${phone}, tracking=${tracking}, courier=${courier}`);
         if (!phone || !tracking)
             continue;
         jobs.push({
@@ -41,4 +41,33 @@ async function enqueueTrackingJobs() {
     }
     await trackingQueue.addBulk(jobs.map((data) => ({ name: 'sendTracking', data })));
     console.log(`📦 Enqueued ${jobs.length} tracking jobs`);
+}
+async function enqueueTrackingFromAdmin(body) {
+    // Normalize to array
+    const items = Array.isArray(body) ? body : [body];
+    // Build jobs
+    const jobs = items
+        .filter((item) => item.phone && item.tracking)
+        .map((item) => ({
+        name: 'sendTracking',
+        data: {
+            orderTrackingId: item.orderTrackingId,
+            name: item.name,
+            phone: item.phone,
+            tracking: item.tracking,
+            courier: item.courier,
+            createdAt: new Date().toISOString(),
+        },
+    }));
+    if (jobs.length === 0) {
+        throw new Error('No valid tracking jobs to enqueue');
+    }
+    // Enqueue
+    if (jobs.length === 1) {
+        await trackingQueue.add(jobs[0].name, jobs[0].data);
+    }
+    else {
+        await trackingQueue.addBulk(jobs);
+    }
+    console.log(`📦 Enqueued ${jobs.length} tracking job(s)`);
 }

@@ -13,27 +13,34 @@ class OrderService {
     limit?: number;
     offset?: number;
     search?: string;
+    status?: string;
     sortBy?: string;
     sortOrder?: 'asc' | 'desc';
+    dateFrom?: Date;
+    dateTo?: Date;
   }) {
-    const limit = !options.limit ? 20 : options.limit;
-    const offset = options.offset ?? 0;
     const sortBy = options.sortBy ?? 'created_at';
     const sortOrder = options.sortOrder ?? 'desc';
 
+    let createdAtFilter: { gte?: Date; lt?: Date } | undefined;
+    if (options.dateFrom && options.dateTo) {
+      createdAtFilter = { gte: options.dateFrom, lt: options.dateTo };
+    }
+
     const { orders, count } = await this.orderDatabase.getAllOrders({
-      limit,
-      offset,
+      limit: options.limit,
+      offset: options.offset ?? 0,
       search: options.search,
       sortBy,
       sortOrder,
+      createdAt: createdAtFilter,
     });
 
     return {
       orders,
       pagination: {
-        limit,
-        offset,
+        limit: options.limit ?? count,
+        offset: options.offset ?? 0,
         total: count ?? 0,
       },
     };

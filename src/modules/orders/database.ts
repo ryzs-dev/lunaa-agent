@@ -3,11 +3,12 @@ import { supabase } from '../supabase';
 import { OrderInput, OrderItemsInput } from './types';
 
 interface QueryParams {
-  limit: number;
+  limit: number | undefined;
   offset: number;
   search?: string;
   sortBy: string;
   sortOrder: 'asc' | 'desc';
+  createdAt?: { gte?: Date; lt?: Date };
 }
 
 class OrderDatabase {
@@ -17,24 +18,27 @@ class OrderDatabase {
     search,
     sortBy,
     sortOrder,
+    createdAt,
   }: QueryParams) {
     let query = supabase
       .from('orders')
       .select(
         '*, order_items(*), customers(*), addresses(*), order_tracking(*)',
-        {
-          count: 'exact',
-        }
+        { count: 'exact' }
       )
-      .order(sortBy, { ascending: sortOrder === 'asc' })
-      .range(offset, offset + limit - 1);
+      .order(sortBy, { ascending: sortOrder === 'asc' });
 
-    if (search) {
-      query = query.ilike('name', `%${search}%`);
+    if (search) query = query.ilike('order_number', `%${search}%`);
+    if (createdAt?.gte)
+      query = query.gte('created_at', createdAt.gte.toISOString());
+    if (createdAt?.lt)
+      query = query.lt('created_at', createdAt.lt.toISOString());
+
+    if (limit !== undefined) {
+      query = query.range(offset, offset + limit - 1);
     }
 
     const { data: orders, error, count } = await query;
-
     if (error) throw error;
     return { orders, count };
   }

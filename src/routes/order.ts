@@ -10,21 +10,21 @@ const orderTrackingService = new OrderTrackingService();
 
 // GET /api/orders - Get all orders with optional pagination, search, and sorting
 orderRouter.get('/', async (req, res) => {
-  const { limit, offset, search, sortBy, sortOrder } = req.query;
+  const { limit, offset, search, sortBy, sortOrder, dateFrom, dateTo } =
+    req.query;
 
   try {
     const { orders, pagination } = await orderService.getAllOrders({
       limit: limit ? Number(limit) : undefined,
-      offset: offset ? Number(offset) : undefined,
+      offset: offset ? Number(offset) : 0,
       search: search as string,
       sortBy: sortBy as string,
       sortOrder: sortOrder as 'asc' | 'desc',
+      dateFrom: dateFrom ? new Date(dateFrom as string) : undefined,
+      dateTo: dateTo ? new Date(dateTo as string) : undefined,
     });
-    res.status(200).json({
-      success: true,
-      orders: orders,
-      pagination,
-    });
+
+    res.status(200).json({ success: true, orders, pagination });
   } catch (error) {
     console.error('Error fetching orders:', error);
     res.status(500).json({ error: 'Internal server error' });

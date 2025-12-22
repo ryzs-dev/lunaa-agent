@@ -21,7 +21,7 @@ export const initParcelDailySubscribers = () => {
     console.log(`📡 Subscribed to ${count} channel(s): ORDER_CREATED`);
   });
 
-  sub.on('message',async (channel, message) => {
+  sub.on('message', async (channel, message) => {
     console.log(`📨 Received message from channel ${channel}: ${message}`);
     if (channel === PubSubEvents.ORDER_CREATED) {
       try {
@@ -33,14 +33,13 @@ export const initParcelDailySubscribers = () => {
             status: payload.status,
             courier: payload.courier,
             tracking_number: payload.tracking_number,
+            message_status: 'pending',
+            last_message_sent_at: null,
           },
           payload.crm_order_id
         );
       } catch (error) {
-        console.error(
-          '❌ Error processing ORDER_CREATED message:',
-          error
-        );
+        console.error('❌ Error processing ORDER_CREATED message:', error);
       }
     }
   });

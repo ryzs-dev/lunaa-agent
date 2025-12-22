@@ -37,10 +37,6 @@ export async function enqueueTrackingJobs() {
     const tracking = row[trackingCol]?.trim();
     const courier = row[courierCol]?.trim();
 
-    console.log(
-      `Row ${i}: name=${name}, phone=${phone}, tracking=${tracking}, courier=${courier}`
-    );
-
     if (!phone || !tracking) continue;
 
     jobs.push({
@@ -57,4 +53,47 @@ export async function enqueueTrackingJobs() {
   );
 
   console.log(`📦 Enqueued ${jobs.length} tracking jobs`);
+}
+
+type TrackingInput = {
+  name?: string;
+  phone: string;
+  tracking: string;
+  courier?: string;
+  orderTrackingId: string;
+};
+
+export async function enqueueTrackingFromAdmin(
+  body: TrackingInput | TrackingInput[]
+) {
+  // Normalize to array
+  const items = Array.isArray(body) ? body : [body];
+
+  // Build jobs
+  const jobs = items
+    .filter((item) => item.phone && item.tracking)
+    .map((item) => ({
+      name: 'sendTracking',
+      data: {
+        orderTrackingId: item.orderTrackingId,
+        name: item.name,
+        phone: item.phone,
+        tracking: item.tracking,
+        courier: item.courier,
+        createdAt: new Date().toISOString(),
+      },
+    }));
+
+  if (jobs.length === 0) {
+    throw new Error('No valid tracking jobs to enqueue');
+  }
+
+  // Enqueue
+  if (jobs.length === 1) {
+    await trackingQueue.add(jobs[0].name, jobs[0].data);
+  } else {
+    await trackingQueue.addBulk(jobs);
+  }
+
+  console.log(`📦 Enqueued ${jobs.length} tracking job(s)`);
 }

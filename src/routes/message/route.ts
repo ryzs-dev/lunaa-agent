@@ -1,6 +1,9 @@
 import express from 'express';
 import { WhatsappSendService } from '../../modules/whatsapp/services/SendService';
-import { enqueueTrackingJobs } from '../../modules/queue/tracking_queue/queue';
+import {
+  enqueueTrackingFromAdmin,
+  enqueueTrackingJobs,
+} from '../../modules/queue/tracking_queue/queue';
 import { MessageService } from '../../modules/message_service/service';
 
 export const messageRouter = express.Router();
@@ -68,6 +71,18 @@ messageRouter.post('/track/manual', async (req, res) => {
     res.status(200).json({ success: true, message: 'Tracking jobs enqueued' });
   } catch (error) {
     console.error('Error tracking message:', error);
+    res.status(500).json({ error: 'Failed to track message', details: error });
+  }
+});
+
+messageRouter.post('/track/admin', async (req, res) => {
+  const body = req.body;
+  try {
+    await enqueueTrackingFromAdmin(body);
+
+    res.status(200).json({ success: true, message: 'Tracking jobs enqueued' });
+  } catch (error) {
+    console.error('Error tracking message from admin:', error);
     res.status(500).json({ error: 'Failed to track message', details: error });
   }
 });

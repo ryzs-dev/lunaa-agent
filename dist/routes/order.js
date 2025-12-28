@@ -73,15 +73,26 @@ exports.orderRouter.post('/', async (req, res) => {
 });
 // PATCH /api/orders/:id - Update an existing order
 exports.orderRouter.patch('/:id', async (req, res) => {
+    var _a;
     const { id } = req.params;
+    console.log('Update request for order ID:', id);
+    if (!id || typeof id !== 'string') {
+        return res.status(400).json({ error: 'Invalid order ID' });
+    }
     const orderId = id;
     const updates = req.body;
+    if (!updates || typeof updates !== 'object') {
+        return res.status(400).json({ error: 'Invalid update payload' });
+    }
     try {
         const updatedOrder = await orderService.updateOrder(orderId, updates);
         res.status(200).json({ success: true, order: updatedOrder });
     }
     catch (error) {
         console.error('Error updating order:', error);
+        if (error instanceof Error && ((_a = error.message) === null || _a === void 0 ? void 0 : _a.includes('duplicate key'))) {
+            return res.status(400).json({ error: 'Duplicate order item detected' });
+        }
         res.status(500).json({ error: 'Internal server error' });
     }
 });
@@ -152,5 +163,24 @@ exports.orderRouter.post('/:id/tracking', async (req, res) => {
     catch (error) {
         console.error('Error creating tracking entry:', error);
         res.status(500).json({ error: 'Internal server error' });
+    }
+});
+// Order Line Items
+exports.orderRouter.patch('/:order_id/line-items', async (req, res) => {
+    try {
+        const { order_id } = req.params;
+        const payload = req.body;
+        if (!payload.line_items || !Array.isArray(payload.line_items)) {
+            return res.status(400).json({ error: 'line_items is required' });
+        }
+        if (payload.total_amount === undefined || payload.total_amount < 0) {
+            return res.status(400).json({ error: 'total_amount is required' });
+        }
+        const updatedOrder = await orderService.updateLineItems(order_id, payload);
+        return res.status(200).json({ data: updatedOrder });
+    }
+    catch (err) {
+        console.error('Failed to update line items:', err);
+        return res.status(500).json({ error: err.message || 'Internal server error' });
     }
 });

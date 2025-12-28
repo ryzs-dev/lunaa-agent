@@ -1,0 +1,23 @@
+sequenceDiagram
+    autonumber
+    participant User
+    participant UI as Frontend (Web/App)
+    participant API as Order API
+    participant Validator
+    participant Pricing as Pricing Service
+    participant DB as Database
+    User ->> UI: Edit line item (qty / price / remove)
+    UI ->> API: PATCH /orders/{orderId}/line-items
+    note right of UI: Payload includes updated line items
+    API ->> Validator: Validate request
+    Validator -->> API: Validation OK
+    API ->> DB: Fetch existing order
+    DB -->> API: Order + line items
+    API ->> API: Apply line item updates
+    note right of API: Add / update / remove items
+    API ->> Pricing: Recalculate totals
+    Pricing -->> API: Updated totals (subtotal, tax, grand total)
+    API ->> DB: Persist updated order
+    DB -->> API: Save successful
+    API -->> UI: 200 OK + updated order
+    UI -->> User: Show updated line items & totals

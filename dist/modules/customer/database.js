@@ -37,6 +37,7 @@ class CustomerDatabase {
       orders:orders(
         id,
         status,
+        order_number,
         order_date,
         total_amount,
         created_at

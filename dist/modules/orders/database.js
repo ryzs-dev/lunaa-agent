@@ -15,11 +15,12 @@ const supabase_1 = require("../supabase");
 class OrderDatabase {
     async getAllOrders({ limit, offset, search, sortBy, sortOrder, createdAt, }) {
         let query = supabase_1.supabase
-            .from('orders')
+            .from('orders_with_customers')
             .select('*, order_items(*), customers(*), addresses(*), order_tracking(*)', { count: 'exact' })
             .order(sortBy, { ascending: sortOrder === 'asc' });
-        if (search)
-            query = query.ilike('order_number', `%${search}%`);
+        if (search) {
+            query = query.or(`order_number.ilike.%${search}%,customer_name.ilike.%${search}%`);
+        }
         if (createdAt === null || createdAt === void 0 ? void 0 : createdAt.gte)
             query = query.gte('created_at', createdAt.gte.toISOString());
         if (createdAt === null || createdAt === void 0 ? void 0 : createdAt.lt)

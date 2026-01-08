@@ -25,15 +25,19 @@ exports.parcelDailyRouter.get('/account-info', async (req, res) => {
 });
 // POST /order/create - Create a new shipment
 exports.parcelDailyRouter.post('/order/create', async (req, res) => {
+    var _a;
     const { shipmentData, orderId } = req.body;
-    try {
-        const result = await parcelDailyService.createShipment(shipmentData, orderId);
-        return res.status(200).json({ success: true, data: result });
+    const result = await parcelDailyService.createShipment(shipmentData, orderId);
+    // 👇 IMPORTANT: do not wrap failures as success
+    if ((result === null || result === void 0 ? void 0 : result.success) === false) {
+        return res
+            .status(result.status || 400)
+            .json(result);
     }
-    catch (error) {
-        console.error('Error creating shipment:', error);
-        return res.status(500).json({ error: 'Failed to create shipment' });
-    }
+    return res.status(200).json({
+        success: true,
+        data: (_a = result.data) !== null && _a !== void 0 ? _a : result,
+    });
 });
 // POST /order/create/bulk - Create multiple shipments in bulk
 exports.parcelDailyRouter.post('/order/create/bulk', async (req, res) => {

@@ -10,13 +10,6 @@ class ParcelDailyService {
     constructor(parcelDailyServiceURL) {
         this.parcelDailyServiceURL = parcelDailyServiceURL;
     }
-    normalizePhoneNumber(phone) {
-        let normalized = phone.trim();
-        if (normalized.startsWith('60') || normalized.startsWith('65')) {
-            normalized = normalized.slice(2);
-        }
-        return normalized;
-    }
     async getAccountInfo() {
         try {
             const response = await axios_1.default.get(`${this.parcelDailyServiceURL}/account-info`);
@@ -27,15 +20,32 @@ class ParcelDailyService {
         }
     }
     async createShipment(shipmentData, crmOrderId) {
+        var _a, _b, _c;
         const postcode = (0, malaysia_postcodes_1.findPostcode)(shipmentData.clientAddress.postcode, true);
         const normalizedPhone = this.normalizePhoneNumber(shipmentData.clientAddress.phone);
         const payload = Object.assign(Object.assign({}, shipmentData), { clientAddress: Object.assign(Object.assign({}, shipmentData.clientAddress), { phone: normalizedPhone, state: postcode.found && postcode.state, city: postcode.found && postcode.city }) });
+        console.log("Creating Shipment");
         try {
             const response = await axios_1.default.post(`${this.parcelDailyServiceURL}/create-order`, { payload, crmOrderId });
+            if (((_a = response.data) === null || _a === void 0 ? void 0 : _a.success) === false) {
+                return response.data;
+            }
             return response.data;
         }
         catch (error) {
-            throw new Error('Failed to create shipment');
+            if (axios_1.default.isAxiosError(error)) {
+                return {
+                    success: false,
+                    status: ((_b = error.response) === null || _b === void 0 ? void 0 : _b.status) || 500,
+                    message: 'Parcel Daily request failed',
+                    details: (_c = error.response) === null || _c === void 0 ? void 0 : _c.data
+                };
+            }
+            return {
+                success: false,
+                status: 500,
+                message: 'Unexpected error occurred.',
+            };
         }
     }
     async createBulkShipments(shipments) {
@@ -63,6 +73,13 @@ class ParcelDailyService {
         catch (error) {
             throw new Error('Failed to fetch order status');
         }
+    }
+    normalizePhoneNumber(phone) {
+        let normalized = phone.trim();
+        if (normalized.startsWith('60') || normalized.startsWith('65')) {
+            normalized = normalized.slice(2);
+        }
+        return normalized;
     }
 }
 exports.ParcelDailyService = ParcelDailyService;

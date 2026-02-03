@@ -6,23 +6,23 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const database_1 = __importDefault(require("./database"));
 class StatsService {
     constructor() {
-        this.StatsDatabase = new database_1.default();
+        this.statsDatabase = new database_1.default();
     }
-    async getDashboardStats() {
-        var _a, _b;
-        const now = new Date();
-        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-        const { total_customers, orders } = await this.StatsDatabase.getDashboardStats();
-        const total_orders = (orders === null || orders === void 0 ? void 0 : orders.length) || 0;
-        const total_revenue = (orders === null || orders === void 0 ? void 0 : orders.reduce((sum, order) => sum + (order.total_amount || 0), 0)) || 0;
-        const average_order_value = total_orders > 0 ? total_revenue / total_orders : 0;
-        const mtd_revenue = (_b = (_a = orders === null || orders === void 0 ? void 0 : orders.filter((o) => new Date(o.created_at) >= new Date(startOfMonth))) === null || _a === void 0 ? void 0 : _a.reduce((sum, o) => sum + o.total_amount, 0)) !== null && _b !== void 0 ? _b : 0;
+    async getDashboardStats(month) {
+        var _a, _b, _c, _d, _e, _f;
+        if (!month) {
+            throw new Error('Month is required (YYYY-MM)');
+        }
+        const result = await this.statsDatabase.getDashboardStats(month);
         return {
-            total_customers,
-            total_orders,
-            total_revenue,
-            average_order_value,
-            mtd_revenue,
+            stats: {
+                total_customers: (_a = result.stats.total_customers) !== null && _a !== void 0 ? _a : 0,
+                total_orders: (_b = result.stats.total_orders) !== null && _b !== void 0 ? _b : 0,
+                total_revenue: (_c = result.stats.total_revenue) !== null && _c !== void 0 ? _c : 0,
+                average_order_value: (_d = result.stats.average_order_value) !== null && _d !== void 0 ? _d : 0,
+                mtd_revenue: (_e = result.stats.mtd_revenue) !== null && _e !== void 0 ? _e : 0,
+            },
+            charts: (_f = result.charts) !== null && _f !== void 0 ? _f : {},
         };
     }
 }

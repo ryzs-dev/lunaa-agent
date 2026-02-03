@@ -12,18 +12,22 @@ const orderService = new service_1.default();
 const orderTrackingService = new service_2.default();
 // GET /api/orders - Get all orders with optional pagination, search, and sorting
 exports.orderRouter.get('/', async (req, res) => {
-    const { limit, offset, search, sortBy, sortOrder, dateFrom, dateTo } = req.query;
+    const { limit, offset, search, sortBy, sortOrder: sortOrderQuery, dateFrom, dateTo, } = req.query;
     try {
         const { orders, pagination } = await orderService.getAllOrders({
             limit: limit ? Number(limit) : undefined,
             offset: offset ? Number(offset) : 0,
             search: search,
-            sortBy: sortBy,
-            sortOrder: sortOrder,
+            sortBy: sortBy || 'created_at',
+            sortOrder: (sortOrderQuery === 'asc' ? 'asc' : 'desc'),
             dateFrom: dateFrom ? new Date(dateFrom) : undefined,
             dateTo: dateTo ? new Date(dateTo) : undefined,
         });
-        res.status(200).json({ success: true, orders, pagination });
+        res.status(200).json({
+            success: true,
+            orders,
+            pagination,
+        });
     }
     catch (error) {
         console.error('Error fetching orders:', error);
@@ -181,6 +185,8 @@ exports.orderRouter.patch('/:order_id/line-items', async (req, res) => {
     }
     catch (err) {
         console.error('Failed to update line items:', err);
-        return res.status(500).json({ error: err.message || 'Internal server error' });
+        return res
+            .status(500)
+            .json({ error: err.message || 'Internal server error' });
     }
 });

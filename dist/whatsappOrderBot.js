@@ -44,6 +44,10 @@ const AUTHORIZED_AGENTS = [
         phoneNumber: '601158699901',
         name: 'Sales - 9901',
     },
+    {
+        phoneNumber: '60174589098',
+        name: 'Sales - 9098'
+    }
 ];
 const PHONE_TO_AGENT = new Map();
 const AUTHORIZED_PHONE_NUMBERS = [];

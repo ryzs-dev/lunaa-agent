@@ -13,7 +13,7 @@ var __rest = (this && this.__rest) || function (s, e) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const supabase_1 = require("../supabase");
 class OrderDatabase {
-    async getAllOrders({ limit, offset, search, sortBy, sortOrder, createdAt, }) {
+    async getAllOrders({ limit, offset, search, sortBy, sortOrder, dateFrom, dateTo, }) {
         let query = supabase_1.supabase
             .from('orders_with_customers')
             .select('*, order_items(*), customers(*), addresses(*), order_tracking(*)', { count: 'exact' })
@@ -21,17 +21,25 @@ class OrderDatabase {
         if (search) {
             query = query.or(`order_number.ilike.%${search}%,customer_name.ilike.%${search}%`);
         }
-        if (createdAt === null || createdAt === void 0 ? void 0 : createdAt.gte)
-            query = query.gte('created_at', createdAt.gte.toISOString());
-        if (createdAt === null || createdAt === void 0 ? void 0 : createdAt.lt)
-            query = query.lt('created_at', createdAt.lt.toISOString());
-        if (limit !== undefined) {
-            query = query.range(offset, offset + limit - 1);
+        if (dateFrom) {
+            query = query.gte('created_at', dateFrom.toISOString());
         }
-        const { data: orders, error, count } = await query;
+        if (dateTo) {
+            query = query.lt('created_at', dateTo.toISOString());
+        }
+        // 📄 Pagination
+        query = query.range(offset, offset + limit - 1);
+        const { data, error, count } = await query;
         if (error)
             throw error;
-        return { orders, count };
+        return {
+            orders: data,
+            pagination: {
+                pageIndex: offset / limit,
+                pageSize: limit,
+                total: count !== null && count !== void 0 ? count : 0,
+            },
+        };
     }
     async getOrderById(orderId) {
         const { data: order, error } = await supabase_1.supabase
@@ -187,7 +195,7 @@ class OrderDatabase {
             .eq('order_id', orderId);
         if (deleteError)
             throw deleteError;
-        const itemsToInsert = line_items.map(item => ({
+        const itemsToInsert = line_items.map((item) => ({
             order_id: orderId,
             product_id: item.product_id,
             quantity: item.quantity,
@@ -199,7 +207,10 @@ class OrderDatabase {
             throw insertError;
         const { data: updatedOrder, error: updatedOrderError } = await supabase_1.supabase
             .from('orders')
-            .update({ total_amount: payload.total_amount, created_at: new Date().toISOString() })
+            .update({
+            total_amount: payload.total_amount,
+            created_at: new Date().toISOString(),
+        })
             .eq('id', orderId)
             .select('*')
             .single();

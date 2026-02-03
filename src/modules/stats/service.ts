@@ -1,41 +1,28 @@
 import StatsDatabase from './database';
 
 class StatsService {
-  private StatsDatabase: StatsDatabase;
+  private statsDatabase: StatsDatabase;
 
   constructor() {
-    this.StatsDatabase = new StatsDatabase();
+    this.statsDatabase = new StatsDatabase();
   }
 
-  async getDashboardStats() {
-    const now = new Date();
+  async getDashboardStats(month: string) {
+    if (!month) {
+      throw new Error('Month is required (YYYY-MM)');
+    }
 
-    const startOfMonth = new Date(
-      now.getFullYear(),
-      now.getMonth(),
-      1
-    ).toISOString();
-
-    const { total_customers, orders } =
-      await this.StatsDatabase.getDashboardStats();
-
-    const total_orders = orders?.length || 0;
-    const total_revenue =
-      orders?.reduce((sum, order) => sum + (order.total_amount || 0), 0) || 0;
-    const average_order_value =
-      total_orders > 0 ? total_revenue / total_orders : 0;
-
-    const mtd_revenue =
-      orders
-        ?.filter((o) => new Date(o.created_at) >= new Date(startOfMonth))
-        ?.reduce((sum, o) => sum + o.total_amount, 0) ?? 0;
+    const result = await this.statsDatabase.getDashboardStats(month);
 
     return {
-      total_customers,
-      total_orders,
-      total_revenue,
-      average_order_value,
-      mtd_revenue,
+      stats: {
+        total_customers: result.stats.total_customers ?? 0,
+        total_orders: result.stats.total_orders ?? 0,
+        total_revenue: result.stats.total_revenue ?? 0,
+        average_order_value: result.stats.average_order_value ?? 0,
+        mtd_revenue: result.stats.mtd_revenue ?? 0,
+      },
+      charts: result.charts ?? {},
     };
   }
 }

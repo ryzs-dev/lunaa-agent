@@ -6,7 +6,9 @@ interface QueryParams {
   limit: number;
   offset: number;
   search?: string;
+  status: string;
   sortBy: string;
+  tracking?: string;
   sortOrder: 'asc' | 'desc';
   createdAt?: { gte?: Date; lt?: Date };
   dateFrom?: Date;
@@ -22,13 +24,14 @@ class OrderDatabase {
     sortOrder,
     dateFrom,
     dateTo,
+    status,
+    tracking,
   }: QueryParams) {
     let query = supabase
-      .from('orders_with_customers')
-      .select(
-        '*, order_items(*), customers(*), addresses(*), order_tracking(*)',
-        { count: 'exact' }
-      )
+      .from('orders_dashboard_view')
+      .select('*, order_items(*), customers(*), addresses(*)', {
+        count: 'exact',
+      })
       .order(sortBy, { ascending: sortOrder === 'asc' });
 
     if (search) {
@@ -40,8 +43,23 @@ class OrderDatabase {
     if (dateFrom) {
       query = query.gte('created_at', dateFrom.toISOString());
     }
+
     if (dateTo) {
-      query = query.lt('created_at', dateTo.toISOString());
+      const endOfDay = new Date(dateTo);
+      endOfDay.setHours(23, 59, 59, 999);
+
+      query = query.lte('created_at', endOfDay.toISOString());
+    }
+
+    if (tracking) {
+      if (tracking === 'with') {
+        query = query.not('tracking_id', 'is', null);
+      } else if (tracking === 'without') {
+        query = query.is('tracking_id', null);
+      }
+    }
+    if (status && status !== 'all') {
+      query = query.ilike('tracking_status', status);
     }
 
     // 📄 Pagination
@@ -50,8 +68,32 @@ class OrderDatabase {
     const { data, error, count } = await query;
     if (error) throw error;
 
+    const orders = (data ?? []).map(
+      ({
+        tracking_id,
+        tracking_number,
+        courier,
+        tracking_status,
+        message_status,
+        last_message_sent_at,
+        ...rest
+      }: (typeof data)[number]) => ({
+        ...rest,
+        order_tracking: tracking_id
+          ? {
+              id: tracking_id,
+              tracking_number,
+              courier,
+              status: tracking_status,
+              message_status,
+              last_message_sent_at,
+            }
+          : null,
+      })
+    );
+
     return {
-      orders: data,
+      orders,
       pagination: {
         pageIndex: offset / limit,
         pageSize: limit,

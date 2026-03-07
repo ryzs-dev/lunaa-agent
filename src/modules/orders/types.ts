@@ -33,6 +33,7 @@ export interface GetAllOrdersOptions {
   search?: string;
   status?: string;
   sortBy?: string;
+  tracking?: string;
   sortOrder?: 'asc' | 'desc';
   dateFrom?: Date;
   dateTo?: Date;

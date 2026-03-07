@@ -22,11 +22,13 @@ class OrderService {
     return this.orderDatabase.getAllOrders({
       limit,
       offset,
+      status: options.status ?? 'all',
       search: options.search,
       sortBy: options.sortBy ?? 'created_at',
       sortOrder: options.sortOrder ?? 'desc',
       dateFrom: options.dateFrom,
       dateTo: options.dateTo,
+      tracking: options.tracking,
     });
   }
 

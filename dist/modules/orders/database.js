@@ -13,10 +13,12 @@ var __rest = (this && this.__rest) || function (s, e) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const supabase_1 = require("../supabase");
 class OrderDatabase {
-    async getAllOrders({ limit, offset, search, sortBy, sortOrder, dateFrom, dateTo, }) {
+    async getAllOrders({ limit, offset, search, sortBy, sortOrder, dateFrom, dateTo, status, tracking, }) {
         let query = supabase_1.supabase
-            .from('orders_with_customers')
-            .select('*, order_items(*), customers(*), addresses(*), order_tracking(*)', { count: 'exact' })
+            .from('orders_dashboard_view')
+            .select('*, order_items(*), customers(*), addresses(*)', {
+            count: 'exact',
+        })
             .order(sortBy, { ascending: sortOrder === 'asc' });
         if (search) {
             query = query.or(`order_number.ilike.%${search}%,customer_name.ilike.%${search}%`);
@@ -25,15 +27,41 @@ class OrderDatabase {
             query = query.gte('created_at', dateFrom.toISOString());
         }
         if (dateTo) {
-            query = query.lt('created_at', dateTo.toISOString());
+            const endOfDay = new Date(dateTo);
+            endOfDay.setHours(23, 59, 59, 999);
+            query = query.lte('created_at', endOfDay.toISOString());
+        }
+        if (tracking) {
+            if (tracking === 'with') {
+                query = query.not('tracking_id', 'is', null);
+            }
+            else if (tracking === 'without') {
+                query = query.is('tracking_id', null);
+            }
+        }
+        if (status && status !== 'all') {
+            query = query.ilike('tracking_status', status);
         }
         // 📄 Pagination
         query = query.range(offset, offset + limit - 1);
         const { data, error, count } = await query;
         if (error)
             throw error;
+        const orders = (data !== null && data !== void 0 ? data : []).map((_a) => {
+            var { tracking_id, tracking_number, courier, tracking_status, message_status, last_message_sent_at } = _a, rest = __rest(_a, ["tracking_id", "tracking_number", "courier", "tracking_status", "message_status", "last_message_sent_at"]);
+            return (Object.assign(Object.assign({}, rest), { order_tracking: tracking_id
+                    ? {
+                        id: tracking_id,
+                        tracking_number,
+                        courier,
+                        status: tracking_status,
+                        message_status,
+                        last_message_sent_at,
+                    }
+                    : null }));
+        });
         return {
-            orders: data,
+            orders,
             pagination: {
                 pageIndex: offset / limit,
                 pageSize: limit,

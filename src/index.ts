@@ -1,5 +1,7 @@
+import http from 'http';
 import express from 'express';
 import dotenv from 'dotenv';
+import { Server as SocketIOServer } from 'socket.io';
 import cors from 'cors';
 import trackRouter from './routes/track';
 import path from 'path';
@@ -34,8 +36,6 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 app.use(cors());
 
-initParcelDailySubscribers();
-
 // Mount the routes
 app.use('/api', trackRouter);
 app.use('/api', twilioRouter);
@@ -64,7 +64,24 @@ app.get('/health', (req, res) => {
   });
 });
 
-app.listen(port, '0.0.0.0', () => {
+const server = http.createServer(app);
+
+const io = new SocketIOServer(server, {
+  cors: { origin: '*' }, // Adjust for production
+});
+
+io.on('connection', (socket) => {
+  console.log('New socket connected:', socket.id);
+
+  socket.on('join_room', (conversationId: string) => {
+    socket.join(conversationId);
+    console.log(`Socket ${socket.id} joined room: ${conversationId}`);
+  });
+});
+
+initParcelDailySubscribers(io);
+
+server.listen(port, '0.0.0.0', () => {
   console.log(`🚀 Server running on http://0.0.0.0:${port}`);
 });
 

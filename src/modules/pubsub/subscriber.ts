@@ -1,75 +1,79 @@
-import OrderTrackingService from '../order_tracking/service';
 import { sub } from '../pubsub';
 import { PubSubEvents } from './events';
+import { Server as SocketIOServer } from 'socket.io';
+import OrderTrackingService from '../order_tracking/service';
 
 const orderTrackingService = new OrderTrackingService();
 
-export const initParcelDailySubscribers = () => {
-  sub.subscribe(PubSubEvents.TRACKING_UPDATED, (err, count) => {
-    if (err) {
-      console.error('❌ Failed to subscribe to TRACKING_UPDATED:', err);
-      return;
-    }
-    console.log(`📡 Subscribed to ${count} channel(s): TRACKING_UPDATED`);
-  });
+export const initParcelDailySubscribers = (io: SocketIOServer) => {
+  const channels = [
+    PubSubEvents.ORDER_CREATED,
+    PubSubEvents.TRACKING_UPDATED,
+    PubSubEvents.INCOMING_MESSAGE,
+    PubSubEvents.OUTGOING_MESSAGE,
+  ];
 
-  sub.subscribe(PubSubEvents.ORDER_CREATED, (err, count) => {
-    if (err) {
-      console.error('❌ Failed to subscribe to ORDER_CREATED:', err);
-      return;
-    }
-    console.log(`📡 Subscribed to ${count} channel(s): ORDER_CREATED`);
-  });
+  // Subscribe individually
+  for (const channel of channels) {
+    sub.subscribe(channel, (err, count) => {
+      if (err)
+        return console.error(`❌ Failed to subscribe to ${channel}:`, err);
+      console.log(`📡 Subscribed to ${channel} (${count} channel(s))`);
+    });
+  }
 
+  // Handle all messages
   sub.on('message', async (channel, message) => {
-    console.log(`📨 Received message from channel ${channel}: ${message}`);
-    if (channel === PubSubEvents.ORDER_CREATED) {
-      try {
-        const payload = JSON.parse(message);
-        console.log('Payload From Parcel Daily', payload);
-        // Save to DB order_tracking table
-        await orderTrackingService.addTrackingEntry(
-          {
-            status: payload.status,
-            courier: payload.courier,
-            tracking_number: payload.tracking_number,
-            message_status: 'pending',
-            last_message_sent_at: null,
-          },
-          payload.crm_order_id
-        );
-      } catch (error) {
-        console.error('❌ Error processing ORDER_CREATED message:', error);
-      }
-    }
-  });
+    try {
+      const payload = JSON.parse(message);
+      console.log(`📨 Received ${channel}:`, payload);
 
-  sub.on('message', async (channel, message) => {
-    const payload = JSON.parse(message);
+      switch (channel) {
+        case PubSubEvents.INCOMING_MESSAGE:
+        case PubSubEvents.OUTGOING_MESSAGE:
+          // Send only to relevant conversation room
+          if (payload.conversation_id) {
+            io.to(payload.conversation_id).emit('new_message', payload);
 
-    console.log('Payload From Parcel Daily', payload);
+            const socketsInRoom = await io
+              .in(payload.conversation_id)
+              .fetchSockets();
+            console.log(
+              `Sockets in room ${payload.conversation_id}:`,
+              socketsInRoom.length
+            );
+          }
+          break;
 
-    if (channel === PubSubEvents.TRACKING_UPDATED) {
-      try {
-        const result = await orderTrackingService.getTrackingEntriesByOrderId(
-          payload.crm_order_id
-        );
-        if (result.length === 0) {
-          console.warn(
-            '⚠️ No tracking entry found for order ID:',
+        case PubSubEvents.ORDER_CREATED:
+          await orderTrackingService.addTrackingEntry(
+            {
+              status: payload.status,
+              courier: payload.courier,
+              tracking_number: payload.tracking_number,
+              message_status: 'pending',
+              last_message_sent_at: null,
+            },
             payload.crm_order_id
           );
-          return;
-        }
-        await orderTrackingService.updateTrackingEntry(result[0].id, {
-          status: payload.status,
-        });
-      } catch (error) {
-        console.error(
-          '❌ Error updating CRM tracking entry (TRACKING_UPDATED):',
-          error
-        );
+          break;
+
+        case PubSubEvents.TRACKING_UPDATED:
+          const result = await orderTrackingService.getTrackingEntriesByOrderId(
+            payload.crm_order_id
+          );
+          if (result.length) {
+            await orderTrackingService.updateTrackingEntry(result[0].id, {
+              status: payload.status,
+            });
+          }
+          break;
+
+        default:
+          console.warn(`⚠️ Unknown channel: ${channel}`);
       }
+    } catch (error) {
+      console.error(`❌ Error processing message from ${channel}:`, error);
     }
   });
 };

@@ -1,5 +1,4 @@
 import axios, { AxiosInstance } from 'axios';
-import { MessagesDB } from '../types/MessageDB';
 
 export class SupabaseSendService {
   private client: AxiosInstance;
@@ -17,7 +16,7 @@ export class SupabaseSendService {
     }
 
     this.client = axios.create({
-      baseURL: `https://graph.facebook.com/v23.0`,
+      baseURL: `https://graph.facebook.com/v25.0`,
       headers: {
         Authorization: `Bearer ${accessToken}`,
         'Content-Type': 'application/json',
@@ -36,6 +35,8 @@ export class SupabaseSendService {
         text: { body },
       }
     );
+
+    console.log('Response: ', response.data);
     return response.data;
   }
 

@@ -727,7 +727,7 @@ whatsappRouter.get('/whatsapp/media/:mediaId', async (req, res) => {
     const media = await waService.getMedia(mediaId);
 
     res.setHeader('Content-Type', media.mimeType);
-    res.send(media.fileData); // send the raw image bytes
+    res.send(media.fileData);
   } catch (error) {
     console.error('❌ Error fetching media:', error);
     res.status(500).json({ success: false, error: 'Failed to fetch media' });

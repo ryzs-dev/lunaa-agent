@@ -13,6 +13,33 @@ class MessageService {
             throw error;
         }
     }
+    async sendTextMessage(to_number, body) {
+        var _a;
+        if (!to_number || !body) {
+            throw new Error('❌ to_number and body are required to send a message');
+        }
+        try {
+            const payload = {
+                messaging_product: 'whatsapp',
+                recipient_type: 'individual',
+                to: to_number,
+                type: 'text',
+                text: {
+                    body,
+                },
+            };
+            const { data } = await _1.message_service.post('/api/conversations/messages', payload);
+            return data;
+        }
+        catch (error) {
+            console.error('Error sending message: ', {
+                to_number,
+                body,
+                error: ((_a = error === null || error === void 0 ? void 0 : error.response) === null || _a === void 0 ? void 0 : _a.data) || error.message,
+            });
+            throw new Error('Failed to send WhatsApp message');
+        }
+    }
     async getConversations() {
         try {
             const { data } = await _1.message_service.get('/api/conversations', {});

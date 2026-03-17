@@ -3,8 +3,10 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+const http_1 = __importDefault(require("http"));
 const express_1 = __importDefault(require("express"));
 const dotenv_1 = __importDefault(require("dotenv"));
+const socket_io_1 = require("socket.io");
 const cors_1 = __importDefault(require("cors"));
 const track_1 = __importDefault(require("./routes/track"));
 const path_1 = __importDefault(require("path"));
@@ -33,7 +35,6 @@ const port = Number(process.env.PORT) || 3001;
 app.use(express_1.default.json({ limit: '10mb' }));
 app.use(express_1.default.urlencoded({ extended: true, limit: '10mb' }));
 app.use((0, cors_1.default)());
-(0, subscriber_1.initParcelDailySubscribers)();
 // Mount the routes
 app.use('/api', track_1.default);
 app.use('/api', twilio_1.default);
@@ -60,7 +61,19 @@ app.get('/health', (req, res) => {
         timestamp: new Date().toISOString(),
     });
 });
-app.listen(port, '0.0.0.0', () => {
+const server = http_1.default.createServer(app);
+const io = new socket_io_1.Server(server, {
+    cors: { origin: '*' }, // Adjust for production
+});
+io.on('connection', (socket) => {
+    console.log('New socket connected:', socket.id);
+    socket.on('join_room', (conversationId) => {
+        socket.join(conversationId);
+        console.log(`Socket ${socket.id} joined room: ${conversationId}`);
+    });
+});
+(0, subscriber_1.initParcelDailySubscribers)(io);
+server.listen(port, '0.0.0.0', () => {
     console.log(`🚀 Server running on http://0.0.0.0:${port}`);
 });
 if (process.env.NODE_ENV === 'production') {

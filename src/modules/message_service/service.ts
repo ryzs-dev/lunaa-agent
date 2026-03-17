@@ -14,6 +14,39 @@ export class MessageService {
     }
   }
 
+  async sendTextMessage(to_number: string, body: string) {
+    if (!to_number || !body) {
+      throw new Error('❌ to_number and body are required to send a message');
+    }
+
+    try {
+      const payload = {
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to: to_number,
+        type: 'text',
+        text: {
+          body,
+        },
+      };
+
+      const { data } = await message_service.post(
+        '/api/conversations/messages',
+        payload
+      );
+
+      return data;
+    } catch (error: any) {
+      console.error('Error sending message: ', {
+        to_number,
+        body,
+        error: error?.response?.data || error.message,
+      });
+
+      throw new Error('Failed to send WhatsApp message');
+    }
+  }
+
   async getConversations() {
     try {
       const { data } = await message_service.get('/api/conversations', {});

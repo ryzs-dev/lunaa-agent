@@ -11,20 +11,22 @@ const service_1 = require("../../modules/message_service/service");
 exports.messageRouter = express_1.default.Router();
 const whatsappSendService = new SendService_1.WhatsappSendService();
 const messageService = new service_1.MessageService();
-exports.messageRouter.post('/', async (req, res) => {
-    const { to_number, body } = req.body;
-    if (!to_number || !body) {
-        return res.status(400).json({ error: 'User_number and body are required' });
-    }
-    try {
-        const result = await whatsappSendService.sendTextMessage(to_number, body);
-        res.status(200).json({ success: true, result });
-    }
-    catch (error) {
-        console.error('Error sending message:', error);
-        res.status(500).json({ error: 'Failed to send message', details: error });
-    }
-});
+// messageRouter.post('/', async (req, res) => {
+//   const { to_number, body } = req.body;
+//   if (!to_number || !body) {
+//     return res.status(400).json({ error: 'User_number and body are required' });
+//   }
+//   try {
+//     const result = await whatsappSendService.sendTextMessage(
+//       to_number,
+//       body.text
+//     );
+//     res.status(200).json({ success: true, result });
+//   } catch (error) {
+//     console.error('Error sending message:', error);
+//     res.status(500).json({ error: 'Failed to send message', details: error });
+//   }
+// });
 exports.messageRouter.get('/templates', async (req, res) => {
     try {
         const templates = await whatsappSendService.getMessageTemplates();
@@ -123,5 +125,18 @@ exports.messageRouter.get('/:wamid', async (req, res) => {
     catch (error) {
         console.error('Error fetching message by WAMID:', error);
         res.status(500).json({ error: 'Failed to fetch message', details: error });
+    }
+});
+exports.messageRouter.post('/', async (req, res) => {
+    const { to_number, body } = req.body;
+    if (!to_number || !body) {
+        return res.status(400).json({ error: 'User_number and body are required' });
+    }
+    try {
+        const result = await messageService.sendTextMessage(to_number, body.text);
+        res.status(200).json({ success: true, result });
+    }
+    catch (error) {
+        res.status(500).json({ error: 'Failed to send message', details: error });
     }
 });

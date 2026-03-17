@@ -14,7 +14,7 @@ class SupabaseSendService {
             throw new Error('❌ Missing WhatsApp API credentials in .env');
         }
         this.client = axios_1.default.create({
-            baseURL: `https://graph.facebook.com/v23.0`,
+            baseURL: `https://graph.facebook.com/v25.0`,
             headers: {
                 Authorization: `Bearer ${accessToken}`,
                 'Content-Type': 'application/json',
@@ -29,6 +29,7 @@ class SupabaseSendService {
             type: 'text',
             text: { body },
         });
+        console.log('Response: ', response.data);
         return response.data;
     }
     async getMessageTemplates() {

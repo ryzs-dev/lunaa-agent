@@ -67,7 +67,7 @@ export class GoogleSheetService {
       for (const sheet of sheets) {
         const headerResponse = await googleClient.spreadsheets.values.get({
           spreadsheetId: this.spreadSheetId,
-          range: `${sheet}!A:AE`,
+          range: `${sheet}!A:AF`,
         });
 
         const headers = headerResponse.data.values?.[0] || [];
@@ -82,7 +82,7 @@ export class GoogleSheetService {
 
         await googleClient.spreadsheets.values.append({
           spreadsheetId: this.spreadSheetId,
-          range: `${sheet}!A:AE`,
+          range: `${sheet}!A:AF`,
           valueInputOption: 'RAW',
           requestBody: { values: [rowData] },
         });

@@ -29,6 +29,10 @@ const route_2 = require("./routes/webhook/parcel-daily/route");
 const route_3 = require("./routes/message/route");
 const route_4 = require("./routes/stats/route");
 const subscriber_1 = require("./modules/pubsub/subscriber");
+const audience_router_1 = require("./modules/audience/audience.router");
+const broadcast_router_1 = require("./modules/broadcast/broadcast.router");
+const converra_event_router_1 = require("./modules/converra/converra-event.router");
+const converra_command_router_1 = require("./modules/converra/converra-command.router");
 dotenv_1.default.config({ path: path_1.default.resolve(__dirname, '../.env.local') });
 const app = (0, express_1.default)();
 const port = Number(process.env.PORT) || 3001;
@@ -55,6 +59,10 @@ app.use('/webhook', route_2.webhookRouter);
 app.use('/api/message', route_3.messageRouter);
 app.use('/api/stats', route_4.statsRouter);
 app.use('/api/whatsapp', route_3.messageRouter);
+app.use('/api/audience', audience_router_1.audienceRouter);
+app.use('/api/broadcast', broadcast_router_1.broadcastRouter);
+app.use('/api/converra/events', converra_event_router_1.converraEventRouter);
+app.use('/api/converra/commands', converra_command_router_1.converraCommandRouter);
 app.get('/health', (req, res) => {
     res.json({
         status: 'ok',

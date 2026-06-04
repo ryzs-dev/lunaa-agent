@@ -47,6 +47,23 @@ export class MessageService {
     }
   }
 
+  async sendTemplate({ to, templateName, languageCode = 'en' }: any) {
+    try {
+      const { data } = await message_service.post(
+        '/api/conversations/template',
+        {
+          to,
+          templateName,
+          languageCode,
+        }
+      );
+      return data;
+    } catch (error) {
+      console.error('Error fetching conversations:', error);
+      throw error;
+    }
+  }
+
   async getConversations() {
     try {
       const { data } = await message_service.get('/api/conversations', {});

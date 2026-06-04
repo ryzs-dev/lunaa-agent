@@ -25,6 +25,10 @@ import { webhookRouter } from './routes/webhook/parcel-daily/route';
 import { messageRouter } from './routes/message/route';
 import { statsRouter } from './routes/stats/route';
 import { initParcelDailySubscribers } from './modules/pubsub/subscriber';
+import { audienceRouter } from './modules/audience/audience.router';
+import { broadcastRouter } from './modules/broadcast/broadcast.router';
+import { converraEventRouter } from './modules/converra/converra-event.router';
+import { converraCommandRouter } from './modules/converra/converra-command.router';
 
 dotenv.config({ path: path.resolve(__dirname, '../.env.local') });
 
@@ -56,6 +60,10 @@ app.use('/webhook', webhookRouter);
 app.use('/api/message', messageRouter);
 app.use('/api/stats', statsRouter);
 app.use('/api/whatsapp', messageRouter);
+app.use('/api/audience', audienceRouter);
+app.use('/api/broadcast', broadcastRouter);
+app.use('/api/converra/events', converraEventRouter);
+app.use('/api/converra/commands', converraCommandRouter);
 
 app.get('/health', (req, res) => {
   res.json({

@@ -91,7 +91,6 @@ class WhatsAppService {
         var _a;
         try {
             const response = await this.client.get(`/${this.businessAccountId}/message_templates`);
-            console.log('✅ Fetched templates:', response.data);
             return response.data;
         }
         catch (error) {

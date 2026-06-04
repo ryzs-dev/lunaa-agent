@@ -148,7 +148,6 @@ export class WhatsAppService {
         `/${this.businessAccountId}/message_templates`
       );
 
-      console.log('✅ Fetched templates:', response.data);
       return response.data;
     } catch (error: any) {
       console.error(

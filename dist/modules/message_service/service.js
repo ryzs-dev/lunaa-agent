@@ -40,6 +40,20 @@ class MessageService {
             throw new Error('Failed to send WhatsApp message');
         }
     }
+    async sendTemplate({ to, templateName, languageCode = 'en' }) {
+        try {
+            const { data } = await _1.message_service.post('/api/conversations/template', {
+                to,
+                templateName,
+                languageCode,
+            });
+            return data;
+        }
+        catch (error) {
+            console.error('Error fetching conversations:', error);
+            throw error;
+        }
+    }
     async getConversations() {
         try {
             const { data } = await _1.message_service.get('/api/conversations', {});

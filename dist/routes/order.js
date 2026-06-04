@@ -7,6 +7,7 @@ exports.orderRouter = void 0;
 const express_1 = __importDefault(require("express"));
 const service_1 = __importDefault(require("../modules/orders/service"));
 const service_2 = __importDefault(require("../modules/order_tracking/service"));
+const converra_forwarder_1 = require("../modules/converra/converra-forwarder");
 exports.orderRouter = express_1.default.Router();
 const orderService = new service_1.default();
 const orderTrackingService = new service_2.default();
@@ -63,6 +64,7 @@ exports.orderRouter.get('/customer/:customerId', async (req, res) => {
 });
 // POST /api/orders - Create a new order
 exports.orderRouter.post('/', async (req, res) => {
+    var _a, _b, _c, _d;
     const orderData = req.body;
     try {
         const newOrder = await orderService.createOrder(orderData);
@@ -70,6 +72,25 @@ exports.orderRouter.post('/', async (req, res) => {
             success: true,
             message: 'Order created successfully',
             order: newOrder,
+        });
+        // Fire-and-forget: emit order.created to Converra asynchronously
+        // so the dashboard response is never delayed by this
+        const orderId = (_a = newOrder === null || newOrder === void 0 ? void 0 : newOrder.id) !== null && _a !== void 0 ? _a : `manual-${Date.now()}`;
+        (0, converra_forwarder_1.forwardToConverra)({
+            event_type: 'order.created',
+            external_event_id: `order-${orderId}`,
+            business_id: (_b = process.env.CONVERRA_BUSINESS_ID) !== null && _b !== void 0 ? _b : '',
+            timestamp: new Date().toISOString(),
+            payload: {
+                order_id: orderId,
+                customer_id: orderData.customer_id,
+                total_amount: orderData.total_amount,
+                status: (_c = orderData.status) !== null && _c !== void 0 ? _c : 'unpaid',
+                payment_method: (_d = orderData.payment_method) !== null && _d !== void 0 ? _d : '',
+                order_date: orderData.order_date,
+            },
+        }).catch((err) => {
+            console.error('[order.router] Failed to forward order.created to Converra:', err);
         });
     }
     catch (error) {

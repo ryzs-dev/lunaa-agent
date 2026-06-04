@@ -106,5 +106,30 @@ class CustomerService {
     async deleteCustomer(id) {
         return await this.customerDatabase.deleteCustomer(id);
     }
+    async getAllCustomerIds(options) {
+        let filterDate;
+        if (options.filter && options.filter !== 'all') {
+            const now = new Date();
+            filterDate = new Date();
+            switch (options.filter) {
+                case 'today':
+                    filterDate.setHours(0, 0, 0, 0);
+                    break;
+                case 'week':
+                    const dayOfWeek = now.getDay();
+                    const diffToMonday = (dayOfWeek + 6) % 7;
+                    filterDate.setDate(now.getDate() - diffToMonday);
+                    filterDate.setHours(0, 0, 0, 0);
+                    break;
+                case 'month':
+                    filterDate = new Date(now.getFullYear(), now.getMonth(), 1);
+                    break;
+            }
+        }
+        return this.customerDatabase.getAllCustomerIds({
+            search: options.search,
+            filterDate,
+        });
+    }
 }
 exports.default = CustomerService;

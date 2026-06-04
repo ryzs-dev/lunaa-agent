@@ -76,5 +76,21 @@ class CustomerDatabase {
             throw error;
         return updatedCustomer;
     }
+    async getAllCustomerIds({ search, filterDate, }) {
+        let query = supabase_1.supabase
+            .from('customers')
+            .select('id', { count: 'exact' })
+            .limit(10000); // explicitly override the default 1000 cap
+        if (search) {
+            query = query.or(`name.ilike.%${search}%,phone_number.ilike.%${search}%`);
+        }
+        if (filterDate) {
+            query = query.gte('created_at', filterDate.toISOString());
+        }
+        const { data, error } = await query;
+        if (error)
+            throw error;
+        return data.map((r) => r.id);
+    }
 }
 exports.default = CustomerDatabase;

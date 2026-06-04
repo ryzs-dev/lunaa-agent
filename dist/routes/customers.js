@@ -39,6 +39,25 @@ customersRouter.get('/', async (req, res) => {
         res.status(500).json({ error: 'Internal server error' });
     }
 });
+customersRouter.get('/ids', async (req, res) => {
+    const { search, filter } = req.query;
+    if (filter && !['all', 'today', 'week', 'month'].includes(filter)) {
+        return res.status(400).json({
+            error: 'Invalid filter. Allowed values: all, today, week, month',
+        });
+    }
+    try {
+        const ids = await customerService.getAllCustomerIds({
+            search: search ? String(search) : undefined,
+            filter: filter,
+        });
+        res.status(200).json({ ids });
+    }
+    catch (error) {
+        console.error('Error fetching customer ids:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
 // GET /api/customers/:id - Get customer by ID
 customersRouter.get('/id/:id', async (req, res) => {
     const { id } = req.params;

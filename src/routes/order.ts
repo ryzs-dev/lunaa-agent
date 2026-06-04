@@ -3,6 +3,7 @@ import OrderService from '../modules/orders/service';
 import { UUID } from 'crypto';
 import OrderTrackingService from '../modules/order_tracking/service';
 import { UpdateLineItemsInput } from '../modules/orders/types';
+import { forwardToConverra } from '../modules/converra/converra-forwarder';
 
 export const orderRouter = express.Router();
 
@@ -80,10 +81,31 @@ orderRouter.post('/', async (req, res) => {
 
   try {
     const newOrder = await orderService.createOrder(orderData);
+
     res.status(201).json({
       success: true,
       message: 'Order created successfully',
       order: newOrder,
+    });
+
+    // Fire-and-forget: emit order.created to Converra asynchronously
+    // so the dashboard response is never delayed by this
+    const orderId: string = (newOrder as any)?.id ?? `manual-${Date.now()}`;
+    forwardToConverra({
+      event_type: 'order.created',
+      external_event_id: `order-${orderId}`,
+      business_id: process.env.CONVERRA_BUSINESS_ID ?? '',
+      timestamp: new Date().toISOString(),
+      payload: {
+        order_id: orderId,
+        customer_id: orderData.customer_id,
+        total_amount: orderData.total_amount,
+        status: orderData.status ?? 'unpaid',
+        payment_method: orderData.payment_method ?? '',
+        order_date: orderData.order_date,
+      },
+    }).catch((err: unknown) => {
+      console.error('[order.router] Failed to forward order.created to Converra:', err);
     });
   } catch (error) {
     console.error('Error creating order:', error);

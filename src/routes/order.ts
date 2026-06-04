@@ -4,11 +4,17 @@ import { UUID } from 'crypto';
 import OrderTrackingService from '../modules/order_tracking/service';
 import { UpdateLineItemsInput } from '../modules/orders/types';
 import { forwardToConverra } from '../modules/converra/converra-forwarder';
+import { ParcelDailyService } from '../modules/parcel-daily/service';
+import { buildShipmentFromOrder } from '../modules/orders/shipment-from-order';
 
 export const orderRouter = express.Router();
 
 const orderService = new OrderService();
 const orderTrackingService = new OrderTrackingService();
+
+const PARCEL_DAILY_API_URL =
+  process.env.PARCEL_DAILY_API_URL || 'http://localhost:4002/api/parceldaily';
+const parcelDailyService = new ParcelDailyService(PARCEL_DAILY_API_URL);
 
 // GET /api/orders - Get all orders with optional pagination, search, and sorting
 orderRouter.get('/', async (req, res) => {
@@ -111,6 +117,83 @@ orderRouter.post('/', async (req, res) => {
     console.error('Error creating order:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
+});
+
+// POST /api/orders/create/bulk - Create Parcel Daily shipments for multiple CRM orders
+orderRouter.post('/create/bulk', async (req, res) => {
+  const { order_ids: orderIds } = req.body as { order_ids?: unknown };
+
+  if (!Array.isArray(orderIds) || orderIds.length === 0) {
+    return res.status(400).json({ error: 'order_ids array is required' });
+  }
+
+  if (orderIds.length > 50) {
+    return res.status(400).json({ error: 'Maximum 50 orders per bulk request' });
+  }
+
+  const results: Array<{
+    order_id: string;
+    success: boolean;
+    error?: string;
+    data?: unknown;
+  }> = [];
+
+  for (const rawId of orderIds) {
+    const orderId = String(rawId);
+
+    try {
+      const order = await orderService.getOrderById(orderId as UUID);
+      const built = buildShipmentFromOrder(order);
+
+      if (built.error || !built.shipment) {
+        results.push({
+          order_id: orderId,
+          success: false,
+          error: built.error ?? 'Could not build shipment payload',
+        });
+        continue;
+      }
+
+      const shipmentResult = await parcelDailyService.createShipment(
+        built.shipment,
+        orderId as UUID,
+      );
+
+      if (shipmentResult?.success === false) {
+        const message =
+          typeof shipmentResult.message === 'string'
+            ? shipmentResult.message
+            : 'Parcel Daily shipment failed';
+        results.push({
+          order_id: orderId,
+          success: false,
+          error: message,
+          data: shipmentResult,
+        });
+        continue;
+      }
+
+      results.push({
+        order_id: orderId,
+        success: true,
+        data: shipmentResult?.data ?? shipmentResult,
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Unexpected error';
+      results.push({ order_id: orderId, success: false, error: message });
+    }
+  }
+
+  const succeeded = results.filter((r) => r.success).length;
+
+  return res.status(200).json({
+    success: succeeded > 0,
+    message: `Created ${succeeded} of ${orderIds.length} shipments`,
+    succeeded,
+    failed: orderIds.length - succeeded,
+    results,
+  });
 });
 
 // PATCH /api/orders/:id - Update an existing order

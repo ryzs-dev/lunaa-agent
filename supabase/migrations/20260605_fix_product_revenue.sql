@@ -1,5 +1,5 @@
--- Product performance analytics for Converra dashboard
--- Run in Supabase SQL editor or via migration tooling
+-- Fix product revenue when catalog prices are missing.
+-- Falls back to allocating orders.total_amount across line items by quantity.
 
 CREATE OR REPLACE FUNCTION get_product_line_revenue(
   item_quantity numeric,

@@ -25,6 +25,34 @@ class StatsService {
       charts: result.charts ?? {},
     };
   }
+
+  async getProductPerformance(month: string) {
+    if (!month) {
+      throw new Error('Month is required (YYYY-MM)');
+    }
+
+    return this.statsDatabase.getProductPerformance(month);
+  }
+
+  async getProductMonthlyTrends(
+    productId: string,
+    month: string,
+    monthsBack = 6
+  ) {
+    if (!month) {
+      throw new Error('Month is required (YYYY-MM)');
+    }
+
+    if (!productId) {
+      throw new Error('Product ID is required');
+    }
+
+    return this.statsDatabase.getProductMonthlyTrends(
+      productId,
+      month,
+      monthsBack
+    );
+  }
 }
 
 export default StatsService;

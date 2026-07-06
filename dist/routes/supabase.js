@@ -438,7 +438,7 @@ supabaseRouter.delete("/orders/:id", async (req, res) => {
         const deletedAt = new Date().toISOString();
         const { error } = await supabaseNormalized_1.supabase
             .from("orders")
-            .update({ deleted_at: deletedAt, updated_at: deletedAt })
+            .update({ deleted_at: deletedAt })
             .eq("id", id)
             .is("deleted_at", null);
         if (error)

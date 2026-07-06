@@ -131,7 +131,7 @@ class OrderDatabase {
         const deletedAt = new Date().toISOString();
         const { data: deletedOrder, error } = await supabase_1.supabase
             .from('orders')
-            .update({ deleted_at: deletedAt, updated_at: deletedAt })
+            .update({ deleted_at: deletedAt })
             .eq('id', orderId)
             .is('deleted_at', null)
             .select('*')
@@ -158,7 +158,7 @@ class OrderDatabase {
         const deletedAt = new Date().toISOString();
         const { data: deletedOrders, error } = await supabase_1.supabase
             .from('orders')
-            .update({ deleted_at: deletedAt, updated_at: deletedAt })
+            .update({ deleted_at: deletedAt })
             .in('id', orders.map((order) => order.id))
             .is('deleted_at', null)
             .select('*');

@@ -184,7 +184,11 @@ class OrderDatabase {
     if (error) throw error;
 
     if (order.customer_id) {
-      await recalculateCustomerStats(order.customer_id as UUID);
+      try {
+        await recalculateCustomerStats(order.customer_id as UUID);
+      } catch (statsError) {
+        console.error('Failed to recalculate customer stats after delete:', statsError);
+      }
     }
 
     return deletedOrder;
@@ -224,7 +228,16 @@ class OrderDatabase {
     ];
 
     await Promise.all(
-      customerIds.map((customerId) => recalculateCustomerStats(customerId))
+      customerIds.map(async (customerId) => {
+        try {
+          await recalculateCustomerStats(customerId);
+        } catch (statsError) {
+          console.error(
+            'Failed to recalculate customer stats after bulk delete:',
+            statsError
+          );
+        }
+      })
     );
 
     return deletedOrders ?? [];

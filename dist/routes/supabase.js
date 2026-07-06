@@ -444,8 +444,13 @@ supabaseRouter.delete("/orders/:id", async (req, res) => {
         if (error)
             throw error;
         if (order.customer_id) {
-            const { recalculateCustomerStats } = await Promise.resolve().then(() => __importStar(require("../modules/orders/customer-stats")));
-            await recalculateCustomerStats(order.customer_id);
+            try {
+                const { recalculateCustomerStats } = await Promise.resolve().then(() => __importStar(require("../modules/orders/customer-stats")));
+                await recalculateCustomerStats(order.customer_id);
+            }
+            catch (statsError) {
+                console.error("Failed to recalculate customer stats after delete:", statsError);
+            }
         }
         res.json({
             success: true,

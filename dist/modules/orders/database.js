@@ -139,7 +139,12 @@ class OrderDatabase {
         if (error)
             throw error;
         if (order.customer_id) {
-            await (0, customer_stats_1.recalculateCustomerStats)(order.customer_id);
+            try {
+                await (0, customer_stats_1.recalculateCustomerStats)(order.customer_id);
+            }
+            catch (statsError) {
+                console.error('Failed to recalculate customer stats after delete:', statsError);
+            }
         }
         return deletedOrder;
     }
@@ -169,7 +174,14 @@ class OrderDatabase {
                 .map((order) => order.customer_id)
                 .filter((customerId) => Boolean(customerId))),
         ];
-        await Promise.all(customerIds.map((customerId) => (0, customer_stats_1.recalculateCustomerStats)(customerId)));
+        await Promise.all(customerIds.map(async (customerId) => {
+            try {
+                await (0, customer_stats_1.recalculateCustomerStats)(customerId);
+            }
+            catch (statsError) {
+                console.error('Failed to recalculate customer stats after bulk delete:', statsError);
+            }
+        }));
         return deletedOrders !== null && deletedOrders !== void 0 ? deletedOrders : [];
     }
     async updateOrder(orderId, updates) {

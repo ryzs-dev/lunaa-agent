@@ -1,4 +1,37 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -383,16 +416,37 @@ supabaseRouter.put("/orders/:id", async (req, res) => {
         });
     }
 });
-// DELETE /api/supabase/orders/:id - Delete order
+// DELETE /api/supabase/orders/:id - Soft-delete order
 supabaseRouter.delete("/orders/:id", async (req, res) => {
     try {
         const { id } = req.params;
+        const { data: order, error: fetchError } = await supabaseNormalized_1.supabase
+            .from("orders")
+            .select("id, customer_id")
+            .eq("id", id)
+            .is("deleted_at", null)
+            .single();
+        if (fetchError) {
+            if (fetchError.code === "PGRST116") {
+                return res.status(404).json({
+                    success: false,
+                    error: "Order not found",
+                });
+            }
+            throw fetchError;
+        }
+        const deletedAt = new Date().toISOString();
         const { error } = await supabaseNormalized_1.supabase
             .from("orders")
-            .delete()
-            .eq("id", id);
+            .update({ deleted_at: deletedAt, updated_at: deletedAt })
+            .eq("id", id)
+            .is("deleted_at", null);
         if (error)
             throw error;
+        if (order.customer_id) {
+            const { recalculateCustomerStats } = await Promise.resolve().then(() => __importStar(require("../modules/orders/customer-stats")));
+            await recalculateCustomerStats(order.customer_id);
+        }
         res.json({
             success: true,
             message: "Order deleted successfully"

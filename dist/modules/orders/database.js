@@ -12,16 +12,18 @@ var __rest = (this && this.__rest) || function (s, e) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const supabase_1 = require("../supabase");
+const customer_stats_1 = require("./customer-stats");
 class OrderDatabase {
     async getAllOrders({ limit, offset, search, sortBy, sortOrder, dateFrom, dateTo, status, tracking, }) {
         let query = supabase_1.supabase
-            .from('orders_dashboard_view')
-            .select('*, order_items(*), customers(*), addresses(*)', {
+            .from('orders')
+            .select('*, order_items(*), customers(*), addresses(*), order_tracking(*)', {
             count: 'exact',
         })
+            .is('deleted_at', null)
             .order(sortBy, { ascending: sortOrder === 'asc' });
         if (search) {
-            query = query.or(`order_number.ilike.%${search}%,customer_name.ilike.%${search}%`);
+            query = query.or(`order_number.ilike.%${search}%,customers.name.ilike.%${search}%`);
         }
         if (dateFrom) {
             query = query.gte('created_at', dateFrom.toISOString());
@@ -33,14 +35,14 @@ class OrderDatabase {
         }
         if (tracking) {
             if (tracking === 'with') {
-                query = query.not('tracking_id', 'is', null);
+                query = query.not('order_tracking', 'is', null);
             }
             else if (tracking === 'without') {
-                query = query.is('tracking_id', null);
+                query = query.is('order_tracking', null);
             }
         }
         if (status && status !== 'all') {
-            query = query.ilike('tracking_status', status);
+            query = query.ilike('order_tracking.status', status);
         }
         // 📄 Pagination
         query = query.range(offset, offset + limit - 1);
@@ -48,17 +50,11 @@ class OrderDatabase {
         if (error)
             throw error;
         const orders = (data !== null && data !== void 0 ? data : []).map((_a) => {
-            var { tracking_id, tracking_number, courier, tracking_status, message_status, last_message_sent_at } = _a, rest = __rest(_a, ["tracking_id", "tracking_number", "courier", "tracking_status", "message_status", "last_message_sent_at"]);
-            return (Object.assign(Object.assign({}, rest), { order_tracking: tracking_id
-                    ? {
-                        id: tracking_id,
-                        tracking_number,
-                        courier,
-                        status: tracking_status,
-                        message_status,
-                        last_message_sent_at,
-                    }
-                    : null }));
+            var { order_tracking: orderTracking } = _a, rest = __rest(_a, ["order_tracking"]);
+            const trackingEntry = Array.isArray(orderTracking)
+                ? orderTracking[orderTracking.length - 1]
+                : orderTracking;
+            return Object.assign(Object.assign({}, rest), { order_tracking: trackingEntry !== null && trackingEntry !== void 0 ? trackingEntry : null });
         });
         return {
             orders,
@@ -74,6 +70,7 @@ class OrderDatabase {
             .from('orders')
             .select('*, addresses(*), order_items(*, products(*)), customers(*), order_tracking(*)')
             .eq('id', orderId)
+            .is('deleted_at', null)
             .single();
         if (error)
             throw error;
@@ -83,7 +80,8 @@ class OrderDatabase {
         const { data: orders, error } = await supabase_1.supabase
             .from('orders')
             .select('*, order_items(*), customers(*), order_tracking(*)')
-            .eq('customer_id', customerId);
+            .eq('customer_id', customerId)
+            .is('deleted_at', null);
         if (error)
             throw error;
         return orders;
@@ -122,25 +120,57 @@ class OrderDatabase {
         return updatedOrder;
     }
     async deleteOrder(orderId) {
-        const { data: order, error } = await supabase_1.supabase
+        const { data: order, error: fetchError } = await supabase_1.supabase
             .from('orders')
-            .delete()
+            .select('id, customer_id, total_amount')
             .eq('id', orderId)
+            .is('deleted_at', null)
+            .single();
+        if (fetchError)
+            throw fetchError;
+        const deletedAt = new Date().toISOString();
+        const { data: deletedOrder, error } = await supabase_1.supabase
+            .from('orders')
+            .update({ deleted_at: deletedAt, updated_at: deletedAt })
+            .eq('id', orderId)
+            .is('deleted_at', null)
+            .select('*')
             .single();
         if (error)
             throw error;
-        return order;
+        if (order.customer_id) {
+            await (0, customer_stats_1.recalculateCustomerStats)(order.customer_id);
+        }
+        return deletedOrder;
     }
     async bulkDeleteOrders(orderIds) {
         if (!orderIds.length)
             return [];
-        const { data: orders, error } = await supabase_1.supabase
+        const { data: orders, error: fetchError } = await supabase_1.supabase
             .from('orders')
-            .delete()
-            .in('id', orderIds);
+            .select('id, customer_id')
+            .in('id', orderIds)
+            .is('deleted_at', null);
+        if (fetchError)
+            throw fetchError;
+        if (!(orders === null || orders === void 0 ? void 0 : orders.length))
+            return [];
+        const deletedAt = new Date().toISOString();
+        const { data: deletedOrders, error } = await supabase_1.supabase
+            .from('orders')
+            .update({ deleted_at: deletedAt, updated_at: deletedAt })
+            .in('id', orders.map((order) => order.id))
+            .is('deleted_at', null)
+            .select('*');
         if (error)
             throw error;
-        return orders;
+        const customerIds = [
+            ...new Set(orders
+                .map((order) => order.customer_id)
+                .filter((customerId) => Boolean(customerId))),
+        ];
+        await Promise.all(customerIds.map((customerId) => (0, customer_stats_1.recalculateCustomerStats)(customerId)));
+        return deletedOrders !== null && deletedOrders !== void 0 ? deletedOrders : [];
     }
     async updateOrder(orderId, updates) {
         const { order_items } = updates, orderData = __rest(updates, ["order_items"]);
@@ -211,6 +241,7 @@ class OrderDatabase {
             .from('orders')
             .select('id')
             .eq('id', orderId)
+            .is('deleted_at', null)
             .single();
         if (orderError)
             throw orderError;

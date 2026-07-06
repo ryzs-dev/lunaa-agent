@@ -435,17 +435,41 @@ supabaseRouter.put("/orders/:id", async (req, res) => {
   }
 });
 
-// DELETE /api/supabase/orders/:id - Delete order
+// DELETE /api/supabase/orders/:id - Soft-delete order
 supabaseRouter.delete("/orders/:id", async (req, res) => {
   try {
     const { id } = req.params;
 
+    const { data: order, error: fetchError } = await supabase
+      .from("orders")
+      .select("id, customer_id")
+      .eq("id", id)
+      .is("deleted_at", null)
+      .single();
+
+    if (fetchError) {
+      if (fetchError.code === "PGRST116") {
+        return res.status(404).json({
+          success: false,
+          error: "Order not found",
+        });
+      }
+      throw fetchError;
+    }
+
+    const deletedAt = new Date().toISOString();
     const { error } = await supabase
       .from("orders")
-      .delete()
-      .eq("id", id);
+      .update({ deleted_at: deletedAt, updated_at: deletedAt })
+      .eq("id", id)
+      .is("deleted_at", null);
 
     if (error) throw error;
+
+    if (order.customer_id) {
+      const { recalculateCustomerStats } = await import("../modules/orders/customer-stats");
+      await recalculateCustomerStats(order.customer_id);
+    }
 
     res.json({
       success: true,

@@ -205,14 +205,29 @@ exports.orderRouter.delete('/bulk', async (req, res) => {
 });
 // DELETE /api/orders/:id - Delete an order
 exports.orderRouter.delete('/:id', async (req, res) => {
-    console.log('Bulk delete request body from /:id:', req.body);
+    var _a;
     const { id } = req.params;
     const orderId = id;
     try {
-        await orderService.deleteOrder(orderId);
+        const existingOrder = await orderService.getOrderById(orderId);
+        const deletedOrder = await orderService.deleteOrder(orderId);
         res
             .status(200)
             .json({ success: true, message: 'Order deleted successfully' });
+        (0, converra_forwarder_1.forwardToConverra)({
+            event_type: 'order.deleted',
+            external_event_id: `order-deleted-${orderId}`,
+            business_id: (_a = process.env.CONVERRA_BUSINESS_ID) !== null && _a !== void 0 ? _a : '',
+            timestamp: new Date().toISOString(),
+            payload: {
+                order_id: orderId,
+                customer_id: existingOrder.customer_id,
+                total_amount: existingOrder.total_amount,
+                deleted_at: deletedOrder.deleted_at,
+            },
+        }).catch((err) => {
+            console.error('[order.router] Failed to forward order.deleted to Converra:', err);
+        });
     }
     catch (error) {
         console.error('Error deleting order:', error);

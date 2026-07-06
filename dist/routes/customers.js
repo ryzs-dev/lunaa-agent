@@ -187,7 +187,7 @@ customersRouter.get('/s', async (req, res) => {
         }
         // Calculate customer stats
         const customersWithStats = (data === null || data === void 0 ? void 0 : data.map((customer) => {
-            const orders = customer.orders || [];
+            const orders = (customer.orders || []).filter((order) => !order.deleted_at);
             const totalSpent = orders.reduce((sum, order) => sum + (order.total_amount || 0), 0);
             const totalOrders = orders.length;
             const lastOrderDate = orders.length > 0
@@ -245,7 +245,7 @@ customersRouter.get('/:id', async (req, res) => {
             throw error;
         }
         // Calculate customer statistics
-        const orders = data.orders || [];
+        const orders = (data.orders || []).filter((order) => !order.deleted_at);
         const totalSpent = orders.reduce((sum, order) => sum + (order.total_amount || 0), 0);
         const avgOrderValue = orders.length > 0 ? totalSpent / orders.length : 0;
         const lastOrderDate = orders.length > 0

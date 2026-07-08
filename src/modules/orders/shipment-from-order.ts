@@ -32,7 +32,10 @@ function hasExistingTracking(
   return Boolean(tracking.tracking_number?.trim());
 }
 
-export function buildShipmentFromOrder(order: OrderLike): {
+export function buildShipmentFromOrder(
+  order: OrderLike,
+  options?: { isDropoff?: boolean },
+): {
   shipment?: ShipmentInput;
   error?: string;
 } {
@@ -70,9 +73,9 @@ export function buildShipmentFromOrder(order: OrderLike): {
     },
     kg: 0.5,
     price: 0,
-    content: 'Feminine Products',
+    content: order.shipment_description?.trim() || 'Feminine Products',
     content_value: Number(order.total_amount) || 0,
-    isDropoff: false,
+    isDropoff: options?.isDropoff === true,
   };
 
   return { shipment };

@@ -1,6 +1,8 @@
 import { UUID } from 'crypto';
 import { supabase } from '../supabase';
 import { recalculateCustomerStats } from './customer-stats';
+import { generateOrderNumber } from './order-number';
+import { validateOrderItems } from './validate-items';
 import { OrderInput, UpdateLineItemsInput } from './types';
 
 interface QueryParams {
@@ -40,8 +42,9 @@ class OrderDatabase {
       .order(sortBy, { ascending: sortOrder === 'asc' });
 
     if (search) {
+      const term = search.trim().replace(/"/g, '\\"');
       query = query.or(
-        `order_number.ilike.%${search}%,customers.name.ilike.%${search}%`
+        `order_number.ilike."%${term}%",customers.name.ilike."%${term}%"`
       );
     }
 
@@ -120,12 +123,24 @@ class OrderDatabase {
   }
 
   async upsertOrder(orderData: OrderInput) {
-    const { order_items, ...order } = orderData;
+    const validatedItems = validateOrderItems(orderData.order_items);
+    const { order_items: _orderItems, ...order } = orderData;
+    const orderNumber =
+      (order as { order_number?: string }).order_number ??
+      (await generateOrderNumber());
+
+    const orderPayload = {
+      ...order,
+      order_number: orderNumber,
+      order_date: order.order_date ?? new Date().toISOString(),
+      status: order.status ?? 'unpaid',
+      currency: order.currency ?? 'MYR',
+    };
 
     // 1️⃣ Upsert the order itself
     const { data: upsertedOrder, error: orderError } = await supabase
       .from('orders')
-      .upsert([order])
+      .upsert([orderPayload])
       .select('*')
       .single();
 
@@ -134,7 +149,7 @@ class OrderDatabase {
     const orderId = upsertedOrder.id;
 
     // 2️⃣ Prepare the order items with order_id
-    const itemsToUpsert = order_items.map((item) => ({
+    const itemsToUpsert = validatedItems.map((item) => ({
       ...item,
       order_id: orderId,
     }));
@@ -318,9 +333,14 @@ class OrderDatabase {
   }
 
   async updateLineItems(orderId: UUID, payload: UpdateLineItemsInput) {
-    const { line_items } = payload;
+    const validatedItems = validateOrderItems(
+      payload.line_items.map((item) => ({
+        product_id: item.product_id,
+        quantity: item.quantity,
+      }))
+    );
 
-    if (!line_items || !line_items.length) {
+    if (!validatedItems.length) {
       throw new Error(`Line items cannot be empty`);
     }
 
@@ -343,7 +363,7 @@ class OrderDatabase {
 
     if (deleteError) throw deleteError;
 
-    const itemsToInsert = line_items.map((item) => ({
+    const itemsToInsert = validatedItems.map((item) => ({
       order_id: orderId,
       product_id: item.product_id,
       quantity: item.quantity,

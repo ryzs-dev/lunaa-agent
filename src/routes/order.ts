@@ -115,13 +115,25 @@ orderRouter.post('/', async (req, res) => {
     });
   } catch (error) {
     console.error('Error creating order:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    const message =
+      error instanceof Error
+        ? error.message
+        : typeof error === 'object' &&
+            error !== null &&
+            'message' in error &&
+            typeof (error as { message: unknown }).message === 'string'
+          ? (error as { message: string }).message
+          : 'Internal server error';
+    res.status(500).json({ error: message });
   }
 });
 
 // POST /api/orders/create/bulk - Create Parcel Daily shipments for multiple CRM orders
 orderRouter.post('/create/bulk', async (req, res) => {
-  const { order_ids: orderIds } = req.body as { order_ids?: unknown };
+  const { order_ids: orderIds, is_dropoff: isDropoff } = req.body as {
+    order_ids?: unknown;
+    is_dropoff?: boolean;
+  };
 
   if (!Array.isArray(orderIds) || orderIds.length === 0) {
     return res.status(400).json({ error: 'order_ids array is required' });
@@ -143,7 +155,9 @@ orderRouter.post('/create/bulk', async (req, res) => {
 
     try {
       const order = await orderService.getOrderById(orderId as UUID);
-      const built = buildShipmentFromOrder(order);
+      const built = buildShipmentFromOrder(order, {
+        isDropoff: isDropoff === true,
+      });
 
       if (built.error || !built.shipment) {
         results.push({

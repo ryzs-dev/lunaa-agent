@@ -10,8 +10,8 @@ function hasExistingTracking(tracking) {
     }
     return Boolean((_a = tracking.tracking_number) === null || _a === void 0 ? void 0 : _a.trim());
 }
-function buildShipmentFromOrder(order) {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q;
+function buildShipmentFromOrder(order, options) {
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r;
     if (hasExistingTracking(order.order_tracking)) {
         return { error: 'Order already has a tracking number' };
     }
@@ -41,9 +41,9 @@ function buildShipmentFromOrder(order) {
         },
         kg: 0.5,
         price: 0,
-        content: 'Feminine Products',
+        content: ((_r = order.shipment_description) === null || _r === void 0 ? void 0 : _r.trim()) || 'Feminine Products',
         content_value: Number(order.total_amount) || 0,
-        isDropoff: false,
+        isDropoff: (options === null || options === void 0 ? void 0 : options.isDropoff) === true,
     };
     return { shipment };
 }

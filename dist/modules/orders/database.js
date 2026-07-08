@@ -13,6 +13,8 @@ var __rest = (this && this.__rest) || function (s, e) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const supabase_1 = require("../supabase");
 const customer_stats_1 = require("./customer-stats");
+const order_number_1 = require("./order-number");
+const validate_items_1 = require("./validate-items");
 class OrderDatabase {
     async getAllOrders({ limit, offset, search, sortBy, sortOrder, dateFrom, dateTo, status, tracking, }) {
         let query = supabase_1.supabase
@@ -23,7 +25,8 @@ class OrderDatabase {
             .is('deleted_at', null)
             .order(sortBy, { ascending: sortOrder === 'asc' });
         if (search) {
-            query = query.or(`order_number.ilike.%${search}%,customers.name.ilike.%${search}%`);
+            const term = search.trim().replace(/"/g, '\\"');
+            query = query.or(`order_number.ilike."%${term}%",customers.name.ilike."%${term}%"`);
         }
         if (dateFrom) {
             query = query.gte('created_at', dateFrom.toISOString());
@@ -87,18 +90,22 @@ class OrderDatabase {
         return orders;
     }
     async upsertOrder(orderData) {
-        const { order_items } = orderData, order = __rest(orderData, ["order_items"]);
+        var _a, _b, _c, _d;
+        const validatedItems = (0, validate_items_1.validateOrderItems)(orderData.order_items);
+        const { order_items: _orderItems } = orderData, order = __rest(orderData, ["order_items"]);
+        const orderNumber = (_a = order.order_number) !== null && _a !== void 0 ? _a : (await (0, order_number_1.generateOrderNumber)());
+        const orderPayload = Object.assign(Object.assign({}, order), { order_number: orderNumber, order_date: (_b = order.order_date) !== null && _b !== void 0 ? _b : new Date().toISOString(), status: (_c = order.status) !== null && _c !== void 0 ? _c : 'unpaid', currency: (_d = order.currency) !== null && _d !== void 0 ? _d : 'MYR' });
         // 1️⃣ Upsert the order itself
         const { data: upsertedOrder, error: orderError } = await supabase_1.supabase
             .from('orders')
-            .upsert([order])
+            .upsert([orderPayload])
             .select('*')
             .single();
         if (orderError)
             throw orderError;
         const orderId = upsertedOrder.id;
         // 2️⃣ Prepare the order items with order_id
-        const itemsToUpsert = order_items.map((item) => (Object.assign(Object.assign({}, item), { order_id: orderId })));
+        const itemsToUpsert = validatedItems.map((item) => (Object.assign(Object.assign({}, item), { order_id: orderId })));
         // 3️⃣ Upsert items — update quantity if same order_id + product_id exists
         const { error: itemsError } = await supabase_1.supabase
             .from('order_items')
@@ -244,8 +251,11 @@ class OrderDatabase {
         }
     }
     async updateLineItems(orderId, payload) {
-        const { line_items } = payload;
-        if (!line_items || !line_items.length) {
+        const validatedItems = (0, validate_items_1.validateOrderItems)(payload.line_items.map((item) => ({
+            product_id: item.product_id,
+            quantity: item.quantity,
+        })));
+        if (!validatedItems.length) {
             throw new Error(`Line items cannot be empty`);
         }
         //     Check order exist
@@ -266,7 +276,7 @@ class OrderDatabase {
             .eq('order_id', orderId);
         if (deleteError)
             throw deleteError;
-        const itemsToInsert = line_items.map((item) => ({
+        const itemsToInsert = validatedItems.map((item) => ({
             order_id: orderId,
             product_id: item.product_id,
             quantity: item.quantity,

@@ -15,7 +15,7 @@ export interface ShipmentInput {
   kg: number;
   price: number;
   cod?: number;
-  content: 'Feminine Products';
+  content: string;
   content_value: number;
   isDropoff: boolean;
 }

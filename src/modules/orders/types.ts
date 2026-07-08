@@ -1,10 +1,11 @@
 import { UUID } from 'crypto';
 
 export interface OrderInput {
-  created_at: string | number | Date;
+  created_at?: string | number | Date;
   address_id?: UUID;
   customer_id: UUID;
   order_date: Date;
+  order_number?: string;
   status?: 'unpaid' | 'paid' | 'refunded';
   currency?: string;
   total_amount: number;

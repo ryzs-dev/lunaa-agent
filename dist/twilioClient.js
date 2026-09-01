@@ -96,6 +96,14 @@ function detectCourierAndLink(trackingNumber, courier) {
             link: `https://www.dhl.com/my-en/home/tracking.html?tracking-id=${trackingNumber}`,
         };
     }
+    if (courierLower.includes("poslaju") ||
+        courierLower.includes("pos laju") ||
+        courierLower.includes("pos malaysia")) {
+        return {
+            name: "Pos Laju",
+            link: `https://www.pos.com.my/v2/track-trace?trackNo=${trackingNumber}`,
+        };
+    }
     // Auto-detect patterns
     if (/^SF/.test(upper)) {
         return {

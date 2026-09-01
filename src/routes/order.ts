@@ -25,6 +25,7 @@ orderRouter.get('/', async (req, res) => {
     sortBy,
     status,
     tracking,
+    location,
     sortOrder: sortOrderQuery,
     dateFrom,
     dateTo,
@@ -37,6 +38,7 @@ orderRouter.get('/', async (req, res) => {
       search: search as string,
       status: status as string,
       tracking: tracking as 'with' | 'without',
+      location: location as string,
       sortBy: (sortBy as string) || 'created_at',
       sortOrder: (sortOrderQuery === 'asc' ? 'asc' : 'desc') as 'asc' | 'desc',
       dateFrom: dateFrom ? new Date(dateFrom as string) : undefined,
@@ -130,9 +132,14 @@ orderRouter.post('/', async (req, res) => {
 
 // POST /api/orders/create/bulk - Create Parcel Daily shipments for multiple CRM orders
 orderRouter.post('/create/bulk', async (req, res) => {
-  const { order_ids: orderIds, is_dropoff: isDropoff } = req.body as {
+  const {
+    order_ids: orderIds,
+    is_dropoff: isDropoff,
+    service_provider: serviceProvider,
+  } = req.body as {
     order_ids?: unknown;
     is_dropoff?: boolean;
+    service_provider?: string;
   };
 
   if (!Array.isArray(orderIds) || orderIds.length === 0) {
@@ -157,6 +164,7 @@ orderRouter.post('/create/bulk', async (req, res) => {
       const order = await orderService.getOrderById(orderId as UUID);
       const built = buildShipmentFromOrder(order, {
         isDropoff: isDropoff === true,
+        serviceProvider,
       });
 
       if (built.error || !built.shipment) {

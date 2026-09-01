@@ -32,9 +32,20 @@ function hasExistingTracking(
   return Boolean(tracking.tracking_number?.trim());
 }
 
+const ALLOWED_SERVICE_PROVIDERS = new Set([
+  'spx',
+  'dhl',
+  'jnt',
+  'kex',
+  'lex',
+  'poslaju',
+  'flash',
+  'sf_express',
+]);
+
 export function buildShipmentFromOrder(
   order: OrderLike,
-  options?: { isDropoff?: boolean },
+  options?: { isDropoff?: boolean; serviceProvider?: string },
 ): {
   shipment?: ShipmentInput;
   error?: string;
@@ -57,8 +68,14 @@ export function buildShipmentFromOrder(
   const isSingapore =
     order.addresses?.country === 'Singapore' || phone.startsWith('+65');
 
+  const requestedProvider = options?.serviceProvider?.trim().toLowerCase();
+  const serviceProvider =
+    requestedProvider && ALLOWED_SERVICE_PROVIDERS.has(requestedProvider)
+      ? requestedProvider
+      : 'spx';
+
   const shipment: ShipmentInput = {
-    serviceProvider: 'spx',
+    serviceProvider,
     clientAddress: {
       fullName: order.customers?.name?.trim() || 'Customer',
       countryCode: isSingapore ? '+65' : '+60',

@@ -17,7 +17,7 @@ const PARCEL_DAILY_API_URL = process.env.PARCEL_DAILY_API_URL || 'http://localho
 const parcelDailyService = new service_3.ParcelDailyService(PARCEL_DAILY_API_URL);
 // GET /api/orders - Get all orders with optional pagination, search, and sorting
 exports.orderRouter.get('/', async (req, res) => {
-    const { limit, offset, search, sortBy, status, tracking, sortOrder: sortOrderQuery, dateFrom, dateTo, } = req.query;
+    const { limit, offset, search, sortBy, status, tracking, location, sortOrder: sortOrderQuery, dateFrom, dateTo, } = req.query;
     try {
         const { orders, pagination } = await orderService.getAllOrders({
             limit: limit ? Number(limit) : undefined,
@@ -25,6 +25,7 @@ exports.orderRouter.get('/', async (req, res) => {
             search: search,
             status: status,
             tracking: tracking,
+            location: location,
             sortBy: sortBy || 'created_at',
             sortOrder: (sortOrderQuery === 'asc' ? 'asc' : 'desc'),
             dateFrom: dateFrom ? new Date(dateFrom) : undefined,
@@ -113,7 +114,7 @@ exports.orderRouter.post('/', async (req, res) => {
 // POST /api/orders/create/bulk - Create Parcel Daily shipments for multiple CRM orders
 exports.orderRouter.post('/create/bulk', async (req, res) => {
     var _a, _b;
-    const { order_ids: orderIds, is_dropoff: isDropoff } = req.body;
+    const { order_ids: orderIds, is_dropoff: isDropoff, service_provider: serviceProvider, } = req.body;
     if (!Array.isArray(orderIds) || orderIds.length === 0) {
         return res.status(400).json({ error: 'order_ids array is required' });
     }
@@ -127,6 +128,7 @@ exports.orderRouter.post('/create/bulk', async (req, res) => {
             const order = await orderService.getOrderById(orderId);
             const built = (0, shipment_from_order_1.buildShipmentFromOrder)(order, {
                 isDropoff: isDropoff === true,
+                serviceProvider,
             });
             if (built.error || !built.shipment) {
                 results.push({

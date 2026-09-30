@@ -17,6 +17,7 @@ const FINAL_STATUSES = [
     ...DELIVERED_STATUSES,
     ...database_1.ORDER_STATUS_GROUPS.problem.map((s) => s.toLowerCase()),
 ];
+let trackingUpdateQueue = Promise.resolve();
 // Match by tracking number first: Parcel Daily's order reference is blank or
 // stale for parcels booked or duplicated outside the CRM.
 async function applyTrackingUpdate(payload) {
@@ -98,7 +99,10 @@ const initParcelDailySubscribers = (io) => {
                     }, payload.crm_order_id);
                     break;
                 case events_1.PubSubEvents.TRACKING_UPDATED:
-                    await applyTrackingUpdate(payload);
+                    // Serialised so a burst of events (e.g. the status sync) cannot flood Supabase.
+                    trackingUpdateQueue = trackingUpdateQueue
+                        .then(() => applyTrackingUpdate(payload))
+                        .catch((error) => console.error(`❌ Error applying tracking update for ${payload.tracking_number}:`, error));
                     break;
                 default:
                     console.warn(`⚠️ Unknown channel: ${channel}`);

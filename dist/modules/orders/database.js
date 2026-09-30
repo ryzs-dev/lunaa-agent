@@ -84,10 +84,15 @@ class OrderDatabase {
         const statusValues = status && status !== 'all' && status !== 'needs_shipment'
             ? (_a = exports.ORDER_STATUS_GROUPS[status]) !== null && _a !== void 0 ? _a : [status]
             : null;
+        const filtersOnTracking = Boolean(statusValues) ||
+            status === 'needs_shipment' ||
+            tracking === 'with' ||
+            tracking === 'without';
         const filterSelect = [
             'id',
             applyLocation && 'addresses!inner(state)',
-            `order_tracking${statusValues ? '!inner' : ''}(id, status)`,
+            filtersOnTracking &&
+                `order_tracking${statusValues ? '!inner' : ''}(id, status)`,
         ]
             .filter(Boolean)
             .join(', ');

@@ -106,10 +106,16 @@ class OrderDatabase {
       status && status !== 'all' && status !== 'needs_shipment'
         ? ORDER_STATUS_GROUPS[status] ?? [status]
         : null;
+    const filtersOnTracking =
+      Boolean(statusValues) ||
+      status === 'needs_shipment' ||
+      tracking === 'with' ||
+      tracking === 'without';
     const filterSelect = [
       'id',
       applyLocation && 'addresses!inner(state)',
-      `order_tracking${statusValues ? '!inner' : ''}(id, status)`,
+      filtersOnTracking &&
+        `order_tracking${statusValues ? '!inner' : ''}(id, status)`,
     ]
       .filter(Boolean)
       .join(', ');

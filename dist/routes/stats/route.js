@@ -13,11 +13,12 @@ exports.statsRouter.get('/dashboard', async (req, res) => {
     try {
         const { month } = req.query;
         const resolvedMonth = (0, timezone_1.resolveMonthKey)(typeof month === 'string' ? month : undefined);
-        const { stats, charts } = await statsService.getDashboardStats(resolvedMonth);
+        const { stats, repeat_order_value, charts } = await statsService.getDashboardStats(resolvedMonth);
         res.status(200).json({
             success: true,
             month: resolvedMonth,
             stats,
+            repeat_order_value,
             charts,
         });
     }

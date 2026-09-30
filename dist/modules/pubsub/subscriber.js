@@ -8,6 +8,9 @@ const pubsub_1 = require("../pubsub");
 const events_1 = require("./events");
 const service_1 = __importDefault(require("../order_tracking/service"));
 const orderTrackingService = new service_1.default();
+// Parcels created outside the CRM have an empty reference, and ones duplicated in
+// Parcel Daily get a "-duplicated" suffix; neither maps to a CRM order.
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const initParcelDailySubscribers = (io) => {
     const channels = [
         events_1.PubSubEvents.ORDER_CREATED,
@@ -25,9 +28,16 @@ const initParcelDailySubscribers = (io) => {
     }
     // Handle all messages
     pubsub_1.sub.on('message', async (channel, message) => {
+        var _a;
         try {
             const payload = JSON.parse(message);
             console.log(`📨 Received ${channel}:`, payload);
+            const isOrderEvent = channel === events_1.PubSubEvents.ORDER_CREATED ||
+                channel === events_1.PubSubEvents.TRACKING_UPDATED;
+            if (isOrderEvent && !UUID_PATTERN.test((_a = payload.crm_order_id) !== null && _a !== void 0 ? _a : '')) {
+                console.log(`⏭️ Skipping ${channel} for ${payload.tracking_number}: no CRM order (${JSON.stringify(payload.crm_order_id)})`);
+                return;
+            }
             switch (channel) {
                 case events_1.PubSubEvents.INCOMING_MESSAGE:
                 case events_1.PubSubEvents.OUTGOING_MESSAGE:

@@ -13,12 +13,14 @@ statsRouter.get('/dashboard', async (req, res) => {
       typeof month === 'string' ? month : undefined
     );
 
-    const { stats, charts } = await statsService.getDashboardStats(resolvedMonth);
+    const { stats, repeat_order_value, charts } =
+      await statsService.getDashboardStats(resolvedMonth);
 
     res.status(200).json({
       success: true,
       month: resolvedMonth,
       stats,
+      repeat_order_value,
       charts,
     });
   } catch (error) {

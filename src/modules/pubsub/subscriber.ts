@@ -5,6 +5,11 @@ import OrderTrackingService from '../order_tracking/service';
 
 const orderTrackingService = new OrderTrackingService();
 
+// Parcels created outside the CRM have an empty reference, and ones duplicated in
+// Parcel Daily get a "-duplicated" suffix; neither maps to a CRM order.
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export const initParcelDailySubscribers = (io: SocketIOServer) => {
   const channels = [
     PubSubEvents.ORDER_CREATED,
@@ -27,6 +32,16 @@ export const initParcelDailySubscribers = (io: SocketIOServer) => {
     try {
       const payload = JSON.parse(message);
       console.log(`📨 Received ${channel}:`, payload);
+
+      const isOrderEvent =
+        channel === PubSubEvents.ORDER_CREATED ||
+        channel === PubSubEvents.TRACKING_UPDATED;
+      if (isOrderEvent && !UUID_PATTERN.test(payload.crm_order_id ?? '')) {
+        console.log(
+          `⏭️ Skipping ${channel} for ${payload.tracking_number}: no CRM order (${JSON.stringify(payload.crm_order_id)})`
+        );
+        return;
+      }
 
       switch (channel) {
         case PubSubEvents.INCOMING_MESSAGE:

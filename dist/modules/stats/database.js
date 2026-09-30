@@ -1,6 +1,77 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.getRepeatOrderValue = getRepeatOrderValue;
 const supabase_1 = require("../supabase");
+const CUSTOMER_ID_CHUNK_SIZE = 200;
+// An order counts as a repeat order when the same customer has an earlier active order.
+async function getRepeatOrderValue(start, end) {
+    let periodQuery = supabase_1.supabase
+        .from('orders')
+        .select('id, customer_id, total_amount, created_at')
+        .is('deleted_at', null)
+        .gte('created_at', start.toISOString());
+    if (end) {
+        periodQuery = periodQuery.lt('created_at', end.toISOString());
+    }
+    const { data: periodOrders, error: periodError } = await periodQuery.order('created_at', { ascending: true });
+    if (periodError)
+        throw periodError;
+    const orders = (periodOrders || []).filter((order) => order.customer_id);
+    const customerIds = [...new Set(orders.map((order) => order.customer_id))];
+    const customersWithPriorOrders = new Set();
+    for (let i = 0; i < customerIds.length; i += CUSTOMER_ID_CHUNK_SIZE) {
+        const chunk = customerIds.slice(i, i + CUSTOMER_ID_CHUNK_SIZE);
+        const { data: priorOrders, error: priorError } = await supabase_1.supabase
+            .from('orders')
+            .select('customer_id')
+            .is('deleted_at', null)
+            .lt('created_at', start.toISOString())
+            .in('customer_id', chunk);
+        if (priorError)
+            throw priorError;
+        priorOrders === null || priorOrders === void 0 ? void 0 : priorOrders.forEach((order) => customersWithPriorOrders.add(order.customer_id));
+    }
+    const seenCustomers = new Set(customersWithPriorOrders);
+    const repeatCustomerIds = new Set();
+    let repeatOrders = 0;
+    let repeatRevenue = 0;
+    let newOrders = 0;
+    let newRevenue = 0;
+    for (const order of orders) {
+        const amount = Number(order.total_amount || 0);
+        if (seenCustomers.has(order.customer_id)) {
+            repeatOrders += 1;
+            repeatRevenue += amount;
+            repeatCustomerIds.add(order.customer_id);
+        }
+        else {
+            newOrders += 1;
+            newRevenue += amount;
+            seenCustomers.add(order.customer_id);
+        }
+    }
+    const totalRevenue = repeatRevenue + newRevenue;
+    const round = (value) => parseFloat(value.toFixed(2));
+    return {
+        repeatCustomers: repeatCustomerIds.size,
+        repeatOrders,
+        repeatRevenue: round(repeatRevenue),
+        repeatAverageOrderValue: round(repeatOrders > 0 ? repeatRevenue / repeatOrders : 0),
+        repeatRevenueShare: round(totalRevenue > 0 ? (repeatRevenue / totalRevenue) * 100 : 0),
+        newOrders,
+        newRevenue: round(newRevenue),
+        newAverageOrderValue: round(newOrders > 0 ? newRevenue / newOrders : 0),
+    };
+}
+// Month boundaries follow Malaysia time (UTC+8, no DST).
+function getMonthRange(month) {
+    const [year, monthIndex] = month.split('-').map(Number);
+    const nextMonth = monthIndex === 12 ? `${year + 1}-01` : `${year}-${String(monthIndex + 1).padStart(2, '0')}`;
+    return {
+        start: new Date(`${month}-01T00:00:00+08:00`),
+        end: new Date(`${nextMonth}-01T00:00:00+08:00`),
+    };
+}
 class StatsDatabase {
     async getDashboardStats(month) {
         var _a, _b, _c, _d, _e;
@@ -22,7 +93,10 @@ class StatsDatabase {
         });
         if (customerAcquisitionError)
             throw customerAcquisitionError;
+        const { start, end } = getMonthRange(month);
+        const repeatOrderValue = await getRepeatOrderValue(start, end);
         return {
+            repeatOrderValue,
             stats: {
                 total_customers,
                 total_orders: (_b = statsRow.total_orders) !== null && _b !== void 0 ? _b : 0,

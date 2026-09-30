@@ -22,6 +22,16 @@ class StatsService {
         average_order_value: result.stats.average_order_value ?? 0,
         mtd_revenue: result.stats.mtd_revenue ?? 0,
       },
+      repeat_order_value: {
+        repeat_customers: result.repeatOrderValue.repeatCustomers,
+        repeat_orders: result.repeatOrderValue.repeatOrders,
+        repeat_revenue: result.repeatOrderValue.repeatRevenue,
+        repeat_average_order_value: result.repeatOrderValue.repeatAverageOrderValue,
+        repeat_revenue_share: result.repeatOrderValue.repeatRevenueShare,
+        new_orders: result.repeatOrderValue.newOrders,
+        new_revenue: result.repeatOrderValue.newRevenue,
+        new_average_order_value: result.repeatOrderValue.newAverageOrderValue,
+      },
       charts: result.charts ?? {},
     };
   }

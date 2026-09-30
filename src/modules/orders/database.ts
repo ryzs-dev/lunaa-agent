@@ -73,6 +73,16 @@ const SORTABLE_ORDER_FIELDS = [
 // every joined row, so only nullable columns get it.
 const NULLABLE_SORT_FIELDS = ['order_date', 'total_amount'];
 
+const MALAYSIA_OFFSET_MS = 8 * 60 * 60 * 1000;
+
+// Accepts both "YYYY-MM-DD" (UTC midnight) and a Malaysia-midnight ISO
+// timestamp, returning the Malaysia calendar date for either.
+function toMalaysiaDate(date: Date) {
+  return new Date(date.getTime() + MALAYSIA_OFFSET_MS)
+    .toISOString()
+    .slice(0, 10);
+}
+
 interface QueryParams {
   limit: number;
   offset: number;
@@ -162,14 +172,11 @@ class OrderDatabase {
     }
 
     if (dateFrom) {
-      query = query.gte('created_at', dateFrom.toISOString());
+      query = query.gte('order_date', toMalaysiaDate(dateFrom));
     }
 
     if (dateTo) {
-      const endOfDay = new Date(dateTo);
-      endOfDay.setHours(23, 59, 59, 999);
-
-      query = query.lte('created_at', endOfDay.toISOString());
+      query = query.lte('order_date', toMalaysiaDate(dateTo));
     }
 
     if (tracking && tracking !== 'all') {

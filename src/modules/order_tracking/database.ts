@@ -24,6 +24,12 @@ class OrderTrackingDatabase {
         return records;
     }
 
+    async getTrackingEntriesByTrackingNumber(trackingNumber: string) {
+        const { data: records, error } = await supabase.from("order_tracking").select("*").eq("tracking_number", trackingNumber);
+        if (error) throw error;
+        return records;
+    }
+
     async updateTrackingEntry(entryId: string, updates: Partial<OrderTrackingInput>) {
         const { data: record, error } = await supabase.from("order_tracking").update(updates).eq("id", entryId).select("*").single();
         if (error) throw error;

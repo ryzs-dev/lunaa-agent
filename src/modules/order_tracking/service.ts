@@ -26,6 +26,12 @@ class OrderTrackingService {
     );
   }
 
+  async getTrackingEntriesByTrackingNumber(trackingNumber: string) {
+    return await this.orderTrackingDatabase.getTrackingEntriesByTrackingNumber(
+      trackingNumber
+    );
+  }
+
   async updateTrackingEntry(
     entryId: string,
     updates: Partial<OrderTrackingInput>

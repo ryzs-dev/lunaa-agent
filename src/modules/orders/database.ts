@@ -30,7 +30,14 @@ const WEST_MALAYSIA_STATES = [
 // Courier and message statuses arrive with inconsistent spelling, so the
 // dashboard filters on these groups rather than raw values.
 export const ORDER_STATUS_GROUPS: Record<string, string[]> = {
-  awaiting_pickup: ['pending', 'Pending', 'Pending Pickup', 'sent', 'read'],
+  awaiting_pickup: [
+    'pending',
+    'Pending',
+    'Pending Pickup',
+    'Shipment Data Received',
+    'sent',
+    'read',
+  ],
   in_transit: [
     'In Transit',
     'Delivering',
@@ -39,8 +46,20 @@ export const ORDER_STATUS_GROUPS: Record<string, string[]> = {
     'Shipment collected',
     'Mainwaybill Pickup',
   ],
-  delivered: ['Delivered', 'delivered', 'Successfully delivered'],
-  problem: ['undelivered', 'Returned'],
+  delivered: [
+    'Delivered',
+    'delivered',
+    'Successfully delivered',
+    'Delivery Success',
+    'special POD',
+  ],
+  problem: [
+    'undelivered',
+    'Returned',
+    'RTO Success',
+    'return success',
+    'Return shipment was successfully delivered',
+  ],
 };
 
 const SORTABLE_ORDER_FIELDS = [

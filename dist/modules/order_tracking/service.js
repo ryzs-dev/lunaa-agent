@@ -17,6 +17,9 @@ class OrderTrackingService {
     async getTrackingEntriesByOrderId(orderId) {
         return await this.orderTrackingDatabase.getTrackingEntriesByOrderId(orderId);
     }
+    async getTrackingEntriesByTrackingNumber(trackingNumber) {
+        return await this.orderTrackingDatabase.getTrackingEntriesByTrackingNumber(trackingNumber);
+    }
     async updateTrackingEntry(entryId, updates) {
         return await this.orderTrackingDatabase.updateTrackingEntry(entryId, updates);
     }

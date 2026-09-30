@@ -381,8 +381,8 @@ export async function sendCompleteMessageSequence(
   usageVideoSid?: string;
 }> {
   const {
-    includeUsageGuide = true,
-    includeUsageVideo = true,
+    includeUsageGuide = false,
+    includeUsageVideo = false,
     delayBetweenMessages = 30000,
   } = options;
 

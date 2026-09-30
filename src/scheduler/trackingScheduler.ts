@@ -82,7 +82,7 @@ async function runTrackingAutomation(): Promise<{
 
   // Options for the automation
   const options = {
-    includeUsageGuide: true,
+    includeUsageGuide: false,
     includeUsageVideo: false, // Removed usage video
     delayBetweenMessages: 1000, // 1 second between messages
     useSequence: true, // Send complete message sequence

@@ -1,12 +1,19 @@
 import { supabase } from '../supabase';
 
 export function sanitizeSearchTerm(term: string): string {
-  return term.trim().replace(/[%_,"()]/g, '').slice(0, 80);
+  return term.trim().replace(/[%_,"()]/g, ' ').replace(/\s+/g, ' ').slice(0, 80);
+}
+
+export function looksLikePhone(term: string): boolean {
+  const compact = term.replace(/[\s()+-]/g, '');
+  return /^\d{6,15}$/.test(compact);
 }
 
 export function phoneSearchVariants(term: string): string[] {
+  if (!looksLikePhone(term)) return [];
+
   const digits = term.replace(/\D/g, '');
-  if (digits.length < 4) return [];
+  if (digits.length < 6) return [];
 
   const variants = new Set<string>([digits]);
 

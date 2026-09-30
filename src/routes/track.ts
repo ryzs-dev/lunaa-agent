@@ -21,7 +21,7 @@ trackRouter.post("/track", async (req: Request, res: Response) => {
   // Options from request body with proper defaults
   const body = req.body || {};
   const {
-    includeUsageGuide = true,
+    includeUsageGuide = false,
     includeUsageVideo = false,
     delayBetweenMessages = 5000, // 30 seconds
     useSequence = true, // Whether to send all messages or just tracking
@@ -259,7 +259,7 @@ trackRouter.post(
       phone,
       trackingNumber,
       courierCompany,
-      includeUsageGuide = true,
+      includeUsageGuide = false,
       includeUsageVideo = true,
       delayBetweenMessages = 30000,
     } = body;

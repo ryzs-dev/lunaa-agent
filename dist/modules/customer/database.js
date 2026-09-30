@@ -3,7 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const supabase_1 = require("../supabase");
 const customer_search_1 = require("../shared/customer-search");
 class CustomerDatabase {
-    async getAllCustomers({ limit, offset, search, sortBy, sortOrder, filterDate, repeatCustomer, }) {
+    async getAllCustomers({ limit, offset, search, sortBy, sortOrder, filterDate, repeatCustomer, countryFilter, }) {
         let query = supabase_1.supabase
             .from('customers')
             .select('*', { count: 'exact' })
@@ -21,6 +21,8 @@ class CustomerDatabase {
         if (filterDate) {
             query = query.gte('last_order_date', filterDate.toISOString());
         }
+        if (countryFilter)
+            query = query.or(countryFilter);
         const { data: customers, error, count } = await query;
         if (error)
             throw error;
@@ -102,7 +104,7 @@ class CustomerDatabase {
             throw error;
         return updatedCustomer;
     }
-    async getAllCustomerIds({ search, filterDate, }) {
+    async getAllCustomerIds({ search, filterDate, countryFilter, }) {
         let query = supabase_1.supabase
             .from('customers')
             .select('id', { count: 'exact' })
@@ -115,6 +117,8 @@ class CustomerDatabase {
         if (filterDate) {
             query = query.gte('created_at', filterDate.toISOString());
         }
+        if (countryFilter)
+            query = query.or(countryFilter);
         const { data, error } = await query;
         if (error)
             throw error;

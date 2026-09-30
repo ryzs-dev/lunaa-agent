@@ -15,11 +15,17 @@ const customerService = new CustomerService();
 
 // GET /api/customers - Get all customers
 customersRouter.get('/', async (req, res) => {
-  const { limit, offset, search, sortBy, sortOrder, filter, type } = req.query;
+  const { limit, offset, search, sortBy, sortOrder, filter, type, country } = req.query;
 
   if (filter && !['all', 'today', 'week', 'month'].includes(filter as string)) {
     return res.status(400).json({
       error: 'Invalid filter. Allowed values: all, today, week, month',
+    });
+  }
+
+  if (country && !['all', 'MY', 'SG'].includes(country as string)) {
+    return res.status(400).json({
+      error: 'Invalid country. Allowed values: all, MY, SG',
     });
   }
 
@@ -38,6 +44,7 @@ customersRouter.get('/', async (req, res) => {
       sortBy: sortBy ? String(sortBy) : undefined,
       sortOrder: sortOrder === 'asc' ? 'asc' : 'desc',
       filter: filter as 'all' | 'today' | 'week' | 'month' | undefined,
+      country: country === 'MY' || country === 'SG' ? country : undefined,
     });
 
     res.status(200).json({
@@ -61,7 +68,7 @@ customersRouter.get('/summary', async (_req, res) => {
 });
 
 customersRouter.get('/ids', async (req, res) => {
-  const { search, filter } = req.query;
+  const { search, filter, country } = req.query;
 
   if (filter && !['all', 'today', 'week', 'month'].includes(filter as string)) {
     return res.status(400).json({
@@ -73,6 +80,7 @@ customersRouter.get('/ids', async (req, res) => {
     const ids = await customerService.getAllCustomerIds({
       search: search ? String(search) : undefined,
       filter: filter as 'all' | 'today' | 'week' | 'month' | undefined,
+      country: country === 'MY' || country === 'SG' ? country : undefined,
     });
 
     res.status(200).json({ ids });

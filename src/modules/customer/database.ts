@@ -12,6 +12,7 @@ class CustomerDatabase {
     sortOrder,
     filterDate,
     repeatCustomer,
+    countryFilter,
   }: {
     limit: number;
     offset: number;
@@ -20,6 +21,7 @@ class CustomerDatabase {
     sortOrder: 'asc' | 'desc';
     filterDate?: Date;
     repeatCustomer?: 'returning' | 'new';
+    countryFilter?: string;
   }) {
     let query = supabase
       .from('customers')
@@ -40,6 +42,8 @@ class CustomerDatabase {
     if (filterDate) {
       query = query.gte('last_order_date', filterDate.toISOString());
     }
+
+    if (countryFilter) query = query.or(countryFilter);
 
     const { data: customers, error, count } = await query;
     if (error) throw error;
@@ -130,9 +134,11 @@ class CustomerDatabase {
   async getAllCustomerIds({
     search,
     filterDate,
+    countryFilter,
   }: {
     search?: string;
     filterDate?: Date;
+    countryFilter?: string;
   }) {
     let query = supabase
       .from('customers')
@@ -147,6 +153,8 @@ class CustomerDatabase {
     if (filterDate) {
       query = query.gte('created_at', filterDate.toISOString());
     }
+
+    if (countryFilter) query = query.or(countryFilter);
 
     const { data, error } = await query;
     if (error) throw error;

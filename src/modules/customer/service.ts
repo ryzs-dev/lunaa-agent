@@ -3,6 +3,8 @@ import CustomerDatabase from './database';
 import { CustomerInput } from './types';
 import { OrderInput } from '../orders/types';
 import { cleanCustomerName } from '../../utils/customerName';
+import { CountryCode } from '../../utils/country';
+import { countryOrFilter, customerCountry, getCountryIndex } from './country-index';
 
 const SORTABLE_CUSTOMER_FIELDS = [
   'created_at',
@@ -51,6 +53,7 @@ class CustomerService {
     sortOrder?: 'asc' | 'desc';
     filter?: 'all' | 'today' | 'week' | 'month';
     type?: 'all' | 'returning' | 'new';
+    country?: CountryCode;
   }) {
     const limit = !options.limit || options.limit > 100 ? 20 : options.limit;
     const offset = options.offset ?? 0;
@@ -87,6 +90,8 @@ class CustomerService {
       }
     }
 
+    const countryIndex = await getCountryIndex();
+
     const { customers, count } = await this.customerDatabase.getAllCustomers({
       limit,
       offset,
@@ -96,10 +101,16 @@ class CustomerService {
       filterDate,
       repeatCustomer:
         options.type && options.type !== 'all' ? options.type : undefined,
+      countryFilter: options.country
+        ? countryOrFilter(countryIndex, options.country)
+        : undefined,
     });
 
     return {
-      customers,
+      customers: (customers ?? []).map((customer) => ({
+        ...customer,
+        country: customerCountry(countryIndex, customer),
+      })),
       pagination: {
         limit,
         offset,
@@ -109,7 +120,11 @@ class CustomerService {
   }
 
   async getCustomerSummary() {
-    return this.customerDatabase.getCustomerSummary();
+    const [summary, countryIndex] = await Promise.all([
+      this.customerDatabase.getCustomerSummary(),
+      getCountryIndex(),
+    ]);
+    return { ...summary, countries: countryIndex.counts };
   }
 
   async getCustomerByPhoneNumber(phoneNumber: string) {
@@ -164,6 +179,7 @@ class CustomerService {
   async getAllCustomerIds(options: {
     search?: string;
     filter?: 'all' | 'today' | 'week' | 'month';
+    country?: CountryCode;
   }) {
     let filterDate: Date | undefined;
 
@@ -190,6 +206,9 @@ class CustomerService {
     return this.customerDatabase.getAllCustomerIds({
       search: options.search,
       filterDate,
+      countryFilter: options.country
+        ? countryOrFilter(await getCountryIndex(), options.country)
+        : undefined,
     });
   }
 }

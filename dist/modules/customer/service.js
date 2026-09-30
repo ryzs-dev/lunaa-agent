@@ -5,6 +5,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const database_1 = __importDefault(require("./database"));
 const customerName_1 = require("../../utils/customerName");
+const country_index_1 = require("./country-index");
 const SORTABLE_CUSTOMER_FIELDS = [
     'created_at',
     'name',
@@ -66,6 +67,7 @@ class CustomerService {
                     break;
             }
         }
+        const countryIndex = await (0, country_index_1.getCountryIndex)();
         const { customers, count } = await this.customerDatabase.getAllCustomers({
             limit,
             offset,
@@ -74,9 +76,12 @@ class CustomerService {
             sortOrder,
             filterDate,
             repeatCustomer: options.type && options.type !== 'all' ? options.type : undefined,
+            countryFilter: options.country
+                ? (0, country_index_1.countryOrFilter)(countryIndex, options.country)
+                : undefined,
         });
         return {
-            customers,
+            customers: (customers !== null && customers !== void 0 ? customers : []).map((customer) => (Object.assign(Object.assign({}, customer), { country: (0, country_index_1.customerCountry)(countryIndex, customer) }))),
             pagination: {
                 limit,
                 offset,
@@ -85,7 +90,11 @@ class CustomerService {
         };
     }
     async getCustomerSummary() {
-        return this.customerDatabase.getCustomerSummary();
+        const [summary, countryIndex] = await Promise.all([
+            this.customerDatabase.getCustomerSummary(),
+            (0, country_index_1.getCountryIndex)(),
+        ]);
+        return Object.assign(Object.assign({}, summary), { countries: countryIndex.counts });
     }
     async getCustomerByPhoneNumber(phoneNumber) {
         const normalizedPhoneNumber = this.normalizePhoneNumber(phoneNumber);
@@ -144,6 +153,9 @@ class CustomerService {
         return this.customerDatabase.getAllCustomerIds({
             search: options.search,
             filterDate,
+            countryFilter: options.country
+                ? (0, country_index_1.countryOrFilter)(await (0, country_index_1.getCountryIndex)(), options.country)
+                : undefined,
         });
     }
 }

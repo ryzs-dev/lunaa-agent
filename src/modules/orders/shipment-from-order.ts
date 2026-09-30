@@ -1,4 +1,5 @@
 import { ShipmentInput } from '../parcel-daily/types';
+import { countryFromPhone } from '../../utils/country';
 
 type OrderLike = {
   id?: string;
@@ -65,8 +66,13 @@ export function buildShipmentFromOrder(
     return { error: 'Missing delivery address or postcode' };
   }
 
-  const isSingapore =
-    order.addresses?.country === 'Singapore' || phone.startsWith('+65');
+  // The courier gets the phone with its country code stripped, so the code has
+  // to follow the phone even when a Singapore customer ships to Malaysia.
+  const phoneIsSingapore = countryFromPhone(phone) === 'SG';
+  const addressCountry = order.addresses?.country?.trim();
+  const isSingapore = addressCountry
+    ? addressCountry === 'Singapore'
+    : phoneIsSingapore;
 
   const requestedProvider = options?.serviceProvider?.trim().toLowerCase();
   const serviceProvider =
@@ -78,7 +84,7 @@ export function buildShipmentFromOrder(
     serviceProvider,
     clientAddress: {
       fullName: order.customers?.name?.trim() || 'Customer',
-      countryCode: isSingapore ? '+65' : '+60',
+      countryCode: phoneIsSingapore ? '+65' : '+60',
       phone,
       email: order.customers?.email?.trim() || 'noreply@lunaa.local',
       line1: fullAddress,

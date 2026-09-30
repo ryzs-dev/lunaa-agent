@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.buildShipmentFromOrder = buildShipmentFromOrder;
+const country_1 = require("../../utils/country");
 function hasExistingTracking(tracking) {
     var _a;
     if (!tracking)
@@ -21,7 +22,7 @@ const ALLOWED_SERVICE_PROVIDERS = new Set([
     'sf_express',
 ]);
 function buildShipmentFromOrder(order, options) {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t;
     if (hasExistingTracking(order.order_tracking)) {
         return { error: 'Order already has a tracking number' };
     }
@@ -34,28 +35,34 @@ function buildShipmentFromOrder(order, options) {
     if (!fullAddress || !postcode) {
         return { error: 'Missing delivery address or postcode' };
     }
-    const isSingapore = ((_g = order.addresses) === null || _g === void 0 ? void 0 : _g.country) === 'Singapore' || phone.startsWith('+65');
-    const requestedProvider = (_h = options === null || options === void 0 ? void 0 : options.serviceProvider) === null || _h === void 0 ? void 0 : _h.trim().toLowerCase();
+    // The courier gets the phone with its country code stripped, so the code has
+    // to follow the phone even when a Singapore customer ships to Malaysia.
+    const phoneIsSingapore = (0, country_1.countryFromPhone)(phone) === 'SG';
+    const addressCountry = (_h = (_g = order.addresses) === null || _g === void 0 ? void 0 : _g.country) === null || _h === void 0 ? void 0 : _h.trim();
+    const isSingapore = addressCountry
+        ? addressCountry === 'Singapore'
+        : phoneIsSingapore;
+    const requestedProvider = (_j = options === null || options === void 0 ? void 0 : options.serviceProvider) === null || _j === void 0 ? void 0 : _j.trim().toLowerCase();
     const serviceProvider = requestedProvider && ALLOWED_SERVICE_PROVIDERS.has(requestedProvider)
         ? requestedProvider
         : 'spx';
     const shipment = {
         serviceProvider,
         clientAddress: {
-            fullName: ((_k = (_j = order.customers) === null || _j === void 0 ? void 0 : _j.name) === null || _k === void 0 ? void 0 : _k.trim()) || 'Customer',
-            countryCode: isSingapore ? '+65' : '+60',
+            fullName: ((_l = (_k = order.customers) === null || _k === void 0 ? void 0 : _k.name) === null || _l === void 0 ? void 0 : _l.trim()) || 'Customer',
+            countryCode: phoneIsSingapore ? '+65' : '+60',
             phone,
-            email: ((_m = (_l = order.customers) === null || _l === void 0 ? void 0 : _l.email) === null || _m === void 0 ? void 0 : _m.trim()) || 'noreply@lunaa.local',
+            email: ((_o = (_m = order.customers) === null || _m === void 0 ? void 0 : _m.email) === null || _o === void 0 ? void 0 : _o.trim()) || 'noreply@lunaa.local',
             line1: fullAddress,
             line2: '',
-            city: ((_p = (_o = order.addresses) === null || _o === void 0 ? void 0 : _o.city) === null || _p === void 0 ? void 0 : _p.trim()) || '',
+            city: ((_q = (_p = order.addresses) === null || _p === void 0 ? void 0 : _p.city) === null || _q === void 0 ? void 0 : _q.trim()) || '',
             postcode,
-            state: ((_r = (_q = order.addresses) === null || _q === void 0 ? void 0 : _q.state) === null || _r === void 0 ? void 0 : _r.trim()) || '',
+            state: ((_s = (_r = order.addresses) === null || _r === void 0 ? void 0 : _r.state) === null || _s === void 0 ? void 0 : _s.trim()) || '',
             country: isSingapore ? 'Singapore' : 'Malaysia',
         },
         kg: 0.5,
         price: 0,
-        content: ((_s = order.shipment_description) === null || _s === void 0 ? void 0 : _s.trim()) || 'Feminine Products',
+        content: ((_t = order.shipment_description) === null || _t === void 0 ? void 0 : _t.trim()) || 'Feminine Products',
         content_value: Number(order.total_amount) || 0,
         isDropoff: (options === null || options === void 0 ? void 0 : options.isDropoff) === true,
     };

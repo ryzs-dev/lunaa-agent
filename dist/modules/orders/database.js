@@ -74,6 +74,9 @@ const SORTABLE_ORDER_FIELDS = [
     'total_amount',
     'order_number',
 ];
+// Ordering with NULLS LAST on a non-null column skips its index and sorts
+// every joined row, so only nullable columns get it.
+const NULLABLE_SORT_FIELDS = ['order_date', 'total_amount'];
 class OrderDatabase {
     async getAllOrders({ limit, offset, search, sortBy, sortOrder, dateFrom, dateTo, status, tracking, location, }) {
         var _a;
@@ -96,7 +99,7 @@ class OrderDatabase {
             count: 'exact',
         })
             .is('deleted_at', null)
-            .order(sortField, { ascending: sortOrder === 'asc', nullsFirst: false })
+            .order(sortField, Object.assign({ ascending: sortOrder === 'asc' }, (NULLABLE_SORT_FIELDS.includes(sortField) && { nullsFirst: false })))
             .order('id');
         if (search) {
             const term = (0, customer_search_1.sanitizeSearchTerm)(search);

@@ -12,6 +12,10 @@ export const orderRouter = express.Router();
 const orderService = new OrderService();
 const orderTrackingService = new OrderTrackingService();
 
+orderService
+  .getOrderStatusSummary()
+  .catch((error) => console.error('Error warming order summary:', error));
+
 const PARCEL_DAILY_API_URL =
   process.env.PARCEL_DAILY_API_URL || 'http://localhost:4002/api/parceldaily';
 const parcelDailyService = new ParcelDailyService(PARCEL_DAILY_API_URL);

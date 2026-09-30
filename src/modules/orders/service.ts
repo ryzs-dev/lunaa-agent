@@ -8,6 +8,17 @@ import {
 } from './types';
 import { supabase } from '../supabase';
 
+type OrderStatusSummary = Awaited<
+  ReturnType<OrderDatabase['getOrderStatusSummary']>
+>;
+
+// Status counts join every order to its tracking and take ~3s, so they are
+// served from memory and refreshed in the background once stale.
+const SUMMARY_TTL_MS = 60_000;
+let summaryCache: { value: OrderStatusSummary; fetchedAt: number } | null =
+  null;
+let summaryRefresh: Promise<OrderStatusSummary> | null = null;
+
 class OrderService {
   private orderDatabase: OrderDatabase;
 
@@ -34,7 +45,30 @@ class OrderService {
   }
 
   async getOrderStatusSummary() {
-    return this.orderDatabase.getOrderStatusSummary();
+    const cached = summaryCache;
+    if (cached && Date.now() - cached.fetchedAt < SUMMARY_TTL_MS) {
+      return cached.value;
+    }
+
+    if (!summaryRefresh) {
+      summaryRefresh = this.orderDatabase
+        .getOrderStatusSummary()
+        .then((value) => {
+          summaryCache = { value, fetchedAt: Date.now() };
+          return value;
+        })
+        .finally(() => {
+          summaryRefresh = null;
+        });
+    }
+
+    if (cached) {
+      summaryRefresh.catch((error) =>
+        console.error('Error refreshing order summary:', error)
+      );
+      return cached.value;
+    }
+    return summaryRefresh;
   }
 
   async getOrderById(orderId: UUID) {

@@ -13,6 +13,9 @@ const shipment_from_order_1 = require("../modules/orders/shipment-from-order");
 exports.orderRouter = express_1.default.Router();
 const orderService = new service_1.default();
 const orderTrackingService = new service_2.default();
+orderService
+    .getOrderStatusSummary()
+    .catch((error) => console.error('Error warming order summary:', error));
 const PARCEL_DAILY_API_URL = process.env.PARCEL_DAILY_API_URL || 'http://localhost:4002/api/parceldaily';
 const parcelDailyService = new service_3.ParcelDailyService(PARCEL_DAILY_API_URL);
 // GET /api/orders - Get all orders with optional pagination, search, and sorting

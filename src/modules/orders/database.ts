@@ -102,28 +102,26 @@ class OrderDatabase {
   }: QueryParams) {
     const applyLocation =
       location === 'east' || location === 'west';
-    const addressSelect = applyLocation
-      ? 'addresses!inner(*)'
-      : 'addresses(*)';
     const statusValues =
       status && status !== 'all' && status !== 'needs_shipment'
         ? ORDER_STATUS_GROUPS[status] ?? [status]
         : null;
-    const trackingSelect = statusValues
-      ? 'order_tracking!inner(*)'
-      : 'order_tracking(*)';
+    const filterSelect = [
+      'id',
+      applyLocation && 'addresses!inner(state)',
+      `order_tracking${statusValues ? '!inner' : ''}(id, status)`,
+    ]
+      .filter(Boolean)
+      .join(', ');
     const sortField = SORTABLE_ORDER_FIELDS.includes(sortBy)
       ? sortBy
       : 'created_at';
 
+    // Only ids are paged here: embedding items/customer/tracking makes
+    // Postgres build them for every row before sorting.
     let query = supabase
       .from('orders')
-      .select(
-        `*, order_items(*, products(name, code)), customers(*), ${addressSelect}, ${trackingSelect}`,
-        {
-          count: 'exact',
-        }
-      )
+      .select(filterSelect, { count: 'exact' })
       .is('deleted_at', null)
       .order(sortField, {
         ascending: sortOrder === 'asc',
@@ -193,11 +191,29 @@ class OrderDatabase {
     // 📄 Pagination
     query = query.range(offset, offset + limit - 1);
 
-    const { data, error, count } = await query;
+    const { data: page, error, count } = await query;
     if (error) throw error;
 
-    const orders = (data ?? []).map(
-      ({ order_tracking: orderTracking, ...rest }: (typeof data)[number]) => {
+    const ids = ((page ?? []) as unknown as { id: string }[]).map(
+      (row) => row.id
+    );
+    const { data, error: detailsError } = ids.length
+      ? await supabase
+          .from('orders')
+          .select(
+            '*, order_items(*, products(name, code)), customers(*), addresses(*), order_tracking(*)'
+          )
+          .in('id', ids)
+      : { data: [], error: null };
+    if (detailsError) throw detailsError;
+
+    const position = new Map(ids.map((id, index) => [id, index]));
+    const sorted = [...(data ?? [])].sort(
+      (a, b) => position.get(a.id)! - position.get(b.id)!
+    );
+
+    const orders = sorted.map(
+      ({ order_tracking: orderTracking, ...rest }: (typeof sorted)[number]) => {
         const trackingEntry = Array.isArray(orderTracking)
           ? orderTracking[orderTracking.length - 1]
           : orderTracking;

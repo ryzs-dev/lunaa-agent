@@ -81,23 +81,24 @@ class OrderDatabase {
     async getAllOrders({ limit, offset, search, sortBy, sortOrder, dateFrom, dateTo, status, tracking, location, }) {
         var _a;
         const applyLocation = location === 'east' || location === 'west';
-        const addressSelect = applyLocation
-            ? 'addresses!inner(*)'
-            : 'addresses(*)';
         const statusValues = status && status !== 'all' && status !== 'needs_shipment'
             ? (_a = exports.ORDER_STATUS_GROUPS[status]) !== null && _a !== void 0 ? _a : [status]
             : null;
-        const trackingSelect = statusValues
-            ? 'order_tracking!inner(*)'
-            : 'order_tracking(*)';
+        const filterSelect = [
+            'id',
+            applyLocation && 'addresses!inner(state)',
+            `order_tracking${statusValues ? '!inner' : ''}(id, status)`,
+        ]
+            .filter(Boolean)
+            .join(', ');
         const sortField = SORTABLE_ORDER_FIELDS.includes(sortBy)
             ? sortBy
             : 'created_at';
+        // Only ids are paged here: embedding items/customer/tracking makes
+        // Postgres build them for every row before sorting.
         let query = supabase_1.supabase
             .from('orders')
-            .select(`*, order_items(*, products(name, code)), customers(*), ${addressSelect}, ${trackingSelect}`, {
-            count: 'exact',
-        })
+            .select(filterSelect, { count: 'exact' })
             .is('deleted_at', null)
             .order(sortField, Object.assign({ ascending: sortOrder === 'asc' }, (NULLABLE_SORT_FIELDS.includes(sortField) && { nullsFirst: false })))
             .order('id');
@@ -155,10 +156,21 @@ class OrderDatabase {
         }
         // 📄 Pagination
         query = query.range(offset, offset + limit - 1);
-        const { data, error, count } = await query;
+        const { data: page, error, count } = await query;
         if (error)
             throw error;
-        const orders = (data !== null && data !== void 0 ? data : []).map((_a) => {
+        const ids = (page !== null && page !== void 0 ? page : []).map((row) => row.id);
+        const { data, error: detailsError } = ids.length
+            ? await supabase_1.supabase
+                .from('orders')
+                .select('*, order_items(*, products(name, code)), customers(*), addresses(*), order_tracking(*)')
+                .in('id', ids)
+            : { data: [], error: null };
+        if (detailsError)
+            throw detailsError;
+        const position = new Map(ids.map((id, index) => [id, index]));
+        const sorted = [...(data !== null && data !== void 0 ? data : [])].sort((a, b) => position.get(a.id) - position.get(b.id));
+        const orders = sorted.map((_a) => {
             var { order_tracking: orderTracking } = _a, rest = __rest(_a, ["order_tracking"]);
             const trackingEntry = Array.isArray(orderTracking)
                 ? orderTracking[orderTracking.length - 1]

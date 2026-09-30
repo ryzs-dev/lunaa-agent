@@ -4,6 +4,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const database_1 = __importDefault(require("./database"));
+const customerName_1 = require("../../utils/customerName");
 const SORTABLE_CUSTOMER_FIELDS = [
     'created_at',
     'name',
@@ -104,7 +105,8 @@ class CustomerService {
         const phoneNumber = this.normalizePhoneNumber(data.phone_number);
         if (!phoneNumber)
             throw new Error('Invalid phone number');
-        const customerData = Object.assign(Object.assign({}, data), { phone_number: phoneNumber });
+        const name = data.name ? (0, customerName_1.cleanCustomerName)(data.name) : data.name;
+        const customerData = Object.assign(Object.assign(Object.assign({}, data), (data.name !== undefined && { name: name || data.name })), { phone_number: phoneNumber });
         return await this.customerDatabase.upsertCustomer(customerData);
     }
     async updateCustomer(id, updates) {

@@ -1,4 +1,5 @@
 import { IExtractor } from "./IExtractor";
+import { cleanCustomerName } from "../../../utils/customerName";
 
 export class NameExtractor implements IExtractor<string | null> {
   extract(text: string): string | null {
@@ -6,8 +7,9 @@ export class NameExtractor implements IExtractor<string | null> {
 
     // 1. Try explicit "Name:" first
     for (const line of lines) {
-      const match = line.match(/name[:：]?\s*(.+?)(?=\s*(contact[:：]|$))/i);
-      if (match) return match[1].replace(/,$/, "").trim();
+      const match = line.match(/\bname\b\s*[:：;；]?\s*(.*?)(?=\s*contact[:：]|$)/i);
+      const name = match ? cleanCustomerName(match[1] ?? "") : "";
+      if (name) return name;
     }
 
     // 2. Fallback: pick the first line that looks like a name (letters, spaces)

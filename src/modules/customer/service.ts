@@ -2,6 +2,7 @@ import { UUID } from 'crypto';
 import CustomerDatabase from './database';
 import { CustomerInput } from './types';
 import { OrderInput } from '../orders/types';
+import { cleanCustomerName } from '../../utils/customerName';
 
 const SORTABLE_CUSTOMER_FIELDS = [
   'created_at',
@@ -138,8 +139,10 @@ class CustomerService {
     const phoneNumber = this.normalizePhoneNumber(data.phone_number);
     if (!phoneNumber) throw new Error('Invalid phone number');
 
+    const name = data.name ? cleanCustomerName(data.name) : data.name;
     const customerData = {
       ...data,
+      ...(data.name !== undefined && { name: name || data.name }),
       phone_number: phoneNumber,
     };
     return await this.customerDatabase.upsertCustomer(customerData);

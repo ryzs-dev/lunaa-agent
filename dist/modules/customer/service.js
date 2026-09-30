@@ -4,6 +4,13 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const database_1 = __importDefault(require("./database"));
+const SORTABLE_CUSTOMER_FIELDS = [
+    'created_at',
+    'name',
+    'total_amount_spent',
+    'total_purchase_count',
+    'last_order_date',
+];
 class CustomerService {
     constructor() {
         this.customerDatabase = new database_1.default();
@@ -29,11 +36,13 @@ class CustomerService {
         return null;
     }
     async getAllCustomers(options) {
-        var _a, _b, _c;
+        var _a, _b;
         const limit = !options.limit || options.limit > 100 ? 20 : options.limit;
         const offset = (_a = options.offset) !== null && _a !== void 0 ? _a : 0;
-        const sortBy = (_b = options.sortBy) !== null && _b !== void 0 ? _b : 'created_at';
-        const sortOrder = (_c = options.sortOrder) !== null && _c !== void 0 ? _c : 'desc';
+        const sortBy = options.sortBy && SORTABLE_CUSTOMER_FIELDS.includes(options.sortBy)
+            ? options.sortBy
+            : 'created_at';
+        const sortOrder = (_b = options.sortOrder) !== null && _b !== void 0 ? _b : 'desc';
         let filterDate;
         if (options.filter && options.filter !== 'all') {
             const now = new Date();
@@ -63,6 +72,7 @@ class CustomerService {
             sortBy,
             sortOrder,
             filterDate,
+            repeatCustomer: options.type && options.type !== 'all' ? options.type : undefined,
         });
         return {
             customers,
@@ -72,6 +82,9 @@ class CustomerService {
                 total: count !== null && count !== void 0 ? count : 0,
             },
         };
+    }
+    async getCustomerSummary() {
+        return this.customerDatabase.getCustomerSummary();
     }
     async getCustomerByPhoneNumber(phoneNumber) {
         const normalizedPhoneNumber = this.normalizePhoneNumber(phoneNumber);

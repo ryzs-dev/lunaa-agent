@@ -15,7 +15,7 @@ const customerService = new CustomerService();
 
 // GET /api/customers - Get all customers
 customersRouter.get('/', async (req, res) => {
-  const { limit, offset, search, sortBy, sortOrder, filter } = req.query;
+  const { limit, offset, search, sortBy, sortOrder, filter, type } = req.query;
 
   if (filter && !['all', 'today', 'week', 'month'].includes(filter as string)) {
     return res.status(400).json({
@@ -23,8 +23,15 @@ customersRouter.get('/', async (req, res) => {
     });
   }
 
+  if (type && !['all', 'returning', 'new'].includes(type as string)) {
+    return res.status(400).json({
+      error: 'Invalid type. Allowed values: all, returning, new',
+    });
+  }
+
   try {
     const { customers, pagination } = await customerService.getAllCustomers({
+      type: type as 'all' | 'returning' | 'new' | undefined,
       limit: limit ? parseInt(limit as string, 10) : undefined,
       offset: offset ? parseInt(offset as string, 10) : undefined,
       search: search ? String(search) : undefined,
@@ -39,6 +46,16 @@ customersRouter.get('/', async (req, res) => {
     });
   } catch (error) {
     console.error('Error fetching customers:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+customersRouter.get('/summary', async (_req, res) => {
+  try {
+    const summary = await customerService.getCustomerSummary();
+    res.status(200).json(summary);
+  } catch (error) {
+    console.error('Error fetching customer summary:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

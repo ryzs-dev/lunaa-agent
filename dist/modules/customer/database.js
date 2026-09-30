@@ -3,12 +3,16 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const supabase_1 = require("../supabase");
 const customer_search_1 = require("../shared/customer-search");
 class CustomerDatabase {
-    async getAllCustomers({ limit, offset, search, sortBy, sortOrder, filterDate, }) {
+    async getAllCustomers({ limit, offset, search, sortBy, sortOrder, filterDate, repeatCustomer, }) {
         let query = supabase_1.supabase
             .from('customers')
             .select('*', { count: 'exact' })
-            .order(sortBy, { ascending: sortOrder === 'asc' })
+            .order(sortBy, { ascending: sortOrder === 'asc', nullsFirst: false })
+            .order('id')
             .range(offset, offset + limit - 1);
+        if (repeatCustomer) {
+            query = query.eq('repeat_customer', repeatCustomer);
+        }
         if (search) {
             const filter = (0, customer_search_1.customerSearchOrFilter)(search);
             if (filter)
@@ -21,6 +25,25 @@ class CustomerDatabase {
         if (error)
             throw error;
         return { customers, count };
+    }
+    async getCustomerSummary() {
+        const countWhere = async (repeatCustomer) => {
+            let query = supabase_1.supabase
+                .from('customers')
+                .select('*', { count: 'exact', head: true });
+            if (repeatCustomer)
+                query = query.eq('repeat_customer', repeatCustomer);
+            const { count, error } = await query;
+            if (error)
+                throw error;
+            return count !== null && count !== void 0 ? count : 0;
+        };
+        const [total, returning, newCustomers] = await Promise.all([
+            countWhere(),
+            countWhere('returning'),
+            countWhere('new'),
+        ]);
+        return { total, returning, new: newCustomers };
     }
     async getCustomerByPhoneNumber(phoneNumber) {
         const { data: customer, error } = await supabase_1.supabase

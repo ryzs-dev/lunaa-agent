@@ -11,6 +11,7 @@ class CustomerDatabase {
     sortBy,
     sortOrder,
     filterDate,
+    repeatCustomer,
   }: {
     limit: number;
     offset: number;
@@ -18,12 +19,18 @@ class CustomerDatabase {
     sortBy: string;
     sortOrder: 'asc' | 'desc';
     filterDate?: Date;
+    repeatCustomer?: 'returning' | 'new';
   }) {
     let query = supabase
       .from('customers')
       .select('*', { count: 'exact' })
-      .order(sortBy, { ascending: sortOrder === 'asc' })
+      .order(sortBy, { ascending: sortOrder === 'asc', nullsFirst: false })
+      .order('id')
       .range(offset, offset + limit - 1);
+
+    if (repeatCustomer) {
+      query = query.eq('repeat_customer', repeatCustomer);
+    }
 
     if (search) {
       const filter = customerSearchOrFilter(search);
@@ -37,6 +44,26 @@ class CustomerDatabase {
     const { data: customers, error, count } = await query;
     if (error) throw error;
     return { customers, count };
+  }
+
+  async getCustomerSummary() {
+    const countWhere = async (repeatCustomer?: 'returning' | 'new') => {
+      let query = supabase
+        .from('customers')
+        .select('*', { count: 'exact', head: true });
+      if (repeatCustomer) query = query.eq('repeat_customer', repeatCustomer);
+      const { count, error } = await query;
+      if (error) throw error;
+      return count ?? 0;
+    };
+
+    const [total, returning, newCustomers] = await Promise.all([
+      countWhere(),
+      countWhere('returning'),
+      countWhere('new'),
+    ]);
+
+    return { total, returning, new: newCustomers };
   }
 
   async getCustomerByPhoneNumber(phoneNumber: string) {

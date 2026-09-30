@@ -3,6 +3,14 @@ import CustomerDatabase from './database';
 import { CustomerInput } from './types';
 import { OrderInput } from '../orders/types';
 
+const SORTABLE_CUSTOMER_FIELDS = [
+  'created_at',
+  'name',
+  'total_amount_spent',
+  'total_purchase_count',
+  'last_order_date',
+];
+
 class CustomerService {
   private customerDatabase: CustomerDatabase;
 
@@ -41,10 +49,14 @@ class CustomerService {
     sortBy?: string;
     sortOrder?: 'asc' | 'desc';
     filter?: 'all' | 'today' | 'week' | 'month';
+    type?: 'all' | 'returning' | 'new';
   }) {
     const limit = !options.limit || options.limit > 100 ? 20 : options.limit;
     const offset = options.offset ?? 0;
-    const sortBy = options.sortBy ?? 'created_at';
+    const sortBy =
+      options.sortBy && SORTABLE_CUSTOMER_FIELDS.includes(options.sortBy)
+        ? options.sortBy
+        : 'created_at';
     const sortOrder = options.sortOrder ?? 'desc';
 
     let filterDate: Date | undefined;
@@ -81,6 +93,8 @@ class CustomerService {
       sortBy,
       sortOrder,
       filterDate,
+      repeatCustomer:
+        options.type && options.type !== 'all' ? options.type : undefined,
     });
 
     return {
@@ -91,6 +105,10 @@ class CustomerService {
         total: count ?? 0,
       },
     };
+  }
+
+  async getCustomerSummary() {
+    return this.customerDatabase.getCustomerSummary();
   }
 
   async getCustomerByPhoneNumber(phoneNumber: string) {

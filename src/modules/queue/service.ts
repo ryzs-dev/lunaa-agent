@@ -17,22 +17,36 @@ const worker = new Worker(
   async (job) => {
     try {
       const customer = await customerService.createCustomer(job.data.customer);
-      const address = await addressService.createAddress({
+      const existingOrder = await orderService.findSimilarOrder({
         customer_id: customer.id,
-        ...job.data.address,
+        order_date: job.data.order?.order_date,
+        total_amount: job.data.order?.total_amount,
+        shipment_description: job.data.order?.shipment_description,
       });
 
-      const [dbResult, sheetResult] = await Promise.all([
-        orderService.createOrder({
+      let dbResult = existingOrder;
+      if (!existingOrder) {
+        const address = await addressService.createAddress({
+          customer_id: customer.id,
+          ...job.data.address,
+        });
+        dbResult = await orderService.createOrder({
           customer_id: customer.id,
           address_id: address.id,
           remark: job.data.remark,
           ...job.data.order,
-        }),
-        googleSheetService.createOrder(job.data),
-      ]);
+        });
+      }
+
+      const sheetResult = await googleSheetService.createOrder(job.data);
 
       console.log('Both operations completed:', { dbResult, sheetResult });
+
+      if (!sheetResult.success) {
+        throw new Error(
+          `Google Sheets write failed after CRM save: ${sheetResult.error}`
+        );
+      }
     } catch (error) {
       console.error('Error processing job:', job.id, error);
       throw error;

@@ -38,4 +38,5 @@ export interface GetAllOrdersOptions {
   sortOrder?: 'asc' | 'desc';
   dateFrom?: Date;
   dateTo?: Date;
+  location?: string;
 }

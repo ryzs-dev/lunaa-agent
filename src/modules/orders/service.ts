@@ -29,6 +29,7 @@ class OrderService {
       dateFrom: options.dateFrom,
       dateTo: options.dateTo,
       tracking: options.tracking,
+      location: options.location,
     });
   }
 
@@ -42,6 +43,15 @@ class OrderService {
 
   async createOrder(orderData: OrderInput) {
     return this.orderDatabase.upsertOrder(orderData);
+  }
+
+  async findSimilarOrder(orderData: {
+    customer_id: UUID;
+    order_date?: Date | string;
+    total_amount?: number;
+    shipment_description?: string;
+  }) {
+    return this.orderDatabase.findSimilarOrder(orderData);
   }
 
   async updateOrder(orderId: UUID, updates: Partial<OrderInput>) {

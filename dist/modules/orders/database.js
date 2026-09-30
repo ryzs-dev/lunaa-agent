@@ -12,21 +12,65 @@ var __rest = (this && this.__rest) || function (s, e) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const supabase_1 = require("../supabase");
+const customer_search_1 = require("../shared/customer-search");
 const customer_stats_1 = require("./customer-stats");
 const order_number_1 = require("./order-number");
 const validate_items_1 = require("./validate-items");
+const EAST_MALAYSIA_STATES = ['Sabah', 'Sarawak', 'Labuan'];
+const WEST_MALAYSIA_STATES = [
+    'Johor',
+    'Kedah',
+    'Kelantan',
+    'Melaka',
+    'Negeri Sembilan',
+    'Pahang',
+    'Penang',
+    'Pulau Pinang',
+    'Perak',
+    'Perlis',
+    'Selangor',
+    'Terengganu',
+    'Kuala Lumpur',
+    'Putrajaya',
+];
 class OrderDatabase {
-    async getAllOrders({ limit, offset, search, sortBy, sortOrder, dateFrom, dateTo, status, tracking, }) {
+    async getAllOrders({ limit, offset, search, sortBy, sortOrder, dateFrom, dateTo, status, tracking, location, }) {
+        const applyLocation = location === 'east' || location === 'west';
+        const addressSelect = applyLocation
+            ? 'addresses!inner(*)'
+            : 'addresses(*)';
         let query = supabase_1.supabase
             .from('orders')
-            .select('*, order_items(*), customers(*), addresses(*), order_tracking(*)', {
+            .select(`*, order_items(*), customers(*), ${addressSelect}, order_tracking(*)`, {
             count: 'exact',
         })
             .is('deleted_at', null)
             .order(sortBy, { ascending: sortOrder === 'asc' });
         if (search) {
-            const term = search.trim().replace(/"/g, '\\"');
-            query = query.or(`order_number.ilike."%${term}%",customers.name.ilike."%${term}%"`);
+            const term = (0, customer_search_1.sanitizeSearchTerm)(search);
+            if (term) {
+                const customerIds = await (0, customer_search_1.findCustomerIdsBySearch)(term);
+                const orParts = [];
+                if (!term.includes('@')) {
+                    orParts.push(`order_number.ilike."%${term}%"`);
+                }
+                if (customerIds.length) {
+                    orParts.push(`customer_id.in.(${customerIds.join(',')})`);
+                }
+                if (orParts.length) {
+                    query = query.or(orParts.join(','));
+                }
+                else {
+                    return {
+                        orders: [],
+                        pagination: {
+                            pageIndex: offset / limit,
+                            pageSize: limit,
+                            total: 0,
+                        },
+                    };
+                }
+            }
         }
         if (dateFrom) {
             query = query.gte('created_at', dateFrom.toISOString());
@@ -36,7 +80,7 @@ class OrderDatabase {
             endOfDay.setHours(23, 59, 59, 999);
             query = query.lte('created_at', endOfDay.toISOString());
         }
-        if (tracking) {
+        if (tracking && tracking !== 'all') {
             if (tracking === 'with') {
                 query = query.not('order_tracking', 'is', null);
             }
@@ -46,6 +90,10 @@ class OrderDatabase {
         }
         if (status && status !== 'all') {
             query = query.ilike('order_tracking.status', status);
+        }
+        if (applyLocation) {
+            const states = location === 'east' ? EAST_MALAYSIA_STATES : WEST_MALAYSIA_STATES;
+            query = query.or(states.map((state) => `state.eq."${state}"`).join(','), { referencedTable: 'addresses' });
         }
         // 📄 Pagination
         query = query.range(offset, offset + limit - 1);
@@ -88,6 +136,27 @@ class OrderDatabase {
         if (error)
             throw error;
         return orders;
+    }
+    async findSimilarOrder(orderData) {
+        const date = String(orderData.order_date || '').slice(0, 10);
+        if (!orderData.customer_id || !date)
+            return null;
+        const { data: orders, error } = await supabase_1.supabase
+            .from('orders')
+            .select('id, order_number, order_date, total_amount, shipment_description, address_id')
+            .eq('customer_id', orderData.customer_id)
+            .is('deleted_at', null)
+            .order('created_at', { ascending: false })
+            .limit(10);
+        if (error)
+            throw error;
+        return ((orders || []).find((order) => {
+            const sameDate = String(order.order_date || '').slice(0, 10) === date;
+            const sameTotal = Number(order.total_amount) === Number(orderData.total_amount);
+            const sameShipment = String(order.shipment_description || '').replace(/\s+/g, '') ===
+                String(orderData.shipment_description || '').replace(/\s+/g, '');
+            return sameDate && sameTotal && sameShipment;
+        }) || null);
     }
     async upsertOrder(orderData) {
         var _a, _b, _c, _d;

@@ -16,14 +16,25 @@ const orderService = new service_3.default();
 const googleSheetService = new service_4.GoogleSheetService();
 const orderTrackingService = new service_5.default();
 const worker = new bullmq_1.Worker('orders', async (job) => {
+    var _a, _b, _c;
     try {
         const customer = await customerService.createCustomer(job.data.customer);
-        const address = await addressService.createAddress(Object.assign({ customer_id: customer.id }, job.data.address));
-        const [dbResult, sheetResult] = await Promise.all([
-            orderService.createOrder(Object.assign({ customer_id: customer.id, address_id: address.id, remark: job.data.remark }, job.data.order)),
-            googleSheetService.createOrder(job.data),
-        ]);
+        const existingOrder = await orderService.findSimilarOrder({
+            customer_id: customer.id,
+            order_date: (_a = job.data.order) === null || _a === void 0 ? void 0 : _a.order_date,
+            total_amount: (_b = job.data.order) === null || _b === void 0 ? void 0 : _b.total_amount,
+            shipment_description: (_c = job.data.order) === null || _c === void 0 ? void 0 : _c.shipment_description,
+        });
+        let dbResult = existingOrder;
+        if (!existingOrder) {
+            const address = await addressService.createAddress(Object.assign({ customer_id: customer.id }, job.data.address));
+            dbResult = await orderService.createOrder(Object.assign({ customer_id: customer.id, address_id: address.id, remark: job.data.remark }, job.data.order));
+        }
+        const sheetResult = await googleSheetService.createOrder(job.data);
         console.log('Both operations completed:', { dbResult, sheetResult });
+        if (!sheetResult.success) {
+            throw new Error(`Google Sheets write failed after CRM save: ${sheetResult.error}`);
+        }
     }
     catch (error) {
         console.error('Error processing job:', job.id, error);

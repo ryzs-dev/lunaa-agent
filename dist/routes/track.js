@@ -50,7 +50,7 @@ trackRouter.post("/track", async (req, res) => {
     const spreadsheetId = process.env.GOOGLE_SHEET_ID;
     // Options from request body with proper defaults
     const body = req.body || {};
-    const { includeUsageGuide = true, includeUsageVideo = false, delayBetweenMessages = 5000, // 30 seconds
+    const { includeUsageGuide = false, includeUsageVideo = false, delayBetweenMessages = 5000, // 30 seconds
     useSequence = true, // Whether to send all messages or just tracking
      } = body;
     if (!spreadsheetId) {
@@ -200,7 +200,7 @@ trackRouter.post("/track", async (req, res) => {
 // Route to test message sequence for a single phone number
 trackRouter.post("/track/test-sequence", async (req, res) => {
     const body = req.body || {};
-    const { phone, trackingNumber, courierCompany, includeUsageGuide = true, includeUsageVideo = true, delayBetweenMessages = 30000, } = body;
+    const { phone, trackingNumber, courierCompany, includeUsageGuide = false, includeUsageVideo = true, delayBetweenMessages = 30000, } = body;
     if (!phone || !trackingNumber) {
         return res.status(400).json({
             success: false,

@@ -295,7 +295,7 @@ async function sendProductUsageVideo(to) {
 }
 // Send complete message sequence
 async function sendCompleteMessageSequence(to, trackingNumber, courierCompany, options = {}) {
-    const { includeUsageGuide = true, includeUsageVideo = true, delayBetweenMessages = 30000, } = options;
+    const { includeUsageGuide = false, includeUsageVideo = false, delayBetweenMessages = 30000, } = options;
     const result = {
         trackingSid: "",
     };

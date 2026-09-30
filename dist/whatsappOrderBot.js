@@ -15,6 +15,7 @@ exports.getUnauthorizedMessage = getUnauthorizedMessage;
 const googleapis_1 = require("googleapis");
 const dotenv_1 = __importDefault(require("dotenv"));
 const path_1 = __importDefault(require("path"));
+const sheetMapper_1 = require("./utils/sheetMapper");
 dotenv_1.default.config({ path: path_1.default.resolve(__dirname, '../.env.local') });
 // ============================================================================
 // CONFIGURATION
@@ -687,7 +688,7 @@ class OrderExtractor {
 // ============================================================================
 class SheetsIntegration {
     static async appendOrder(orderData) {
-        var _a;
+        var _a, _b, _c, _d, _e, _f;
         try {
             const spreadsheetId = process.env.GOOGLE_SHEET_ID;
             const sheetNames = JSON.parse(process.env.SHEET_NAMES || '["Test"]');
@@ -696,16 +697,39 @@ class SheetsIntegration {
                 try {
                     const response = await sheets.spreadsheets.values.get({
                         spreadsheetId,
-                        range: `${sheetName}!A:AE`,
+                        range: `${(0, sheetMapper_1.quoteSheetName)(sheetName)}!A:CZ`,
                     });
                     const rows = response.data.values || [];
                     if (rows.length === 0)
                         continue;
                     const headers = rows[0];
                     const rowData = this.createRowData(orderData, headers);
-                    await sheets.spreadsheets.values.append({
+                    const nextRow = rows.length + 1;
+                    const meta = await sheets.spreadsheets.get({
                         spreadsheetId,
-                        range: `${sheetName}!A:AE`,
+                        fields: 'sheets(properties(sheetId,title,gridProperties(rowCount)))',
+                    });
+                    const sheetMeta = (_a = meta.data.sheets) === null || _a === void 0 ? void 0 : _a.find((item) => { var _a; return ((_a = item.properties) === null || _a === void 0 ? void 0 : _a.title) === sheetName; });
+                    const extraRows = (0, sheetMapper_1.extraGridRowsNeeded)((_d = (_c = (_b = sheetMeta === null || sheetMeta === void 0 ? void 0 : sheetMeta.properties) === null || _b === void 0 ? void 0 : _b.gridProperties) === null || _c === void 0 ? void 0 : _c.rowCount) !== null && _d !== void 0 ? _d : 0, nextRow);
+                    if (((_e = sheetMeta === null || sheetMeta === void 0 ? void 0 : sheetMeta.properties) === null || _e === void 0 ? void 0 : _e.sheetId) != null && extraRows > 0) {
+                        await sheets.spreadsheets.batchUpdate({
+                            spreadsheetId,
+                            requestBody: {
+                                requests: [
+                                    {
+                                        appendDimension: {
+                                            sheetId: sheetMeta.properties.sheetId,
+                                            dimension: 'ROWS',
+                                            length: extraRows,
+                                        },
+                                    },
+                                ],
+                            },
+                        });
+                    }
+                    await sheets.spreadsheets.values.update({
+                        spreadsheetId,
+                        range: (0, sheetMapper_1.sheetRowWriteRange)(sheetName, rows),
                         valueInputOption: 'RAW',
                         requestBody: { values: [rowData] },
                     });
@@ -722,7 +746,7 @@ class SheetsIntegration {
             const successful = results.filter((r) => r.success);
             return {
                 success: successful.length > 0,
-                rowIndex: (_a = successful[0]) === null || _a === void 0 ? void 0 : _a.rowIndex,
+                rowIndex: (_f = successful[0]) === null || _f === void 0 ? void 0 : _f.rowIndex,
                 error: successful.length < results.length
                     ? `Success: ${successful.length}/${results.length} sheets`
                     : undefined,

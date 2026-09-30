@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 const supabase_1 = require("../supabase");
+const customer_search_1 = require("../shared/customer-search");
 class CustomerDatabase {
     async getAllCustomers({ limit, offset, search, sortBy, sortOrder, filterDate, }) {
         let query = supabase_1.supabase
@@ -9,7 +10,9 @@ class CustomerDatabase {
             .order(sortBy, { ascending: sortOrder === 'asc' })
             .range(offset, offset + limit - 1);
         if (search) {
-            query = query.ilike('name', `%${search}%`);
+            const filter = (0, customer_search_1.customerSearchOrFilter)(search);
+            if (filter)
+                query = query.or(filter);
         }
         if (filterDate) {
             query = query.gte('last_order_date', filterDate.toISOString());
@@ -82,7 +85,9 @@ class CustomerDatabase {
             .select('id', { count: 'exact' })
             .limit(10000); // explicitly override the default 1000 cap
         if (search) {
-            query = query.or(`name.ilike.%${search}%,phone_number.ilike.%${search}%`);
+            const filter = (0, customer_search_1.customerSearchOrFilter)(search);
+            if (filter)
+                query = query.or(filter);
         }
         if (filterDate) {
             query = query.gte('created_at', filterDate.toISOString());

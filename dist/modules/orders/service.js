@@ -22,6 +22,7 @@ class OrderService {
             dateFrom: options.dateFrom,
             dateTo: options.dateTo,
             tracking: options.tracking,
+            location: options.location,
         });
     }
     async getOrderById(orderId) {
@@ -32,6 +33,9 @@ class OrderService {
     }
     async createOrder(orderData) {
         return this.orderDatabase.upsertOrder(orderData);
+    }
+    async findSimilarOrder(orderData) {
+        return this.orderDatabase.findSimilarOrder(orderData);
     }
     async updateOrder(orderId, updates) {
         return this.orderDatabase.updateOrder(orderId, updates);

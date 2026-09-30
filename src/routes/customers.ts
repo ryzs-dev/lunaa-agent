@@ -467,6 +467,71 @@ customersRouter.post('/:id/addresses', async (req, res) => {
   }
 });
 
+const CUSTOMER_ID_CHUNK_SIZE = 200;
+
+// An order counts as a repeat order when the same customer has an earlier active order.
+async function getRepeatOrderValue(cutoffDate: Date) {
+  const { data: periodOrders, error: periodError } = await supabase
+    .from('orders')
+    .select('id, customer_id, total_amount, created_at')
+    .is('deleted_at', null)
+    .gte('created_at', cutoffDate.toISOString())
+    .order('created_at', { ascending: true });
+
+  if (periodError) throw periodError;
+
+  const orders = (periodOrders || []).filter((order) => order.customer_id);
+  const customerIds = [...new Set(orders.map((order) => order.customer_id))];
+
+  const customersWithPriorOrders = new Set<string>();
+  for (let i = 0; i < customerIds.length; i += CUSTOMER_ID_CHUNK_SIZE) {
+    const chunk = customerIds.slice(i, i + CUSTOMER_ID_CHUNK_SIZE);
+    const { data: priorOrders, error: priorError } = await supabase
+      .from('orders')
+      .select('customer_id')
+      .is('deleted_at', null)
+      .lt('created_at', cutoffDate.toISOString())
+      .in('customer_id', chunk);
+
+    if (priorError) throw priorError;
+    priorOrders?.forEach((order) => customersWithPriorOrders.add(order.customer_id));
+  }
+
+  const seenCustomers = new Set<string>(customersWithPriorOrders);
+  const repeatCustomerIds = new Set<string>();
+  let repeatOrders = 0;
+  let repeatRevenue = 0;
+  let newOrders = 0;
+  let newRevenue = 0;
+
+  for (const order of orders) {
+    const amount = Number(order.total_amount || 0);
+    if (seenCustomers.has(order.customer_id)) {
+      repeatOrders += 1;
+      repeatRevenue += amount;
+      repeatCustomerIds.add(order.customer_id);
+    } else {
+      newOrders += 1;
+      newRevenue += amount;
+      seenCustomers.add(order.customer_id);
+    }
+  }
+
+  const totalRevenue = repeatRevenue + newRevenue;
+  const round = (value: number) => parseFloat(value.toFixed(2));
+
+  return {
+    repeatCustomers: repeatCustomerIds.size,
+    repeatOrders,
+    repeatRevenue: round(repeatRevenue),
+    repeatAverageOrderValue: round(repeatOrders > 0 ? repeatRevenue / repeatOrders : 0),
+    repeatRevenueShare: round(totalRevenue > 0 ? (repeatRevenue / totalRevenue) * 100 : 0),
+    newOrders,
+    newRevenue: round(newRevenue),
+    newAverageOrderValue: round(newOrders > 0 ? newRevenue / newOrders : 0),
+  };
+}
+
 // GET /api/customers/stats/overview - Customer statistics
 customersRouter.get('/stats/overview', async (req, res) => {
   try {
@@ -535,6 +600,8 @@ customersRouter.get('/stats/overview', async (req, res) => {
           ) / Object.keys(customerSpending).length
         : 0;
 
+    const repeatOrderValue = await getRepeatOrderValue(cutoffDate);
+
     res.json({
       success: true,
       data: {
@@ -552,6 +619,7 @@ customersRouter.get('/stats/overview', async (req, res) => {
           ordersPerCustomer: parseFloat(avgOrdersPerCustomer.toFixed(2)),
           spendingPerCustomer: parseFloat(avgSpendingPerCustomer.toFixed(2)),
         },
+        repeatOrderValue,
         activeCustomers: Object.keys(customerOrderCounts).length,
       },
     });

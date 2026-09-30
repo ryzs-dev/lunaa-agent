@@ -1,5 +1,6 @@
 import { UUID } from 'crypto';
 import { supabase } from '../supabase';
+import { customerSearchOrFilter } from '../shared/customer-search';
 import { CustomerInput } from './types';
 
 class CustomerDatabase {
@@ -25,7 +26,8 @@ class CustomerDatabase {
       .range(offset, offset + limit - 1);
 
     if (search) {
-      query = query.ilike('name', `%${search}%`);
+      const filter = customerSearchOrFilter(search);
+      if (filter) query = query.or(filter);
     }
 
     if (filterDate) {
@@ -111,7 +113,8 @@ class CustomerDatabase {
       .limit(10000); // explicitly override the default 1000 cap
 
     if (search) {
-      query = query.or(`name.ilike.%${search}%,phone_number.ilike.%${search}%`);
+      const filter = customerSearchOrFilter(search);
+      if (filter) query = query.or(filter);
     }
 
     if (filterDate) {

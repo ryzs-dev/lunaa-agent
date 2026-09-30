@@ -13,26 +13,92 @@ dotenv_1.default.config({ path: path_1.default.resolve(__dirname, '../../../.env
 class GoogleSheetService {
     constructor() {
         this.sheetNames = [];
+        this.writeLock = Promise.resolve();
         this.productService = new service_1.default();
         this.spreadSheetId = process.env.GOOGLE_SHEET_ID || '';
         this.sheetNames = JSON.parse(process.env.SHEET_NAMES || '["Clean"]');
     }
-    buildRowData(payload, headers) {
-        return headers.map((header) => {
-            const normalized = header.toLowerCase().trim();
-            const resolver = sheetMapper_1.sheetFieldMap[normalized];
-            if (resolver)
-                return resolver(payload);
-            if (payload.productQuantityMap) {
-                const matchKey = Object.keys(payload.productQuantityMap).find((key) => key.toLowerCase().trim() === normalized);
-                if (matchKey)
-                    return payload.productQuantityMap[matchKey];
-            }
-            return '';
+    enqueueWrite(work) {
+        const run = this.writeLock.then(work, work);
+        this.writeLock = run.then(() => undefined, () => undefined);
+        return run;
+    }
+    async getSheetMeta(sheetName) {
+        var _a, _b, _c, _d, _e;
+        const meta = await _1.googleClient.spreadsheets.get({
+            spreadsheetId: this.spreadSheetId,
+            fields: 'sheets(properties(sheetId,title,gridProperties(rowCount)))',
+        });
+        const sheet = (_a = meta.data.sheets) === null || _a === void 0 ? void 0 : _a.find((item) => { var _a; return ((_a = item.properties) === null || _a === void 0 ? void 0 : _a.title) === sheetName; });
+        return {
+            sheetId: (_b = sheet === null || sheet === void 0 ? void 0 : sheet.properties) === null || _b === void 0 ? void 0 : _b.sheetId,
+            rowCount: (_e = (_d = (_c = sheet === null || sheet === void 0 ? void 0 : sheet.properties) === null || _c === void 0 ? void 0 : _c.gridProperties) === null || _d === void 0 ? void 0 : _d.rowCount) !== null && _e !== void 0 ? _e : 0,
+        };
+    }
+    async appendSheetRows(sheetId, length) {
+        await _1.googleClient.spreadsheets.batchUpdate({
+            spreadsheetId: this.spreadSheetId,
+            requestBody: {
+                requests: [
+                    {
+                        appendDimension: {
+                            sheetId,
+                            dimension: 'ROWS',
+                            length,
+                        },
+                    },
+                ],
+            },
         });
     }
+    async ensureSheetRows(sheetName, nextRowNumber, forceExtra = 0) {
+        const { sheetId, rowCount } = await this.getSheetMeta(sheetName);
+        if (sheetId == null) {
+            throw new Error(`Sheet "${sheetName}" not found`);
+        }
+        const extraRows = Math.max((0, sheetMapper_1.extraGridRowsNeeded)(rowCount, nextRowNumber), forceExtra);
+        if (extraRows === 0)
+            return;
+        await this.appendSheetRows(sheetId, extraRows);
+    }
+    async writeSheetRow(sheet, payload) {
+        const headerResponse = await _1.googleClient.spreadsheets.values.get({
+            spreadsheetId: this.spreadSheetId,
+            range: `${(0, sheetMapper_1.quoteSheetName)(sheet)}!A:CZ`,
+        });
+        const rows = headerResponse.data.values || [];
+        const headers = (rows[0] || []).map((header) => String(header !== null && header !== void 0 ? header : ''));
+        if (!headers.length) {
+            throw new Error(`Sheet "${sheet}" has no header row`);
+        }
+        if ((0, sheetMapper_1.sheetRowAlreadyExists)(rows, payload)) {
+            console.log(`Sheet ${sheet} already has this order, skipping`);
+            return;
+        }
+        const rowData = (0, sheetMapper_1.buildSheetRow)(payload, headers);
+        const nextRow = rows.length + 1;
+        await this.ensureSheetRows(sheet, nextRow);
+        try {
+            await _1.googleClient.spreadsheets.values.update({
+                spreadsheetId: this.spreadSheetId,
+                range: (0, sheetMapper_1.sheetRowWriteRange)(sheet, rows),
+                valueInputOption: 'RAW',
+                requestBody: { values: [rowData] },
+            });
+        }
+        catch (error) {
+            if (!(0, sheetMapper_1.isGridLimitError)(error))
+                throw error;
+            await this.ensureSheetRows(sheet, nextRow, 200);
+            await _1.googleClient.spreadsheets.values.update({
+                spreadsheetId: this.spreadSheetId,
+                range: (0, sheetMapper_1.sheetRowWriteRange)(sheet, rows),
+                valueInputOption: 'RAW',
+                requestBody: { values: [rowData] },
+            });
+        }
+    }
     async createOrder({ customer, order, address, remark }) {
-        var _a;
         try {
             const sheets = this.sheetNames;
             const [enrichedItems] = await Promise.all([
@@ -48,27 +114,44 @@ class GoogleSheetService {
                     productQuantityMap[item.product_name] = item.quantity;
                 }
             }
-            // Iterate over all sheets
+            const payload = {
+                customer,
+                order,
+                address,
+                productQuantityMap,
+                remark,
+            };
+            const failures = [];
             for (const sheet of sheets) {
-                const headerResponse = await _1.googleClient.spreadsheets.values.get({
-                    spreadsheetId: this.spreadSheetId,
-                    range: `${sheet}!A:AF`,
-                });
-                const headers = ((_a = headerResponse.data.values) === null || _a === void 0 ? void 0 : _a[0]) || [];
-                const payload = {
-                    customer,
-                    order,
-                    address,
-                    productQuantityMap,
-                    remark,
-                };
-                const rowData = this.buildRowData(payload, headers);
-                await _1.googleClient.spreadsheets.values.append({
-                    spreadsheetId: this.spreadSheetId,
-                    range: `${sheet}!A:AF`,
-                    valueInputOption: 'RAW',
-                    requestBody: { values: [rowData] },
-                });
+                try {
+                    await this.enqueueWrite(async () => {
+                        let lastError;
+                        for (let attempt = 1; attempt <= 3; attempt += 1) {
+                            try {
+                                await this.writeSheetRow(sheet, payload);
+                                return;
+                            }
+                            catch (error) {
+                                lastError = error;
+                                console.error(`Sheet write attempt ${attempt} failed for ${sheet}:`, error);
+                                if (attempt < 3) {
+                                    await new Promise((resolve) => setTimeout(resolve, attempt * 500));
+                                }
+                            }
+                        }
+                        throw lastError;
+                    });
+                }
+                catch (sheetError) {
+                    const message = sheetError instanceof Error
+                        ? sheetError.message
+                        : String(sheetError);
+                    console.error(`Failed to write order to sheet ${sheet}:`, sheetError);
+                    failures.push(`${sheet}: ${message}`);
+                }
+            }
+            if (failures.length) {
+                return { success: false, error: failures.join('; ') };
             }
             return { success: true };
         }
@@ -85,7 +168,7 @@ class GoogleSheetService {
         try {
             const response = await _1.googleClient.spreadsheets.values.get({
                 spreadsheetId: this.spreadSheetId,
-                range: `${sheetName}!A:AE`,
+                range: `${(0, sheetMapper_1.quoteSheetName)(sheetName)}!A:CZ`,
             });
             const rows = response.data.values || [];
             console.log(`✅ Fetched ${rows.length} rows from ${sheetName}`);

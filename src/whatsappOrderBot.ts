@@ -2,6 +2,11 @@
 import {google} from 'googleapis';
 import dotenv from 'dotenv';
 import path from 'path';
+import {
+    extraGridRowsNeeded,
+    quoteSheetName,
+    sheetRowWriteRange,
+} from './utils/sheetMapper';
 
 dotenv.config({path: path.resolve(__dirname, '../.env.local')});
 
@@ -859,7 +864,7 @@ class SheetsIntegration {
                 try {
                     const response = await sheets.spreadsheets.values.get({
                         spreadsheetId,
-                        range: `${sheetName}!A:AE`,
+                        range: `${quoteSheetName(sheetName)}!A:CZ`,
                     });
 
                     const rows = response.data.values || [];
@@ -867,10 +872,39 @@ class SheetsIntegration {
 
                     const headers = rows[0];
                     const rowData = this.createRowData(orderData, headers);
-
-                    await sheets.spreadsheets.values.append({
+                    const nextRow = rows.length + 1;
+                    const meta = await sheets.spreadsheets.get({
                         spreadsheetId,
-                        range: `${sheetName}!A:AE`,
+                        fields:
+                            'sheets(properties(sheetId,title,gridProperties(rowCount)))',
+                    });
+                    const sheetMeta = meta.data.sheets?.find(
+                        (item) => item.properties?.title === sheetName
+                    );
+                    const extraRows = extraGridRowsNeeded(
+                        sheetMeta?.properties?.gridProperties?.rowCount ?? 0,
+                        nextRow
+                    );
+                    if (sheetMeta?.properties?.sheetId != null && extraRows > 0) {
+                        await sheets.spreadsheets.batchUpdate({
+                            spreadsheetId,
+                            requestBody: {
+                                requests: [
+                                    {
+                                        appendDimension: {
+                                            sheetId: sheetMeta.properties.sheetId,
+                                            dimension: 'ROWS',
+                                            length: extraRows,
+                                        },
+                                    },
+                                ],
+                            },
+                        });
+                    }
+
+                    await sheets.spreadsheets.values.update({
+                        spreadsheetId,
+                        range: sheetRowWriteRange(sheetName, rows),
                         valueInputOption: 'RAW',
                         requestBody: {values: [rowData]},
                     });

@@ -11,6 +11,7 @@ var __rest = (this && this.__rest) || function (s, e) {
     return t;
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.ORDER_STATUS_GROUPS = void 0;
 const supabase_1 = require("../supabase");
 const customer_search_1 = require("../shared/customer-search");
 const customer_stats_1 = require("./customer-stats");
@@ -33,19 +34,51 @@ const WEST_MALAYSIA_STATES = [
     'Kuala Lumpur',
     'Putrajaya',
 ];
+// Courier and message statuses arrive with inconsistent spelling, so the
+// dashboard filters on these groups rather than raw values.
+exports.ORDER_STATUS_GROUPS = {
+    awaiting_pickup: ['pending', 'Pending', 'Pending Pickup', 'sent', 'read'],
+    in_transit: [
+        'In Transit',
+        'Delivering',
+        'shipped',
+        'Parcel has been received',
+        'Shipment collected',
+        'Mainwaybill Pickup',
+    ],
+    delivered: ['Delivered', 'delivered', 'Successfully delivered'],
+    problem: ['undelivered', 'Returned'],
+};
+const SORTABLE_ORDER_FIELDS = [
+    'created_at',
+    'order_date',
+    'total_amount',
+    'order_number',
+];
 class OrderDatabase {
     async getAllOrders({ limit, offset, search, sortBy, sortOrder, dateFrom, dateTo, status, tracking, location, }) {
+        var _a;
         const applyLocation = location === 'east' || location === 'west';
         const addressSelect = applyLocation
             ? 'addresses!inner(*)'
             : 'addresses(*)';
+        const statusValues = status && status !== 'all' && status !== 'needs_shipment'
+            ? (_a = exports.ORDER_STATUS_GROUPS[status]) !== null && _a !== void 0 ? _a : [status]
+            : null;
+        const trackingSelect = statusValues
+            ? 'order_tracking!inner(*)'
+            : 'order_tracking(*)';
+        const sortField = SORTABLE_ORDER_FIELDS.includes(sortBy)
+            ? sortBy
+            : 'created_at';
         let query = supabase_1.supabase
             .from('orders')
-            .select(`*, order_items(*), customers(*), ${addressSelect}, order_tracking(*)`, {
+            .select(`*, order_items(*, products(name, code)), customers(*), ${addressSelect}, ${trackingSelect}`, {
             count: 'exact',
         })
             .is('deleted_at', null)
-            .order(sortBy, { ascending: sortOrder === 'asc' });
+            .order(sortField, { ascending: sortOrder === 'asc', nullsFirst: false })
+            .order('id');
         if (search) {
             const term = (0, customer_search_1.sanitizeSearchTerm)(search);
             if (term) {
@@ -88,8 +121,11 @@ class OrderDatabase {
                 query = query.is('order_tracking', null);
             }
         }
-        if (status && status !== 'all') {
-            query = query.ilike('order_tracking.status', status);
+        if (status === 'needs_shipment') {
+            query = query.is('order_tracking', null);
+        }
+        else if (statusValues) {
+            query = query.in('order_tracking.status', statusValues);
         }
         if (applyLocation) {
             const states = location === 'east' ? EAST_MALAYSIA_STATES : WEST_MALAYSIA_STATES;
@@ -115,6 +151,41 @@ class OrderDatabase {
                 total: count !== null && count !== void 0 ? count : 0,
             },
         };
+    }
+    async getOrderStatusSummary() {
+        const countOrders = async (group) => {
+            let query;
+            if (group === 'needs_shipment') {
+                query = supabase_1.supabase
+                    .from('orders')
+                    .select('id, order_tracking(id)', { count: 'exact', head: true })
+                    .is('order_tracking', null);
+            }
+            else if (group) {
+                query = supabase_1.supabase
+                    .from('orders')
+                    .select('id, order_tracking!inner(status)', {
+                    count: 'exact',
+                    head: true,
+                })
+                    .in('order_tracking.status', exports.ORDER_STATUS_GROUPS[group]);
+            }
+            else {
+                query = supabase_1.supabase
+                    .from('orders')
+                    .select('id', { count: 'exact', head: true });
+            }
+            const { count, error } = await query.is('deleted_at', null);
+            if (error)
+                throw error;
+            return count !== null && count !== void 0 ? count : 0;
+        };
+        const groups = ['needs_shipment', ...Object.keys(exports.ORDER_STATUS_GROUPS)];
+        const [all, ...counts] = await Promise.all([
+            countOrders(),
+            ...groups.map((group) => countOrders(group)),
+        ]);
+        return Object.assign({ all }, Object.fromEntries(groups.map((group, i) => [group, counts[i]])));
     }
     async getOrderById(orderId) {
         const { data: order, error } = await supabase_1.supabase

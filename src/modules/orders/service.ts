@@ -33,6 +33,10 @@ class OrderService {
     });
   }
 
+  async getOrderStatusSummary() {
+    return this.orderDatabase.getOrderStatusSummary();
+  }
+
   async getOrderById(orderId: UUID) {
     return this.orderDatabase.getOrderById(orderId);
   }

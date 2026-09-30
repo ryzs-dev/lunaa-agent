@@ -56,6 +56,17 @@ orderRouter.get('/', async (req, res) => {
   }
 });
 
+// GET /api/orders/summary - Order counts per delivery status group
+orderRouter.get('/summary', async (_req, res) => {
+  try {
+    const summary = await orderService.getOrderStatusSummary();
+    res.status(200).json(summary);
+  } catch (error) {
+    console.error('Error fetching order summary:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // GET /api/orders/:id - Get order by ID
 orderRouter.get('/:id', async (req, res) => {
   const { id } = req.params;

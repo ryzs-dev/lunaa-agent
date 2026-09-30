@@ -25,6 +25,9 @@ class OrderService {
             location: options.location,
         });
     }
+    async getOrderStatusSummary() {
+        return this.orderDatabase.getOrderStatusSummary();
+    }
     async getOrderById(orderId) {
         return this.orderDatabase.getOrderById(orderId);
     }

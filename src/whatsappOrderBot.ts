@@ -7,6 +7,7 @@ import {
     quoteSheetName,
     sheetRowWriteRange,
 } from './utils/sheetMapper';
+import {resolveSheetNames} from './utils/monthlySheet';
 
 dotenv.config({path: path.resolve(__dirname, '../.env.local')});
 
@@ -856,7 +857,10 @@ class SheetsIntegration {
     ): Promise<{ success: boolean; rowIndex?: number; error?: string }> {
         try {
             const spreadsheetId = process.env.GOOGLE_SHEET_ID!;
-            const sheetNames = JSON.parse(process.env.SHEET_NAMES || '["Test"]');
+            const sheetNames = resolveSheetNames(
+                JSON.parse(process.env.SHEET_NAMES || '["Test"]'),
+                orderData.orderDate
+            );
 
             const results = [];
 

@@ -16,6 +16,7 @@ const googleapis_1 = require("googleapis");
 const dotenv_1 = __importDefault(require("dotenv"));
 const path_1 = __importDefault(require("path"));
 const sheetMapper_1 = require("./utils/sheetMapper");
+const monthlySheet_1 = require("./utils/monthlySheet");
 dotenv_1.default.config({ path: path_1.default.resolve(__dirname, '../.env.local') });
 // ============================================================================
 // CONFIGURATION
@@ -691,7 +692,7 @@ class SheetsIntegration {
         var _a, _b, _c, _d, _e, _f;
         try {
             const spreadsheetId = process.env.GOOGLE_SHEET_ID;
-            const sheetNames = JSON.parse(process.env.SHEET_NAMES || '["Test"]');
+            const sheetNames = (0, monthlySheet_1.resolveSheetNames)(JSON.parse(process.env.SHEET_NAMES || '["Test"]'), orderData.orderDate);
             const results = [];
             for (const sheetName of sheetNames) {
                 try {

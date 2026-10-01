@@ -7,6 +7,7 @@ exports.GoogleSheetService = void 0;
 const path_1 = __importDefault(require("path"));
 const _1 = require(".");
 const sheetMapper_1 = require("../../utils/sheetMapper");
+const monthlySheet_1 = require("../../utils/monthlySheet");
 const service_1 = __importDefault(require("../product/service"));
 const dotenv_1 = __importDefault(require("dotenv"));
 dotenv_1.default.config({ path: path_1.default.resolve(__dirname, '../../../.env.local') });
@@ -34,6 +35,73 @@ class GoogleSheetService {
             sheetId: (_b = sheet === null || sheet === void 0 ? void 0 : sheet.properties) === null || _b === void 0 ? void 0 : _b.sheetId,
             rowCount: (_e = (_d = (_c = sheet === null || sheet === void 0 ? void 0 : sheet.properties) === null || _c === void 0 ? void 0 : _c.gridProperties) === null || _d === void 0 ? void 0 : _d.rowCount) !== null && _e !== void 0 ? _e : 0,
         };
+    }
+    // Copies the latest monthly tab (columns, widths, header styling, frozen
+    // rows) and clears everything below the header.
+    async ensureMonthSheet(sheetName, orderDate) {
+        var _a, _b, _c, _d, _e;
+        const meta = await _1.googleClient.spreadsheets.get({
+            spreadsheetId: this.spreadSheetId,
+            fields: 'sheets(properties(sheetId,title))',
+        });
+        const tabs = ((_a = meta.data.sheets) !== null && _a !== void 0 ? _a : []).map((sheet) => {
+            var _a, _b, _c;
+            return ({
+                sheetId: (_a = sheet.properties) === null || _a === void 0 ? void 0 : _a.sheetId,
+                title: (_c = (_b = sheet.properties) === null || _b === void 0 ? void 0 : _b.title) !== null && _c !== void 0 ? _c : '',
+            });
+        });
+        if (tabs.some((tab) => tab.title === sheetName))
+            return;
+        const template = (0, monthlySheet_1.pickTemplateSheet)(tabs, (0, monthlySheet_1.orderSheetMonth)(orderDate));
+        if ((template === null || template === void 0 ? void 0 : template.sheetId) == null) {
+            throw new Error(`No monthly tab to copy for "${sheetName}"`);
+        }
+        try {
+            const duplicated = await _1.googleClient.spreadsheets.batchUpdate({
+                spreadsheetId: this.spreadSheetId,
+                requestBody: {
+                    requests: [
+                        {
+                            duplicateSheet: {
+                                sourceSheetId: template.sheetId,
+                                insertSheetIndex: 0,
+                                newSheetName: sheetName,
+                            },
+                        },
+                    ],
+                },
+            });
+            const newSheetId = (_e = (_d = (_c = (_b = duplicated.data.replies) === null || _b === void 0 ? void 0 : _b[0]) === null || _c === void 0 ? void 0 : _c.duplicateSheet) === null || _d === void 0 ? void 0 : _d.properties) === null || _e === void 0 ? void 0 : _e.sheetId;
+            await _1.googleClient.spreadsheets.batchUpdate({
+                spreadsheetId: this.spreadSheetId,
+                requestBody: {
+                    requests: [
+                        {
+                            updateCells: {
+                                range: { sheetId: newSheetId, startRowIndex: 1 },
+                                fields: 'userEnteredValue,note',
+                            },
+                        },
+                        {
+                            updateSheetProperties: {
+                                properties: {
+                                    sheetId: newSheetId,
+                                    gridProperties: { rowCount: 1000 },
+                                },
+                                fields: 'gridProperties.rowCount',
+                            },
+                        },
+                    ],
+                },
+            });
+            console.log(`Created sheet "${sheetName}" from "${template.title}"`);
+        }
+        catch (error) {
+            if (String(error).includes('already exists'))
+                return;
+            throw error;
+        }
     }
     async appendSheetRows(sheetId, length) {
         await _1.googleClient.spreadsheets.batchUpdate({
@@ -100,7 +168,8 @@ class GoogleSheetService {
     }
     async createOrder({ customer, order, address, remark }) {
         try {
-            const sheets = this.sheetNames;
+            const sheets = (0, monthlySheet_1.resolveSheetNames)(this.sheetNames, order.order_date);
+            const monthSheet = (0, monthlySheet_1.monthSheetName)((0, monthlySheet_1.orderSheetMonth)(order.order_date));
             const [enrichedItems] = await Promise.all([
                 Promise.all((order.order_items || []).map(async (item) => {
                     const product = await this.productService.getProductById(item.product_id);
@@ -128,6 +197,9 @@ class GoogleSheetService {
                         let lastError;
                         for (let attempt = 1; attempt <= 3; attempt += 1) {
                             try {
+                                if (sheet === monthSheet) {
+                                    await this.ensureMonthSheet(sheet, order.order_date);
+                                }
                                 await this.writeSheetRow(sheet, payload);
                                 return;
                             }

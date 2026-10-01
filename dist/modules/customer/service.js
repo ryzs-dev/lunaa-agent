@@ -5,6 +5,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const database_1 = __importDefault(require("./database"));
 const customerName_1 = require("../../utils/customerName");
+const country_1 = require("../../utils/country");
 const country_index_1 = require("./country-index");
 const SORTABLE_CUSTOMER_FIELDS = [
     'created_at',
@@ -103,11 +104,12 @@ class CustomerService {
         return await this.customerDatabase.getCustomerByPhoneNumber(normalizedPhoneNumber);
     }
     async getCustomerById(id) {
-        var _a, _b;
+        var _a, _b, _c;
         const result = await this.customerDatabase.getCustomerById(id);
-        const total_purchases = ((_a = result === null || result === void 0 ? void 0 : result.orders) === null || _a === void 0 ? void 0 : _a.length) || 0;
-        const amount_spent = ((_b = result === null || result === void 0 ? void 0 : result.orders) === null || _b === void 0 ? void 0 : _b.reduce((sum, o) => sum + (o.total_amount || 0), 0)) || 0;
-        return Object.assign(Object.assign({}, result), { total_purchases,
+        const orders = ((_a = result === null || result === void 0 ? void 0 : result.orders) !== null && _a !== void 0 ? _a : []).filter((o) => !o.deleted_at);
+        const total_purchases = orders.length;
+        const amount_spent = orders.reduce((sum, o) => sum + (o.total_amount || 0), 0);
+        return Object.assign(Object.assign({}, result), { orders, country: (_c = (0, country_1.detectCustomerCountry)(result === null || result === void 0 ? void 0 : result.phone_number, (_b = result === null || result === void 0 ? void 0 : result.addresses) !== null && _b !== void 0 ? _b : [])) !== null && _c !== void 0 ? _c : 'MY', total_purchases,
             amount_spent });
     }
     async createCustomer(data) {

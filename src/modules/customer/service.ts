@@ -3,7 +3,7 @@ import CustomerDatabase from './database';
 import { CustomerInput } from './types';
 import { OrderInput } from '../orders/types';
 import { cleanCustomerName } from '../../utils/customerName';
-import { CountryCode } from '../../utils/country';
+import { CountryCode, detectCustomerCountry } from '../../utils/country';
 import { countryOrFilter, customerCountry, getCountryIndex } from './country-index';
 
 const SORTABLE_CUSTOMER_FIELDS = [
@@ -137,14 +137,19 @@ class CustomerService {
 
   async getCustomerById(id: UUID) {
     const result = await this.customerDatabase.getCustomerById(id);
-    const total_purchases = result?.orders?.length || 0;
-    const amount_spent =
-      result?.orders?.reduce(
-        (sum: number, o: OrderInput) => sum + (o.total_amount || 0),
-        0
-      ) || 0;
+    const orders = (result?.orders ?? []).filter(
+      (o: { deleted_at?: string | null }) => !o.deleted_at
+    );
+    const total_purchases = orders.length;
+    const amount_spent = orders.reduce(
+      (sum: number, o: OrderInput) => sum + (o.total_amount || 0),
+      0
+    );
     return {
       ...result,
+      orders,
+      country:
+        detectCustomerCountry(result?.phone_number, result?.addresses ?? []) ?? 'MY',
       total_purchases,
       amount_spent,
     };

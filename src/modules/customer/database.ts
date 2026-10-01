@@ -92,11 +92,26 @@ class CustomerDatabase {
         order_number,
         order_date,
         total_amount,
+        created_at,
+        deleted_at,
+        shipment_description,
+        order_items(quantity),
+        order_tracking(status, tracking_number, courier)
+      ),
+      addresses(
+        id,
+        full_address,
+        postcode,
+        city,
+        state,
+        country,
         created_at
       )
     `
       )
       .eq('id', id)
+      .order('order_date', { referencedTable: 'orders', ascending: false })
+      .order('created_at', { referencedTable: 'addresses', ascending: false })
       .single();
 
     if (error) throw error;

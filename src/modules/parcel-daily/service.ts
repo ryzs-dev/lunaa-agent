@@ -6,8 +6,6 @@ import { pub } from '../pubsub';
 import { publishOrderCreated } from '../pubsub/publisher';
 import { PubSubEvents } from '../pubsub/events';
 
-// Must match the pickup address the parcel-daily service books orders from.
-const PICKUP_ORIGIN = { postcode: '14000', country: 'Malaysia' } as const;
 const COURIER_NAMES_TTL_MS = 24 * 60 * 60 * 1000;
 
 export type QuoteInput = {
@@ -34,6 +32,18 @@ export class ParcelDailyService {
     } catch (error) {
       throw new Error('Failed to fetch account info');
     }
+  }
+
+  async getSettings() {
+    const response = await axios.get(`${this.parcelDailyServiceURL}/settings`);
+    return response.data;
+  }
+
+  async saveSettings(settings: unknown) {
+    const response = await axios.put(`${this.parcelDailyServiceURL}/settings`, settings, {
+      validateStatus: (status) => status < 500,
+    });
+    return { status: response.status, body: response.data };
   }
 
   async createShipment(shipmentData: ShipmentInput, crmOrderId: UUID) {
@@ -144,12 +154,10 @@ export class ParcelDailyService {
     }
   }
 
-  // Live prices for every courier Parcel Daily can use from our pickup address
+  // Live prices for every courier Parcel Daily can use from the saved pickup address
   // to this destination. Couriers that don't serve the route are left out.
   async getQuotes(input: QuoteInput): Promise<QuoteResult> {
     const response = await axios.post(`${this.parcelDailyServiceURL}/check-rate`, {
-      origin: PICKUP_ORIGIN.postcode,
-      originCountry: PICKUP_ORIGIN.country,
       destination: input.postcode,
       destinationCountry: input.country,
       weight: input.weight,

@@ -23,6 +23,28 @@ exports.parcelDailyRouter.get('/account-info', async (req, res) => {
         return res.status(500).json({ error: 'Failed to fetch account info' });
     }
 });
+// GET /settings - Pickup address, shipping defaults and connection details
+exports.parcelDailyRouter.get('/settings', async (req, res) => {
+    try {
+        const { data } = await parcelDailyService.getSettings();
+        return res.status(200).json({ success: true, data });
+    }
+    catch (error) {
+        console.error('Error fetching Parcel Daily settings:', error === null || error === void 0 ? void 0 : error.message);
+        return res.status(502).json({ error: 'Couldn’t load Parcel Daily settings' });
+    }
+});
+// PUT /settings
+exports.parcelDailyRouter.put('/settings', async (req, res) => {
+    try {
+        const { status, body } = await parcelDailyService.saveSettings(req.body);
+        return res.status(status).json(body);
+    }
+    catch (error) {
+        console.error('Error saving Parcel Daily settings:', error === null || error === void 0 ? void 0 : error.message);
+        return res.status(502).json({ error: 'Couldn’t save Parcel Daily settings' });
+    }
+});
 // POST /quote - Live courier prices for a destination
 exports.parcelDailyRouter.post('/quote', async (req, res) => {
     var _a, _b;

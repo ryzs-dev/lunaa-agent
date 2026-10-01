@@ -6,8 +6,6 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.ParcelDailyService = void 0;
 const axios_1 = __importDefault(require("axios"));
 const malaysia_postcodes_1 = require("malaysia-postcodes");
-// Must match the pickup address the parcel-daily service books orders from.
-const PICKUP_ORIGIN = { postcode: '14000', country: 'Malaysia' };
 const COURIER_NAMES_TTL_MS = 24 * 60 * 60 * 1000;
 class ParcelDailyService {
     constructor(parcelDailyServiceURL) {
@@ -22,6 +20,16 @@ class ParcelDailyService {
         catch (error) {
             throw new Error('Failed to fetch account info');
         }
+    }
+    async getSettings() {
+        const response = await axios_1.default.get(`${this.parcelDailyServiceURL}/settings`);
+        return response.data;
+    }
+    async saveSettings(settings) {
+        const response = await axios_1.default.put(`${this.parcelDailyServiceURL}/settings`, settings, {
+            validateStatus: (status) => status < 500,
+        });
+        return { status: response.status, body: response.data };
     }
     async createShipment(shipmentData, crmOrderId) {
         var _a, _b, _c, _d, _e;
@@ -93,13 +101,11 @@ class ParcelDailyService {
             return (_e = (_d = this.courierNames) === null || _d === void 0 ? void 0 : _d.names) !== null && _e !== void 0 ? _e : {};
         }
     }
-    // Live prices for every courier Parcel Daily can use from our pickup address
+    // Live prices for every courier Parcel Daily can use from the saved pickup address
     // to this destination. Couriers that don't serve the route are left out.
     async getQuotes(input) {
         var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k;
         const response = await axios_1.default.post(`${this.parcelDailyServiceURL}/check-rate`, {
-            origin: PICKUP_ORIGIN.postcode,
-            originCountry: PICKUP_ORIGIN.country,
             destination: input.postcode,
             destinationCountry: input.country,
             weight: input.weight,

@@ -89,10 +89,10 @@ function detectCourierAndLink(
     };
   }
 
-  if (courierLower.includes("best") || courierLower.includes("best express")) {
+  if (courierLower.includes("best")) {
     return {
       name: "Best Express",
-      link: `https://www.best-inc.my/track`,
+      link: `https://www.tracking.my/best/${trackingNumber}`,
     };
   }
 
@@ -119,6 +119,32 @@ function detectCourierAndLink(
       name: "Pos Laju",
       link: `https://www.pos.com.my/v2/track-trace?trackNo=${trackingNumber}`,
     };
+  }
+
+  if (courierLower.includes("ninjavan") || courierLower.includes("ninja van")) {
+    return {
+      name: "Ninja Van",
+      link: `https://www.ninjavan.co/en-my/tracking?id=${trackingNumber}`,
+    };
+  }
+
+  if (courierLower.includes("citylink") || courierLower.includes("city-link")) {
+    return {
+      name: "City-Link Express",
+      link: `https://www.citylinkexpress.com/tracking-result/?track0=${trackingNumber}`,
+    };
+  }
+
+  const trackingMy: [string[], string, string][] = [
+    [["kex"], "kex", "KEX Express"],
+    [["lineclear", "line clear"], "lineclear", "Line Clear Express"],
+    [["aramex"], "aramex", "Aramex"],
+    [["lex", "lazada"], "lex", "Lazada Express"],
+  ];
+  for (const [needles, slug, name] of trackingMy) {
+    if (needles.some((n) => courierLower === n || courierLower.includes(n))) {
+      return { name, link: `https://www.tracking.my/${slug}/${trackingNumber}` };
+    }
   }
 
   // Auto-detect patterns

@@ -46,8 +46,7 @@ export class ParcelDailyService {
       clientAddress: {
         ...shipmentData.clientAddress,
         phone: normalizedPhone,
-        state: postcode.found && postcode.state,
-        city: postcode.found && postcode.city,
+        ...(postcode.found && { state: postcode.state, city: postcode.city }),
       },
     };
     try {
@@ -66,7 +65,7 @@ export class ParcelDailyService {
         return {
           success: false,
           status: error.response?.status || 500,
-          message: 'Parcel Daily request failed',
+          message: error.response?.data?.message || 'Parcel Daily request failed',
           details: error.response?.data,
         };
       }
@@ -175,6 +174,8 @@ export class ParcelDailyService {
           codFee: money(quote[`${code}Cod`]),
         };
       })
+      // Parcel Daily still prices some couriers that can't collect COD; their fee comes back empty.
+      .filter((c) => !((input.cod ?? 0) > 0) || c.codFee > 0)
       .sort((a, b) => a.price - b.price);
 
     return {

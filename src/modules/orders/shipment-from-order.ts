@@ -33,16 +33,31 @@ function hasExistingTracking(
   return Boolean(tracking.tracking_number?.trim());
 }
 
+// Parcel Daily courier codes. Whether a courier serves a given route is checked
+// against its live quote when the shipment is booked.
 const ALLOWED_SERVICE_PROVIDERS = new Set([
   'spx',
+  'spxpromo',
   'dhl',
   'jnt',
+  'jntcargo',
   'kex',
   'lex',
   'poslaju',
   'flash',
-  'sf_express',
+  'ninjavan',
+  'citylink',
+  'best',
+  'bestcargo',
+  'lineclear',
+  'teleport',
+  'redly',
+  'aramex',
+  'sfexd',
+  'sfeconomy',
 ]);
+
+const LEGACY_SERVICE_PROVIDERS: Record<string, string> = { sf_express: 'sfexd' };
 
 export function buildShipmentFromOrder(
   order: OrderLike,
@@ -74,11 +89,13 @@ export function buildShipmentFromOrder(
     ? addressCountry === 'Singapore'
     : phoneIsSingapore;
 
-  const requestedProvider = options?.serviceProvider?.trim().toLowerCase();
-  const serviceProvider =
-    requestedProvider && ALLOWED_SERVICE_PROVIDERS.has(requestedProvider)
-      ? requestedProvider
-      : 'spx';
+  const requested = options?.serviceProvider?.trim().toLowerCase();
+  const serviceProvider = requested
+    ? LEGACY_SERVICE_PROVIDERS[requested] ?? requested
+    : 'spx';
+  if (!ALLOWED_SERVICE_PROVIDERS.has(serviceProvider)) {
+    return { error: `Unsupported courier "${options?.serviceProvider}"` };
+  }
 
   const shipment: ShipmentInput = {
     serviceProvider,

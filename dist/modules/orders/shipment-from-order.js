@@ -11,18 +11,32 @@ function hasExistingTracking(tracking) {
     }
     return Boolean((_a = tracking.tracking_number) === null || _a === void 0 ? void 0 : _a.trim());
 }
+// Parcel Daily courier codes. Whether a courier serves a given route is checked
+// against its live quote when the shipment is booked.
 const ALLOWED_SERVICE_PROVIDERS = new Set([
     'spx',
+    'spxpromo',
     'dhl',
     'jnt',
+    'jntcargo',
     'kex',
     'lex',
     'poslaju',
     'flash',
-    'sf_express',
+    'ninjavan',
+    'citylink',
+    'best',
+    'bestcargo',
+    'lineclear',
+    'teleport',
+    'redly',
+    'aramex',
+    'sfexd',
+    'sfeconomy',
 ]);
+const LEGACY_SERVICE_PROVIDERS = { sf_express: 'sfexd' };
 function buildShipmentFromOrder(order, options) {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u;
     if (hasExistingTracking(order.order_tracking)) {
         return { error: 'Order already has a tracking number' };
     }
@@ -42,27 +56,30 @@ function buildShipmentFromOrder(order, options) {
     const isSingapore = addressCountry
         ? addressCountry === 'Singapore'
         : phoneIsSingapore;
-    const requestedProvider = (_j = options === null || options === void 0 ? void 0 : options.serviceProvider) === null || _j === void 0 ? void 0 : _j.trim().toLowerCase();
-    const serviceProvider = requestedProvider && ALLOWED_SERVICE_PROVIDERS.has(requestedProvider)
-        ? requestedProvider
+    const requested = (_j = options === null || options === void 0 ? void 0 : options.serviceProvider) === null || _j === void 0 ? void 0 : _j.trim().toLowerCase();
+    const serviceProvider = requested
+        ? (_k = LEGACY_SERVICE_PROVIDERS[requested]) !== null && _k !== void 0 ? _k : requested
         : 'spx';
+    if (!ALLOWED_SERVICE_PROVIDERS.has(serviceProvider)) {
+        return { error: `Unsupported courier "${options === null || options === void 0 ? void 0 : options.serviceProvider}"` };
+    }
     const shipment = {
         serviceProvider,
         clientAddress: {
-            fullName: ((_l = (_k = order.customers) === null || _k === void 0 ? void 0 : _k.name) === null || _l === void 0 ? void 0 : _l.trim()) || 'Customer',
+            fullName: ((_m = (_l = order.customers) === null || _l === void 0 ? void 0 : _l.name) === null || _m === void 0 ? void 0 : _m.trim()) || 'Customer',
             countryCode: phoneIsSingapore ? '+65' : '+60',
             phone,
-            email: ((_o = (_m = order.customers) === null || _m === void 0 ? void 0 : _m.email) === null || _o === void 0 ? void 0 : _o.trim()) || 'noreply@lunaa.local',
+            email: ((_p = (_o = order.customers) === null || _o === void 0 ? void 0 : _o.email) === null || _p === void 0 ? void 0 : _p.trim()) || 'noreply@lunaa.local',
             line1: fullAddress,
             line2: '',
-            city: ((_q = (_p = order.addresses) === null || _p === void 0 ? void 0 : _p.city) === null || _q === void 0 ? void 0 : _q.trim()) || '',
+            city: ((_r = (_q = order.addresses) === null || _q === void 0 ? void 0 : _q.city) === null || _r === void 0 ? void 0 : _r.trim()) || '',
             postcode,
-            state: ((_s = (_r = order.addresses) === null || _r === void 0 ? void 0 : _r.state) === null || _s === void 0 ? void 0 : _s.trim()) || '',
+            state: ((_t = (_s = order.addresses) === null || _s === void 0 ? void 0 : _s.state) === null || _t === void 0 ? void 0 : _t.trim()) || '',
             country: isSingapore ? 'Singapore' : 'Malaysia',
         },
         kg: 0.5,
         price: 0,
-        content: ((_t = order.shipment_description) === null || _t === void 0 ? void 0 : _t.trim()) || 'Feminine Products',
+        content: ((_u = order.shipment_description) === null || _u === void 0 ? void 0 : _u.trim()) || 'Feminine Products',
         content_value: Number(order.total_amount) || 0,
         isDropoff: (options === null || options === void 0 ? void 0 : options.isDropoff) === true,
     };

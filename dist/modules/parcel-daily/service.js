@@ -24,10 +24,10 @@ class ParcelDailyService {
         }
     }
     async createShipment(shipmentData, crmOrderId) {
-        var _a, _b, _c;
+        var _a, _b, _c, _d, _e;
         const postcode = (0, malaysia_postcodes_1.findPostcode)(shipmentData.clientAddress.postcode, true);
         const normalizedPhone = this.normalizePhoneNumber(shipmentData.clientAddress.phone);
-        const payload = Object.assign(Object.assign({}, shipmentData), { clientAddress: Object.assign(Object.assign({}, shipmentData.clientAddress), { phone: normalizedPhone, state: postcode.found && postcode.state, city: postcode.found && postcode.city }) });
+        const payload = Object.assign(Object.assign({}, shipmentData), { clientAddress: Object.assign(Object.assign(Object.assign({}, shipmentData.clientAddress), { phone: normalizedPhone }), (postcode.found && { state: postcode.state, city: postcode.city })) });
         try {
             const response = await axios_1.default.post(`${this.parcelDailyServiceURL}/create-order`, { payload, crmOrderId });
             if (((_a = response.data) === null || _a === void 0 ? void 0 : _a.success) === false) {
@@ -40,8 +40,8 @@ class ParcelDailyService {
                 return {
                     success: false,
                     status: ((_b = error.response) === null || _b === void 0 ? void 0 : _b.status) || 500,
-                    message: 'Parcel Daily request failed',
-                    details: (_c = error.response) === null || _c === void 0 ? void 0 : _c.data,
+                    message: ((_d = (_c = error.response) === null || _c === void 0 ? void 0 : _c.data) === null || _d === void 0 ? void 0 : _d.message) || 'Parcel Daily request failed',
+                    details: (_e = error.response) === null || _e === void 0 ? void 0 : _e.data,
                 };
             }
             return {
@@ -124,6 +124,8 @@ class ParcelDailyService {
                 codFee: money(quote[`${code}Cod`]),
             };
         })
+            // Parcel Daily still prices some couriers that can't collect COD; their fee comes back empty.
+            .filter((c) => { var _a; return !(((_a = input.cod) !== null && _a !== void 0 ? _a : 0) > 0) || c.codFee > 0; })
             .sort((a, b) => a.price - b.price);
         return {
             couriers,

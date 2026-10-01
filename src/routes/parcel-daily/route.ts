@@ -25,6 +25,32 @@ parcelDailyRouter.get('/account-info', async (req, res) => {
     }
 });
 
+// POST /quote - Live courier prices for a destination
+parcelDailyRouter.post('/quote', async (req, res) => {
+    const {postcode, country, weight, cod} = req.body ?? {};
+    const digits = String(postcode ?? '').replace(/\D/g, '');
+
+    if (country !== 'Malaysia' && country !== 'Singapore') {
+        return res.status(400).json({error: 'Country must be Malaysia or Singapore'});
+    }
+    if (digits.length !== (country === 'Singapore' ? 6 : 5)) {
+        return res.status(400).json({error: 'Invalid postcode'});
+    }
+
+    try {
+        const data = await parcelDailyService.getQuotes({
+            postcode: digits,
+            country,
+            weight: Number(weight) > 0 ? Number(weight) : 0.5,
+            cod: Number(cod) > 0 ? Number(cod) : 0,
+        });
+        return res.status(200).json({success: true, data});
+    } catch (error: any) {
+        console.error('Error fetching courier quotes:', error?.response?.data || error?.message);
+        return res.status(502).json({error: 'Couldn’t get courier prices from Parcel Daily'});
+    }
+});
+
 // POST /order/create - Create a new shipment
 parcelDailyRouter.post('/order/create', async (req, res) => {
     const {shipmentData, orderId} = req.body;

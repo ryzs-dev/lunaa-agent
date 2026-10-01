@@ -23,6 +23,31 @@ exports.parcelDailyRouter.get('/account-info', async (req, res) => {
         return res.status(500).json({ error: 'Failed to fetch account info' });
     }
 });
+// POST /quote - Live courier prices for a destination
+exports.parcelDailyRouter.post('/quote', async (req, res) => {
+    var _a, _b;
+    const { postcode, country, weight, cod } = (_a = req.body) !== null && _a !== void 0 ? _a : {};
+    const digits = String(postcode !== null && postcode !== void 0 ? postcode : '').replace(/\D/g, '');
+    if (country !== 'Malaysia' && country !== 'Singapore') {
+        return res.status(400).json({ error: 'Country must be Malaysia or Singapore' });
+    }
+    if (digits.length !== (country === 'Singapore' ? 6 : 5)) {
+        return res.status(400).json({ error: 'Invalid postcode' });
+    }
+    try {
+        const data = await parcelDailyService.getQuotes({
+            postcode: digits,
+            country,
+            weight: Number(weight) > 0 ? Number(weight) : 0.5,
+            cod: Number(cod) > 0 ? Number(cod) : 0,
+        });
+        return res.status(200).json({ success: true, data });
+    }
+    catch (error) {
+        console.error('Error fetching courier quotes:', ((_b = error === null || error === void 0 ? void 0 : error.response) === null || _b === void 0 ? void 0 : _b.data) || (error === null || error === void 0 ? void 0 : error.message));
+        return res.status(502).json({ error: 'Couldn’t get courier prices from Parcel Daily' });
+    }
+});
 // POST /order/create - Create a new shipment
 exports.parcelDailyRouter.post('/order/create', async (req, res) => {
     var _a;

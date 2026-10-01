@@ -77,7 +77,8 @@ function buildShipmentFromOrder(order, options) {
             state: ((_t = (_s = order.addresses) === null || _s === void 0 ? void 0 : _s.state) === null || _t === void 0 ? void 0 : _t.trim()) || '',
             country: isSingapore ? 'Singapore' : 'Malaysia',
         },
-        kg: 0.5,
+        // 0 means use the parcel weight saved in Parcel Daily settings.
+        kg: 0,
         price: 0,
         content: ((_u = order.shipment_description) === null || _u === void 0 ? void 0 : _u.trim()) || 'Feminine Products',
         content_value: Number(order.total_amount) || 0,

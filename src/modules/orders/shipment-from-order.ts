@@ -111,7 +111,8 @@ export function buildShipmentFromOrder(
       state: order.addresses?.state?.trim() || '',
       country: isSingapore ? 'Singapore' : 'Malaysia',
     },
-    kg: 0.5,
+    // 0 means use the parcel weight saved in Parcel Daily settings.
+    kg: 0,
     price: 0,
     content: order.shipment_description?.trim() || 'Feminine Products',
     content_value: Number(order.total_amount) || 0,

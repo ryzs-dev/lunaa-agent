@@ -135,6 +135,20 @@ customersRouter.post('/', async (req, res) => {
   }
 
   try {
+    // ?mode=create refuses to touch an existing customer; the default upsert
+    // would overwrite their name and details.
+    if (req.query.mode === 'create') {
+      const existing = await customerService.getCustomerByPhoneNumber(
+        String(customerData.phone_number)
+      );
+      if (existing) {
+        return res.status(409).json({
+          error: 'A customer with this phone number already exists',
+          data: existing,
+        });
+      }
+    }
+
     const customer = await customerService.createCustomer(customerData);
 
     return res.status(201).json({
@@ -142,6 +156,9 @@ customersRouter.post('/', async (req, res) => {
       data: customer,
     });
   } catch (error) {
+    if (error instanceof Error && error.message === 'Invalid phone number') {
+      return res.status(400).json({ error: 'Invalid phone number' });
+    }
     console.error('Error creating customer:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }

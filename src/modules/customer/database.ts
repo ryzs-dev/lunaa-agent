@@ -75,7 +75,7 @@ class CustomerDatabase {
       .from('customers')
       .select('*')
       .eq('phone_number', phoneNumber)
-      .single();
+      .maybeSingle();
     if (error) throw error;
     return customer;
   }

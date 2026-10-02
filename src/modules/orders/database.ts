@@ -90,17 +90,29 @@ const EDITABLE_ORDER_FIELDS = [
 
 export class OrderValidationError extends Error {}
 
-// Same format staff type in WhatsApp orders, e.g. "1w1f1s1a": quantity then product code.
+// Same format staff type in WhatsApp orders, e.g. "1w1f1s1a": quantity then code.
+// Codes that aren't products (free gifts like "a", "t", "sachet") only exist in the
+// description, so they're carried over from the previous one.
 export function shipmentDescriptionFor(
   items: { product_id: string; quantity: number }[],
-  products: Map<string, { code?: string | null }>
+  products: Map<string, { code?: string | null }>,
+  previous?: string | null
 ) {
-  return items
-    .map((item) => {
-      const code = products.get(item.product_id)?.code?.trim();
-      return code ? `${item.quantity}${code}` : '';
-    })
-    .join('');
+  const productCodes = new Set(
+    [...products.values()].map((p) => p.code?.trim().toLowerCase()).filter(Boolean)
+  );
+  const gifts = (previous ?? '')
+    .replace(/\s+/g, '')
+    .match(/\d+[a-z]+(?:\d+ml)?/gi)
+    ?.filter((token) => !productCodes.has(token.replace(/^\d+/, '').toLowerCase()));
+  return (
+    items
+      .map((item) => {
+        const code = products.get(item.product_id)?.code?.trim();
+        return code ? `${item.quantity}${code}` : '';
+      })
+      .join('') + (gifts ?? []).join('')
+  );
 }
 
 function toMalaysiaDate(date: Date) {
@@ -589,16 +601,22 @@ class OrderDatabase {
 
         const { data: products, error: productsError } = await supabase
           .from('products')
-          .select('id, code, price')
-          .in(
-            'id',
-            items.map((i) => i.product_id)
-          );
+          .select('id, code, price');
         if (productsError) throw productsError;
         const byId = new Map((products ?? []).map((p) => [p.id, p]));
 
         if (orderFields.shipment_description === undefined) {
-          orderFields.shipment_description = shipmentDescriptionFor(items, byId);
+          const { data: current, error: currentError } = await supabase
+            .from('orders')
+            .select('shipment_description')
+            .eq('id', orderId)
+            .maybeSingle();
+          if (currentError) throw currentError;
+          orderFields.shipment_description = shipmentDescriptionFor(
+            items,
+            byId,
+            current?.shipment_description
+          );
         }
         if (orderFields.total_amount === undefined) {
           orderFields.total_amount = items.reduce(
@@ -637,6 +655,7 @@ class OrderDatabase {
         quantity: item.quantity,
       })),
       total_amount: payload.total_amount,
+      shipment_description: payload.shipment_description,
     });
   }
 }

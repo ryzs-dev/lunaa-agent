@@ -26,6 +26,7 @@ export interface UpdateLineItemsInput {
     quantity: number;
   }[];
   total_amount: number;
+  shipment_description?: string;
 }
 
 export interface GetAllOrdersOptions {

@@ -94,15 +94,22 @@ const EDITABLE_ORDER_FIELDS = [
 class OrderValidationError extends Error {
 }
 exports.OrderValidationError = OrderValidationError;
-// Same format staff type in WhatsApp orders, e.g. "1w1f1s1a": quantity then product code.
-function shipmentDescriptionFor(items, products) {
-    return items
+// Same format staff type in WhatsApp orders, e.g. "1w1f1s1a": quantity then code.
+// Codes that aren't products (free gifts like "a", "t", "sachet") only exist in the
+// description, so they're carried over from the previous one.
+function shipmentDescriptionFor(items, products, previous) {
+    var _a;
+    const productCodes = new Set([...products.values()].map((p) => { var _a; return (_a = p.code) === null || _a === void 0 ? void 0 : _a.trim().toLowerCase(); }).filter(Boolean));
+    const gifts = (_a = (previous !== null && previous !== void 0 ? previous : '')
+        .replace(/\s+/g, '')
+        .match(/\d+[a-z]+(?:\d+ml)?/gi)) === null || _a === void 0 ? void 0 : _a.filter((token) => !productCodes.has(token.replace(/^\d+/, '').toLowerCase()));
+    return (items
         .map((item) => {
         var _a, _b;
         const code = (_b = (_a = products.get(item.product_id)) === null || _a === void 0 ? void 0 : _a.code) === null || _b === void 0 ? void 0 : _b.trim();
         return code ? `${item.quantity}${code}` : '';
     })
-        .join('');
+        .join('') + (gifts !== null && gifts !== void 0 ? gifts : []).join(''));
 }
 function toMalaysiaDate(date) {
     return new Date(date.getTime() + MALAYSIA_OFFSET_MS)
@@ -469,13 +476,19 @@ class OrderDatabase {
                 }
                 const { data: products, error: productsError } = await supabase_1.supabase
                     .from('products')
-                    .select('id, code, price')
-                    .in('id', items.map((i) => i.product_id));
+                    .select('id, code, price');
                 if (productsError)
                     throw productsError;
                 const byId = new Map((products !== null && products !== void 0 ? products : []).map((p) => [p.id, p]));
                 if (orderFields.shipment_description === undefined) {
-                    orderFields.shipment_description = shipmentDescriptionFor(items, byId);
+                    const { data: current, error: currentError } = await supabase_1.supabase
+                        .from('orders')
+                        .select('shipment_description')
+                        .eq('id', orderId)
+                        .maybeSingle();
+                    if (currentError)
+                        throw currentError;
+                    orderFields.shipment_description = shipmentDescriptionFor(items, byId, current === null || current === void 0 ? void 0 : current.shipment_description);
                 }
                 if (orderFields.total_amount === undefined) {
                     orderFields.total_amount = items.reduce((sum, item) => { var _a; return sum + (Number((_a = byId.get(item.product_id)) === null || _a === void 0 ? void 0 : _a.price) || 0) * item.quantity; }, 0);
@@ -511,6 +524,7 @@ class OrderDatabase {
                 quantity: item.quantity,
             })),
             total_amount: payload.total_amount,
+            shipment_description: payload.shipment_description,
         });
     }
 }

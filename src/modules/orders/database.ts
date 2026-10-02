@@ -628,71 +628,16 @@ class OrderDatabase {
   }
 
   async updateLineItems(orderId: UUID, payload: UpdateLineItemsInput) {
-    const validatedItems = validateOrderItems(
-      payload.line_items.map((item) => ({
+    if (!payload.line_items.length) {
+      throw new OrderValidationError('Line items cannot be empty');
+    }
+    return this.updateOrder(orderId, {
+      order_items: payload.line_items.map((item) => ({
         product_id: item.product_id,
         quantity: item.quantity,
-      }))
-    );
-
-    if (!validatedItems.length) {
-      throw new Error(`Line items cannot be empty`);
-    }
-
-    //     Check order exist
-    const { data: order, error: orderError } = await supabase
-      .from('orders')
-      .select('id')
-      .eq('id', orderId)
-      .is('deleted_at', null)
-      .single();
-
-    if (orderError) throw orderError;
-    if (!order) throw Error(`Order Not Found`);
-
-    //     Delete Existing Line Items
-    const { error: deleteError } = await supabase
-      .from('order_items')
-      .delete()
-      .eq('order_id', orderId);
-
-    if (deleteError) throw deleteError;
-
-    const itemsToInsert = validatedItems.map((item) => ({
-      order_id: orderId,
-      product_id: item.product_id,
-      quantity: item.quantity,
-    }));
-
-    const { error: insertError } = await supabase
-      .from('order_items')
-      .insert(itemsToInsert);
-
-    if (insertError) throw insertError;
-
-    const { data: updatedOrder, error: updatedOrderError } = await supabase
-      .from('orders')
-      .update({
-        total_amount: payload.total_amount,
-        created_at: new Date().toISOString(),
-      })
-      .eq('id', orderId)
-      .select('*')
-      .single();
-
-    if (updatedOrderError) throw updatedOrderError;
-
-    const { data: updatedItems, error: fetchItemsError } = await supabase
-      .from('order_items')
-      .select('*')
-      .eq('order_id', orderId);
-
-    if (fetchItemsError) throw fetchItemsError;
-
-    return {
-      ...updatedOrder,
-      order_items: updatedOrder,
-    };
+      })),
+      total_amount: payload.total_amount,
+    });
   }
 }
 

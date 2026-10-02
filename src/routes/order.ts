@@ -381,6 +381,9 @@ orderRouter.patch('/:order_id/line-items', async (req, res) => {
 
     return res.status(200).json({ data: updatedOrder });
   } catch (err: any) {
+    if (err instanceof OrderValidationError) {
+      return res.status(400).json({ error: err.message });
+    }
     console.error('Failed to update line items:', err);
     return res
       .status(500)

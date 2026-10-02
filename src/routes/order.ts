@@ -6,6 +6,7 @@ import { UpdateLineItemsInput } from '../modules/orders/types';
 import { forwardToConverra } from '../modules/converra/converra-forwarder';
 import { ParcelDailyService } from '../modules/parcel-daily/service';
 import { buildShipmentFromOrder } from '../modules/orders/shipment-from-order';
+import { OrderValidationError } from '../modules/orders/database';
 
 export const orderRouter = express.Router();
 
@@ -254,6 +255,9 @@ orderRouter.patch('/:id', async (req, res) => {
     const updatedOrder = await orderService.updateOrder(orderId, updates);
     res.status(200).json({ success: true, order: updatedOrder });
   } catch (error) {
+    if (error instanceof OrderValidationError) {
+      return res.status(400).json({ error: error.message });
+    }
     console.error('Error updating order:', error);
     if (error instanceof Error && error.message?.includes('duplicate key')) {
       return res.status(400).json({ error: 'Duplicate order item detected' });

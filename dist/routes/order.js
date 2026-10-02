@@ -10,6 +10,7 @@ const service_2 = __importDefault(require("../modules/order_tracking/service"));
 const converra_forwarder_1 = require("../modules/converra/converra-forwarder");
 const service_3 = require("../modules/parcel-daily/service");
 const shipment_from_order_1 = require("../modules/orders/shipment-from-order");
+const database_1 = require("../modules/orders/database");
 exports.orderRouter = express_1.default.Router();
 const orderService = new service_1.default();
 const orderTrackingService = new service_2.default();
@@ -203,6 +204,9 @@ exports.orderRouter.patch('/:id', async (req, res) => {
         res.status(200).json({ success: true, order: updatedOrder });
     }
     catch (error) {
+        if (error instanceof database_1.OrderValidationError) {
+            return res.status(400).json({ error: error.message });
+        }
         console.error('Error updating order:', error);
         if (error instanceof Error && ((_a = error.message) === null || _a === void 0 ? void 0 : _a.includes('duplicate key'))) {
             return res.status(400).json({ error: 'Duplicate order item detected' });

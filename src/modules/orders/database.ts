@@ -77,6 +77,32 @@ const MALAYSIA_OFFSET_MS = 8 * 60 * 60 * 1000;
 
 // Accepts both "YYYY-MM-DD" (UTC midnight) and a Malaysia-midnight ISO
 // timestamp, returning the Malaysia calendar date for either.
+const EDITABLE_ORDER_FIELDS = [
+  'customer_id',
+  'address_id',
+  'order_date',
+  'status',
+  'payment_method',
+  'total_amount',
+  'remark',
+  'shipment_description',
+] as const;
+
+export class OrderValidationError extends Error {}
+
+// Same format staff type in WhatsApp orders, e.g. "1w1f1s1a": quantity then product code.
+export function shipmentDescriptionFor(
+  items: { product_id: string; quantity: number }[],
+  products: Map<string, { code?: string | null }>
+) {
+  return items
+    .map((item) => {
+      const code = products.get(item.product_id)?.code?.trim();
+      return code ? `${item.quantity}${code}` : '';
+    })
+    .join('');
+}
+
 function toMalaysiaDate(date: Date) {
   return new Date(date.getTime() + MALAYSIA_OFFSET_MS)
     .toISOString()
@@ -351,8 +377,25 @@ class OrderDatabase {
       (order as { order_number?: string }).order_number ??
       (await generateOrderNumber());
 
+    let shipmentDescription = order.shipment_description?.trim();
+    if (!shipmentDescription) {
+      const { data: products, error: productsError } = await supabase
+        .from('products')
+        .select('id, code')
+        .in(
+          'id',
+          validatedItems.map((i) => i.product_id)
+        );
+      if (productsError) throw productsError;
+      shipmentDescription = shipmentDescriptionFor(
+        validatedItems,
+        new Map((products ?? []).map((p) => [p.id, p]))
+      );
+    }
+
     const orderPayload = {
       ...order,
+      shipment_description: shipmentDescription || undefined,
       order_number: orderNumber,
       order_date: order.order_date ?? new Date().toISOString(),
       status: order.status ?? 'unpaid',
@@ -481,77 +524,107 @@ class OrderDatabase {
   }
 
   async updateOrder(orderId: UUID, updates: Partial<OrderInput>) {
-    const { order_items, ...orderData } = updates;
+    const { order_items, ...rest } = updates;
+    const orderFields: Record<string, unknown> = {};
+    for (const field of EDITABLE_ORDER_FIELDS) {
+      if (rest[field] !== undefined) orderFields[field] = rest[field];
+    }
+    if (orderFields.order_date) {
+      const date = new Date(orderFields.order_date as string | Date);
+      if (Number.isNaN(date.getTime())) throw new OrderValidationError('Invalid order date');
+      orderFields.order_date = toMalaysiaDate(date);
+    }
+    if (orderFields.total_amount !== undefined) {
+      const total = Number(orderFields.total_amount);
+      if (!Number.isFinite(total) || total < 0) {
+        throw new OrderValidationError('Total must be zero or more');
+      }
+      orderFields.total_amount = Math.round(total * 100) / 100;
+    }
 
-    try {
-      // 1️⃣ Fetch existing order items
+    // Items are only touched when the caller sends them; other edits leave them alone.
+    if (order_items !== undefined) {
+      let items: OrderInput['order_items'];
+      try {
+        items = validateOrderItems(order_items);
+      } catch (error) {
+        throw new OrderValidationError((error as Error).message);
+      }
+
       const { data: oldItems, error: fetchError } = await supabase
         .from('order_items')
-        .select('*')
+        .select('product_id, quantity')
         .eq('order_id', orderId);
       if (fetchError) throw fetchError;
 
-      // 2️⃣ Prepare new state for items
-      const finalItems =
-        order_items?.map((item) => ({
-          ...item,
-          order_id: orderId,
-        })) || [];
+      const itemsKey = (list: { product_id: string; quantity: number }[]) =>
+        list
+          .map((i) => `${i.product_id}:${i.quantity}`)
+          .sort()
+          .join('|');
+      const itemsChanged = itemsKey(oldItems ?? []) !== itemsKey(items);
 
-      // 3️⃣ Upsert new/edited items
-      if (finalItems.length > 0) {
+      if (itemsChanged) {
         const { error: upsertError } = await supabase
           .from('order_items')
-          .upsert(finalItems, {
-            onConflict: 'order_id,product_id',
-            ignoreDuplicates: false,
-          });
-        if (upsertError) throw upsertError;
-      }
-
-      // 4️⃣ Delete removed items
-      const incomingProductIds = finalItems.map((i) => i.product_id);
-      const itemsToDelete = oldItems.filter(
-        (i) => !incomingProductIds.includes(i.product_id)
-      );
-      if (itemsToDelete.length > 0) {
-        const { error: deleteError } = await supabase
-          .from('order_items')
-          .delete()
-          .eq('order_id', orderId)
-          .in(
-            'product_id',
-            itemsToDelete.map((i) => i.product_id)
+          .upsert(
+            items.map((item) => ({ ...item, order_id: orderId })),
+            { onConflict: 'order_id,product_id', ignoreDuplicates: false }
           );
-        if (deleteError) throw deleteError;
+        if (upsertError) throw upsertError;
+
+        const keep = new Set(items.map((i) => i.product_id));
+        const removed = (oldItems ?? []).filter((i) => !keep.has(i.product_id));
+        if (removed.length) {
+          const { error: deleteError } = await supabase
+            .from('order_items')
+            .delete()
+            .eq('order_id', orderId)
+            .in(
+              'product_id',
+              removed.map((i) => i.product_id)
+            );
+          if (deleteError) throw deleteError;
+        }
+
+        const { data: products, error: productsError } = await supabase
+          .from('products')
+          .select('id, code, price')
+          .in(
+            'id',
+            items.map((i) => i.product_id)
+          );
+        if (productsError) throw productsError;
+        const byId = new Map((products ?? []).map((p) => [p.id, p]));
+
+        if (orderFields.shipment_description === undefined) {
+          orderFields.shipment_description = shipmentDescriptionFor(items, byId);
+        }
+        if (orderFields.total_amount === undefined) {
+          orderFields.total_amount = items.reduce(
+            (sum, item) => sum + (Number(byId.get(item.product_id)?.price) || 0) * item.quantity,
+            0
+          );
+        }
       }
-
-      // 5️⃣ Recalculate total_amount
-      const { data: updatedItems, error: itemsFetchError } = await supabase
-        .from('order_items')
-        .select('*, products(*)')
-        .eq('order_id', orderId);
-      if (itemsFetchError) throw itemsFetchError;
-
-      const newTotal = updatedItems.reduce(
-        (sum, item) => sum + (item.products?.price || 0) * item.quantity,
-        0
-      );
-
-      // 6️⃣ Update order total_amount
-      const { data: updatedOrder, error: orderError } = await supabase
-        .from('orders')
-        .update({ total_amount: newTotal })
-        .eq('id', orderId)
-        .select('*')
-        .maybeSingle();
-      if (orderError) throw orderError;
-
-      return { ...updatedOrder, order_items: updatedItems };
-    } catch (err) {
-      console.error('Failed to update order', err);
-      throw err;
     }
+
+    if (Object.keys(orderFields).length) {
+      const { error: orderError } = await supabase
+        .from('orders')
+        .update(orderFields)
+        .eq('id', orderId);
+      if (orderError) throw orderError;
+    }
+
+    const { data: updatedOrder, error: readError } = await supabase
+      .from('orders')
+      .select('*, order_items(*, products(*))')
+      .eq('id', orderId)
+      .maybeSingle();
+    if (readError) throw readError;
+    if (!updatedOrder) throw new OrderValidationError('Order not found');
+    return updatedOrder;
   }
 
   async updateLineItems(orderId: UUID, payload: UpdateLineItemsInput) {

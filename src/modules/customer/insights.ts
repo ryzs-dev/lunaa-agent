@@ -96,7 +96,8 @@ export async function findDuplicateCustomers() {
   const groups = new Map<string, typeof customers>();
   for (const customer of customers) {
     const key = nameKey(customer.name);
-    if (key.length < 4) continue;
+    // A single given name matches too many different people.
+    if (key.length < 4 || !key.includes(' ')) continue;
     const list = groups.get(key) ?? [];
     list.push(customer);
     groups.set(key, list);

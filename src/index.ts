@@ -29,6 +29,7 @@ import { audienceRouter } from './modules/audience/audience.router';
 import { broadcastRouter } from './modules/broadcast/broadcast.router';
 import { converraEventRouter } from './modules/converra/converra-event.router';
 import { converraCommandRouter } from './modules/converra/converra-command.router';
+import { marketplaceRouter, startMarketplaceSync } from './modules/marketplace/router';
 
 dotenv.config({ path: path.resolve(__dirname, '../.env.local') });
 
@@ -56,6 +57,7 @@ app.use('/api/orders', orderRouter);
 app.use('/api/addresses', addressRouter);
 app.use('/api/tracking', orderTrackingRouter);
 app.use('/api/parcel-daily', parcelDailyRouter);
+app.use('/api/marketplaces', marketplaceRouter);
 app.use('/webhook', webhookRouter);
 app.use('/api/message', messageRouter);
 app.use('/api/stats', statsRouter);
@@ -96,4 +98,5 @@ server.listen(port, '0.0.0.0', () => {
 if (process.env.NODE_ENV === 'production') {
   console.log('\n📅 Starting daily tracking automation...');
   startDailyTrackingScheduler();
+  startMarketplaceSync();
 }

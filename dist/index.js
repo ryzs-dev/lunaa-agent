@@ -33,6 +33,7 @@ const audience_router_1 = require("./modules/audience/audience.router");
 const broadcast_router_1 = require("./modules/broadcast/broadcast.router");
 const converra_event_router_1 = require("./modules/converra/converra-event.router");
 const converra_command_router_1 = require("./modules/converra/converra-command.router");
+const router_1 = require("./modules/marketplace/router");
 dotenv_1.default.config({ path: path_1.default.resolve(__dirname, '../.env.local') });
 const app = (0, express_1.default)();
 const port = Number(process.env.PORT) || 3001;
@@ -55,6 +56,7 @@ app.use('/api/orders', order_1.orderRouter);
 app.use('/api/addresses', address_1.addressRouter);
 app.use('/api/tracking', tracking_1.orderTrackingRouter);
 app.use('/api/parcel-daily', route_1.parcelDailyRouter);
+app.use('/api/marketplaces', router_1.marketplaceRouter);
 app.use('/webhook', route_2.webhookRouter);
 app.use('/api/message', route_3.messageRouter);
 app.use('/api/stats', route_4.statsRouter);
@@ -87,4 +89,5 @@ server.listen(port, '0.0.0.0', () => {
 if (process.env.NODE_ENV === 'production') {
     console.log('\n📅 Starting daily tracking automation...');
     (0, trackingScheduler_1.startDailyTrackingScheduler)();
+    (0, router_1.startMarketplaceSync)();
 }

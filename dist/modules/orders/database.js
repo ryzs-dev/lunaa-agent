@@ -117,7 +117,7 @@ function toMalaysiaDate(date) {
         .slice(0, 10);
 }
 class OrderDatabase {
-    async getAllOrders({ limit, offset, search, sortBy, sortOrder, dateFrom, dateTo, status, tracking, location, }) {
+    async getAllOrders({ limit, offset, search, sortBy, sortOrder, dateFrom, dateTo, status, tracking, location, source, }) {
         var _a;
         const applyLocation = location === 'east' || location === 'west';
         const statusValues = status && status !== 'all' && status !== 'needs_shipment'
@@ -153,6 +153,7 @@ class OrderDatabase {
                 const orParts = [];
                 if (!term.includes('@')) {
                     orParts.push(`order_number.ilike."%${term}%"`);
+                    orParts.push(`buyer_name.ilike."%${term}%"`);
                 }
                 if (customerIds.length) {
                     orParts.push(`customer_id.in.(${customerIds.join(',')})`);
@@ -171,6 +172,9 @@ class OrderDatabase {
                     };
                 }
             }
+        }
+        if (source && source !== 'all') {
+            query = query.eq('source', source);
         }
         if (dateFrom) {
             query = query.gte('order_date', toMalaysiaDate(dateFrom));

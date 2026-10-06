@@ -48,6 +48,7 @@ orderRouter.get('/', async (req, res) => {
       sortOrder: (sortOrderQuery === 'asc' ? 'asc' : 'desc') as 'asc' | 'desc',
       dateFrom: dateFrom ? new Date(dateFrom as string) : undefined,
       dateTo: dateTo ? new Date(dateTo as string) : undefined,
+      source: req.query.source as string | undefined,
     });
 
     res.status(200).json({

@@ -1,6 +1,8 @@
 import express from 'express';
 import cron from 'node-cron';
+import { supabase } from '../supabase';
 import * as service from './service';
+import { recentTabs, sheetSyncStatus, syncSheetTabs } from './sheet-sync';
 import * as store from './store';
 import { isPlatform, MarketplaceError, Platform } from './types';
 
@@ -64,6 +66,38 @@ marketplaceRouter.get('/', async (_req, res) => {
     if (store.isMissingTable(error as { code?: string })) {
       return res.json({ platforms: service.platformStatus(), setupRequired: true, connections: [] });
     }
+    return sendError(res, error);
+  }
+});
+
+// GET /sheet-sync - Orders read from the order sheet (orange = Shopee, dark blue = Lazada).
+marketplaceRouter.get('/sheet-sync', async (_req, res) => {
+  try {
+    const counts: Record<string, number> = {};
+    for (const platform of ['shopee', 'lazada']) {
+      const { count, error } = await supabase
+        .from('orders')
+        .select('id', { count: 'exact', head: true })
+        .eq('source', platform)
+        .is('deleted_at', null);
+      if (error) throw error;
+      counts[platform] = count ?? 0;
+    }
+    return res.json({ ...sheetSyncStatus(), tabs: recentTabs(), counts });
+  } catch (error) {
+    return sendError(res, error);
+  }
+});
+
+// POST /sheet-sync - Re-read the current and previous month's tabs now.
+// Body { tabs: ["Jan 26", ...] } reads specific tabs, e.g. to backfill older months.
+marketplaceRouter.post('/sheet-sync', async (req, res) => {
+  try {
+    const tabs = Array.isArray(req.body?.tabs)
+      ? req.body.tabs.filter((tab: unknown) => typeof tab === 'string' && tab.trim())
+      : undefined;
+    return res.json(await syncSheetTabs(tabs?.length ? tabs : undefined));
+  } catch (error) {
     return sendError(res, error);
   }
 });
@@ -154,5 +188,8 @@ marketplaceRouter.get('/:platform/orders', async (req, res) => {
 export function startMarketplaceSync() {
   cron.schedule('*/30 * * * *', () => {
     service.syncAll().catch((error) => console.error('Marketplace sync failed:', error));
+  });
+  cron.schedule('*/15 * * * *', () => {
+    syncSheetTabs().catch((error) => console.error('Order sheet sync failed:', error.message));
   });
 }

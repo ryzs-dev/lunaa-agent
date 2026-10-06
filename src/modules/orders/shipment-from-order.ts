@@ -5,6 +5,7 @@ type OrderLike = {
   id?: string;
   total_amount?: number;
   shipment_description?: string | null;
+  source?: string | null;
   order_tracking?:
     | { tracking_number?: string | null }
     | { tracking_number?: string | null }[]
@@ -66,6 +67,9 @@ export function buildShipmentFromOrder(
   shipment?: ShipmentInput;
   error?: string;
 } {
+  if (order.source === 'shopee' || order.source === 'lazada') {
+    return { error: `${order.source === 'shopee' ? 'Shopee' : 'Lazada'} orders ship through the marketplace` };
+  }
   if (hasExistingTracking(order.order_tracking)) {
     return { error: 'Order already has a tracking number' };
   }

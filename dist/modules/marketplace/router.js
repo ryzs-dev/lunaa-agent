@@ -40,7 +40,9 @@ exports.marketplaceRouter = void 0;
 exports.startMarketplaceSync = startMarketplaceSync;
 const express_1 = __importDefault(require("express"));
 const node_cron_1 = __importDefault(require("node-cron"));
+const supabase_1 = require("../supabase");
 const service = __importStar(require("./service"));
+const sheet_sync_1 = require("./sheet-sync");
 const store = __importStar(require("./store"));
 const types_1 = require("./types");
 exports.marketplaceRouter = express_1.default.Router();
@@ -96,6 +98,40 @@ exports.marketplaceRouter.get('/', async (_req, res) => {
         if (store.isMissingTable(error)) {
             return res.json({ platforms: service.platformStatus(), setupRequired: true, connections: [] });
         }
+        return sendError(res, error);
+    }
+});
+// GET /sheet-sync - Orders read from the order sheet (orange = Shopee, dark blue = Lazada).
+exports.marketplaceRouter.get('/sheet-sync', async (_req, res) => {
+    try {
+        const counts = {};
+        for (const platform of ['shopee', 'lazada']) {
+            const { count, error } = await supabase_1.supabase
+                .from('orders')
+                .select('id', { count: 'exact', head: true })
+                .eq('source', platform)
+                .is('deleted_at', null);
+            if (error)
+                throw error;
+            counts[platform] = count !== null && count !== void 0 ? count : 0;
+        }
+        return res.json(Object.assign(Object.assign({}, (0, sheet_sync_1.sheetSyncStatus)()), { tabs: (0, sheet_sync_1.recentTabs)(), counts }));
+    }
+    catch (error) {
+        return sendError(res, error);
+    }
+});
+// POST /sheet-sync - Re-read the current and previous month's tabs now.
+// Body { tabs: ["Jan 26", ...] } reads specific tabs, e.g. to backfill older months.
+exports.marketplaceRouter.post('/sheet-sync', async (req, res) => {
+    var _a;
+    try {
+        const tabs = Array.isArray((_a = req.body) === null || _a === void 0 ? void 0 : _a.tabs)
+            ? req.body.tabs.filter((tab) => typeof tab === 'string' && tab.trim())
+            : undefined;
+        return res.json(await (0, sheet_sync_1.syncSheetTabs)((tabs === null || tabs === void 0 ? void 0 : tabs.length) ? tabs : undefined));
+    }
+    catch (error) {
         return sendError(res, error);
     }
 });
@@ -182,5 +218,8 @@ exports.marketplaceRouter.get('/:platform/orders', async (req, res) => {
 function startMarketplaceSync() {
     node_cron_1.default.schedule('*/30 * * * *', () => {
         service.syncAll().catch((error) => console.error('Marketplace sync failed:', error));
+    });
+    node_cron_1.default.schedule('*/15 * * * *', () => {
+        (0, sheet_sync_1.syncSheetTabs)().catch((error) => console.error('Order sheet sync failed:', error.message));
     });
 }

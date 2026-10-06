@@ -40,4 +40,5 @@ export interface GetAllOrdersOptions {
   dateFrom?: Date;
   dateTo?: Date;
   location?: string;
+  source?: string;
 }

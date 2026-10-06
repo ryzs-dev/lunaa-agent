@@ -133,6 +133,7 @@ interface QueryParams {
   createdAt?: { gte?: Date; lt?: Date };
   dateFrom?: Date;
   dateTo?: Date;
+  source?: string;
 }
 
 class OrderDatabase {
@@ -147,6 +148,7 @@ class OrderDatabase {
     status,
     tracking,
     location,
+    source,
   }: QueryParams) {
     const applyLocation =
       location === 'east' || location === 'west';
@@ -190,6 +192,7 @@ class OrderDatabase {
         const orParts: string[] = [];
         if (!term.includes('@')) {
           orParts.push(`order_number.ilike."%${term}%"`);
+          orParts.push(`buyer_name.ilike."%${term}%"`);
         }
         if (customerIds.length) {
           orParts.push(`customer_id.in.(${customerIds.join(',')})`);
@@ -207,6 +210,10 @@ class OrderDatabase {
           };
         }
       }
+    }
+
+    if (source && source !== 'all') {
+      query = query.eq('source', source);
     }
 
     if (dateFrom) {

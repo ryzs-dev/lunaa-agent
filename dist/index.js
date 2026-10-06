@@ -89,5 +89,5 @@ server.listen(port, '0.0.0.0', () => {
 if (process.env.NODE_ENV === 'production') {
     console.log('\n📅 Starting daily tracking automation...');
     (0, trackingScheduler_1.startDailyTrackingScheduler)();
-    (0, router_1.startMarketplaceSync)();
 }
+(0, router_1.startMarketplaceSync)();

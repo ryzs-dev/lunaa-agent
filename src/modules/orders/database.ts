@@ -232,7 +232,8 @@ class OrderDatabase {
       }
     }
     if (status === 'needs_shipment') {
-      query = query.is('order_tracking', null);
+      // Shopee and Lazada orders ship through the marketplace, not Parcel Daily.
+      query = query.is('order_tracking', null).not('source', 'in', '(shopee,lazada)');
     } else if (statusValues) {
       query = query.in('order_tracking.status', statusValues);
     }
@@ -300,7 +301,8 @@ class OrderDatabase {
         query = supabase
           .from('orders')
           .select('id, order_tracking(id)', { count: 'exact', head: true })
-          .is('order_tracking', null);
+          .is('order_tracking', null)
+          .not('source', 'in', '(shopee,lazada)');
       } else if (group) {
         query = supabase
           .from('orders')

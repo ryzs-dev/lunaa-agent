@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getRepeatOrderValue = getRepeatOrderValue;
+exports.getChannelTotals = getChannelTotals;
 const supabase_1 = require("../supabase");
 const CUSTOMER_ID_CHUNK_SIZE = 200;
 // An order counts as a repeat order when the same customer has an earlier active order.
@@ -72,6 +73,37 @@ function getMonthRange(month) {
         end: new Date(`${nextMonth}-01T00:00:00+08:00`),
     };
 }
+const PAGE_SIZE = 1000;
+async function getChannelTotals(start, end) {
+    const totals = {
+        whatsapp: { orders: 0, revenue: 0 },
+        shopee: { orders: 0, revenue: 0 },
+        lazada: { orders: 0, revenue: 0 },
+    };
+    for (let from = 0;; from += PAGE_SIZE) {
+        const { data, error } = await supabase_1.supabase
+            .from('orders')
+            .select('source, total_amount')
+            .is('deleted_at', null)
+            .gte('created_at', start.toISOString())
+            .lt('created_at', end.toISOString())
+            .order('id')
+            .range(from, from + PAGE_SIZE - 1);
+        if (error)
+            throw error;
+        for (const row of data !== null && data !== void 0 ? data : []) {
+            const key = (row.source in totals ? row.source : 'whatsapp');
+            totals[key].orders += 1;
+            totals[key].revenue += Number(row.total_amount || 0);
+        }
+        if (!data || data.length < PAGE_SIZE)
+            break;
+    }
+    for (const channel of Object.values(totals)) {
+        channel.revenue = parseFloat(channel.revenue.toFixed(2));
+    }
+    return totals;
+}
 class StatsDatabase {
     async getDashboardStats(month) {
         var _a, _b, _c, _d, _e;
@@ -94,9 +126,13 @@ class StatsDatabase {
         if (customerAcquisitionError)
             throw customerAcquisitionError;
         const { start, end } = getMonthRange(month);
-        const repeatOrderValue = await getRepeatOrderValue(start, end);
+        const [repeatOrderValue, channels] = await Promise.all([
+            getRepeatOrderValue(start, end),
+            getChannelTotals(start, end),
+        ]);
         return {
             repeatOrderValue,
+            channels,
             stats: {
                 total_customers,
                 total_orders: (_b = statsRow.total_orders) !== null && _b !== void 0 ? _b : 0,

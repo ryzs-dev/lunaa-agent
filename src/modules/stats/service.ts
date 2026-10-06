@@ -32,6 +32,7 @@ class StatsService {
         new_revenue: result.repeatOrderValue.newRevenue,
         new_average_order_value: result.repeatOrderValue.newAverageOrderValue,
       },
+      channels: result.channels,
       charts: result.charts ?? {},
     };
   }

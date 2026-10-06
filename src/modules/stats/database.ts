@@ -124,6 +124,48 @@ function getMonthRange(month: string) {
   };
 }
 
+export type ChannelTotals = Record<
+  'whatsapp' | 'shopee' | 'lazada',
+  { orders: number; revenue: number }
+>;
+
+const PAGE_SIZE = 1000;
+
+export async function getChannelTotals(start: Date, end: Date): Promise<ChannelTotals> {
+  const totals: ChannelTotals = {
+    whatsapp: { orders: 0, revenue: 0 },
+    shopee: { orders: 0, revenue: 0 },
+    lazada: { orders: 0, revenue: 0 },
+  };
+
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from('orders')
+      .select('source, total_amount')
+      .is('deleted_at', null)
+      .gte('created_at', start.toISOString())
+      .lt('created_at', end.toISOString())
+      .order('id')
+      .range(from, from + PAGE_SIZE - 1);
+
+    if (error) throw error;
+
+    for (const row of data ?? []) {
+      const key = (row.source in totals ? row.source : 'whatsapp') as keyof ChannelTotals;
+      totals[key].orders += 1;
+      totals[key].revenue += Number(row.total_amount || 0);
+    }
+
+    if (!data || data.length < PAGE_SIZE) break;
+  }
+
+  for (const channel of Object.values(totals)) {
+    channel.revenue = parseFloat(channel.revenue.toFixed(2));
+  }
+
+  return totals;
+}
+
 class StatsDatabase {
   async getDashboardStats(month: string) {
     const monthStart = `${month}-01`;
@@ -159,10 +201,14 @@ class StatsDatabase {
     if (customerAcquisitionError) throw customerAcquisitionError;
 
     const { start, end } = getMonthRange(month);
-    const repeatOrderValue = await getRepeatOrderValue(start, end);
+    const [repeatOrderValue, channels] = await Promise.all([
+      getRepeatOrderValue(start, end),
+      getChannelTotals(start, end),
+    ]);
 
     return {
       repeatOrderValue,
+      channels,
       stats: {
         total_customers,
         total_orders: statsRow.total_orders ?? 0,

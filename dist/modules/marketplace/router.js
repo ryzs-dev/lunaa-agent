@@ -115,7 +115,8 @@ exports.marketplaceRouter.get('/sheet-sync', async (_req, res) => {
                 throw error;
             counts[platform] = count !== null && count !== void 0 ? count : 0;
         }
-        return res.json(Object.assign(Object.assign({}, (0, sheet_sync_1.sheetSyncStatus)()), { tabs: (0, sheet_sync_1.recentTabs)(), counts }));
+        const issues = await (0, sheet_sync_1.listSheetIssues)();
+        return res.json(Object.assign(Object.assign({}, (0, sheet_sync_1.sheetSyncStatus)()), { tabs: (0, sheet_sync_1.recentTabs)(), counts, issues }));
     }
     catch (error) {
         return sendError(res, error);

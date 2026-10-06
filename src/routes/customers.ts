@@ -4,6 +4,7 @@ import { supabase } from '../database/supabaseNormalized';
 import CustomerService from '../modules/customer/service';
 import { UUID } from 'crypto';
 import { getRepeatOrderValue } from '../modules/stats/database';
+import { findDuplicateCustomers, getFollowUps, mergeCustomers } from '../modules/customer/insights';
 
 const customersRouter = express.Router();
 
@@ -87,6 +88,48 @@ customersRouter.get('/ids', async (req, res) => {
   } catch (error) {
     console.error('Error fetching customer ids:', error);
     res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+customersRouter.get('/follow-ups', async (req, res) => {
+  const days = Number(req.query.days ?? 30);
+  const offset = Number(req.query.offset ?? 0);
+  const limit = Number(req.query.limit ?? 50);
+  try {
+    const result = await getFollowUps(
+      Number.isFinite(days) ? days : 30,
+      Number.isFinite(offset) ? offset : 0,
+      Number.isFinite(limit) ? limit : 50
+    );
+    res.status(200).json(result);
+  } catch (error) {
+    console.error('Error fetching follow-ups:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+customersRouter.get('/duplicates', async (_req, res) => {
+  try {
+    const groups = await findDuplicateCustomers();
+    res.status(200).json({ groups });
+  } catch (error) {
+    console.error('Error finding duplicate customers:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+customersRouter.post('/merge', async (req, res) => {
+  const { keepId, mergeId } = req.body ?? {};
+  if (!keepId || !mergeId) {
+    return res.status(400).json({ error: 'keepId and mergeId are required' });
+  }
+  try {
+    const result = await mergeCustomers(keepId, mergeId);
+    res.status(200).json({ success: true, ...result });
+  } catch (error) {
+    console.error('Error merging customers:', error);
+    const message = error instanceof Error ? error.message : 'Internal server error';
+    res.status(400).json({ error: message });
   }
 });
 

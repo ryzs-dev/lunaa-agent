@@ -8,6 +8,7 @@ const express_1 = __importDefault(require("express"));
 const supabaseNormalized_1 = require("../database/supabaseNormalized");
 const service_1 = __importDefault(require("../modules/customer/service"));
 const database_1 = require("../modules/stats/database");
+const insights_1 = require("../modules/customer/insights");
 const customersRouter = express_1.default.Router();
 const customerService = new service_1.default();
 // ============================================================================
@@ -80,6 +81,46 @@ customersRouter.get('/ids', async (req, res) => {
     catch (error) {
         console.error('Error fetching customer ids:', error);
         res.status(500).json({ error: 'Internal server error' });
+    }
+});
+customersRouter.get('/follow-ups', async (req, res) => {
+    var _a, _b, _c;
+    const days = Number((_a = req.query.days) !== null && _a !== void 0 ? _a : 30);
+    const offset = Number((_b = req.query.offset) !== null && _b !== void 0 ? _b : 0);
+    const limit = Number((_c = req.query.limit) !== null && _c !== void 0 ? _c : 50);
+    try {
+        const result = await (0, insights_1.getFollowUps)(Number.isFinite(days) ? days : 30, Number.isFinite(offset) ? offset : 0, Number.isFinite(limit) ? limit : 50);
+        res.status(200).json(result);
+    }
+    catch (error) {
+        console.error('Error fetching follow-ups:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+customersRouter.get('/duplicates', async (_req, res) => {
+    try {
+        const groups = await (0, insights_1.findDuplicateCustomers)();
+        res.status(200).json({ groups });
+    }
+    catch (error) {
+        console.error('Error finding duplicate customers:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+customersRouter.post('/merge', async (req, res) => {
+    var _a;
+    const { keepId, mergeId } = (_a = req.body) !== null && _a !== void 0 ? _a : {};
+    if (!keepId || !mergeId) {
+        return res.status(400).json({ error: 'keepId and mergeId are required' });
+    }
+    try {
+        const result = await (0, insights_1.mergeCustomers)(keepId, mergeId);
+        res.status(200).json(Object.assign({ success: true }, result));
+    }
+    catch (error) {
+        console.error('Error merging customers:', error);
+        const message = error instanceof Error ? error.message : 'Internal server error';
+        res.status(400).json({ error: message });
     }
 });
 // GET /api/customers/:id - Get customer by ID

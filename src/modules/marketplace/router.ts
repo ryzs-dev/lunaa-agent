@@ -2,7 +2,7 @@ import express from 'express';
 import cron from 'node-cron';
 import { supabase } from '../supabase';
 import * as service from './service';
-import { recentTabs, sheetSyncStatus, syncSheetTabs } from './sheet-sync';
+import { listSheetIssues, recentTabs, sheetSyncStatus, syncSheetTabs } from './sheet-sync';
 import * as store from './store';
 import { isPlatform, MarketplaceError, Platform } from './types';
 
@@ -83,7 +83,8 @@ marketplaceRouter.get('/sheet-sync', async (_req, res) => {
       if (error) throw error;
       counts[platform] = count ?? 0;
     }
-    return res.json({ ...sheetSyncStatus(), tabs: recentTabs(), counts });
+    const issues = await listSheetIssues();
+    return res.json({ ...sheetSyncStatus(), tabs: recentTabs(), counts, issues });
   } catch (error) {
     return sendError(res, error);
   }

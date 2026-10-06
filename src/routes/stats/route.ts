@@ -1,5 +1,6 @@
 import express from 'express';
 import StatsService from '../../modules/stats/service';
+import { monthOrdersCsv } from '../../modules/stats/export';
 import { resolveMonthKey } from '../../utils/timezone';
 
 export const statsRouter = express.Router();
@@ -30,6 +31,19 @@ statsRouter.get('/dashboard', async (req, res) => {
       success: false,
       message: 'Internal server error',
     });
+  }
+});
+
+statsRouter.get('/export', async (req, res) => {
+  try {
+    const month = resolveMonthKey(typeof req.query.month === 'string' ? req.query.month : undefined);
+    const csv = await monthOrdersCsv(month);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="lunaa-sales-${month}.csv"`);
+    res.status(200).send(csv);
+  } catch (error) {
+    console.error('Error exporting month:', error);
+    res.status(500).json({ success: false, message: 'Internal server error' });
   }
 });
 

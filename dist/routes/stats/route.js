@@ -6,6 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.statsRouter = void 0;
 const express_1 = __importDefault(require("express"));
 const service_1 = __importDefault(require("../../modules/stats/service"));
+const export_1 = require("../../modules/stats/export");
 const timezone_1 = require("../../utils/timezone");
 exports.statsRouter = express_1.default.Router();
 const statsService = new service_1.default();
@@ -29,6 +30,19 @@ exports.statsRouter.get('/dashboard', async (req, res) => {
             success: false,
             message: 'Internal server error',
         });
+    }
+});
+exports.statsRouter.get('/export', async (req, res) => {
+    try {
+        const month = (0, timezone_1.resolveMonthKey)(typeof req.query.month === 'string' ? req.query.month : undefined);
+        const csv = await (0, export_1.monthOrdersCsv)(month);
+        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+        res.setHeader('Content-Disposition', `attachment; filename="lunaa-sales-${month}.csv"`);
+        res.status(200).send(csv);
+    }
+    catch (error) {
+        console.error('Error exporting month:', error);
+        res.status(500).json({ success: false, message: 'Internal server error' });
     }
 });
 exports.statsRouter.get('/products', async (req, res) => {

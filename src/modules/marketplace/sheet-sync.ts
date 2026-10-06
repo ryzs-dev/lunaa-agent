@@ -3,21 +3,13 @@ import { supabase } from '../supabase';
 import { monthSheetName, parseMonthSheetName } from '../../utils/monthlySheet';
 import { Platform } from './types';
 
-// Staff colour rows in the monthly order tabs:
+// Staff colour marketplace rows in the monthly order tabs:
 // orange = Shopee, dark blue = Lazada.
-// Cyan (light blue) = COD already out, red = COD payment still pending.
-// Those two are WhatsApp orders that already exist in the CRM.
 const ROW_COLOURS: { platform: Platform; rgb: [number, number, number] }[] = [
   { platform: 'shopee', rgb: [0xff, 0x99, 0x00] },
   { platform: 'lazada', rgb: [0x4a, 0x86, 0xe8] },
 ];
-const COD_COLOURS: { status: 'out' | 'pending'; rgb: [number, number, number] }[] = [
-  { status: 'out', rgb: [0x00, 0xff, 0xff] },
-  { status: 'pending', rgb: [0xff, 0x00, 0x00] },
-];
 const COLOUR_TOLERANCE = 40;
-
-export type CodStatus = 'out' | 'pending' | 'collected';
 
 const PRODUCT_COLUMNS: Record<string, string> = {
   wash: 'w',
@@ -58,16 +50,13 @@ export interface SheetIssue {
   reason: string;
 }
 
-// A non-marketplace row used to copy the agent, and the COD colour, onto the
-// WhatsApp order that is already in the CRM.
+// A non-marketplace row used to copy who took the order onto the WhatsApp
+// order that is already in the CRM.
 export interface SheetAnnotation {
   phone: string;
   orderDate: string;
   totalAmount: number;
-  agentName: string | null;
-  codStatus: 'out' | 'pending' | null;
-  buyerName: string | null;
-  rowNumber: number;
+  agentName: string;
 }
 
 export interface SheetSyncResult {
@@ -101,11 +90,6 @@ function near(rgb: number[] | null, target: [number, number, number]) {
 function rowPlatform(cell: Cell | undefined): Platform | null {
   const rgb = cellRgb(cell);
   return ROW_COLOURS.find(({ rgb: target }) => near(rgb, target))?.platform ?? null;
-}
-
-function rowCodStatus(cell: Cell | undefined): 'out' | 'pending' | null {
-  const rgb = cellRgb(cell);
-  return COD_COLOURS.find(({ rgb: target }) => near(rgb, target))?.status ?? null;
 }
 
 function normalizePhone(phone: string | null): string | null {
@@ -200,15 +184,12 @@ export function parseTab(tab: string, rows: { values?: Cell[] | null }[]): {
 
     if (!platform) {
       const phone = normalizePhone(text(cells[columns.phone]));
-      if (phone && orderDate) {
+      if (phone && orderDate && agentName) {
         annotations.push({
           phone,
           orderDate,
           totalAmount: Math.round(number(cells[columns.total]) * 100) / 100,
           agentName,
-          codStatus: rowCodStatus(cells[columns.date]),
-          buyerName: name || fbName,
-          rowNumber,
         });
       }
       return;
@@ -438,8 +419,7 @@ async function reconcileTab(
   return result;
 }
 
-async function applyAnnotations(tab: string, annotations: SheetAnnotation[]): Promise<SheetIssue[]> {
-  const unmatched: SheetIssue[] = [];
+async function applyAnnotations(annotations: SheetAnnotation[]) {
   const phones = [...new Set(annotations.map((row) => row.phone))];
   const customerByPhone = new Map<string, string>();
   for (let i = 0; i < phones.length; i += 200) {
@@ -456,16 +436,14 @@ async function applyAnnotations(tab: string, annotations: SheetAnnotation[]): Pr
     id: string;
     order_date: string;
     total_amount: number;
-    cod_collected_at: string | null;
     agent_name: string | null;
-    cod_status: string | null;
   }[]>();
   for (let i = 0; i < customerIds.length; i += 100) {
     const chunk = customerIds.slice(i, i + 100);
     for (let from = 0; ; from += 1000) {
       const { data, error } = await supabase
         .from('orders')
-        .select('id, customer_id, order_date, total_amount, cod_collected_at, agent_name, cod_status')
+        .select('id, customer_id, order_date, total_amount, agent_name')
         .in('customer_id', chunk)
         .is('deleted_at', null)
         .order('id')
@@ -489,31 +467,11 @@ async function applyAnnotations(tab: string, annotations: SheetAnnotation[]): Pr
       sameDay.find((order) => Math.abs(Number(order.total_amount) - row.totalAmount) < 0.5) ??
       (sameDay.length === 1 ? sameDay[0] : undefined);
 
-    if (!match) {
-      if (row.codStatus) {
-        unmatched.push({
-          tab,
-          rowNumber: row.rowNumber,
-          platform: 'cod',
-          buyerName: row.buyerName,
-          reason: 'COD row has no matching WhatsApp order',
-        });
-      }
-      continue;
-    }
-
-    const update: Record<string, string> = {};
-    if (row.agentName && match.agent_name !== row.agentName) update.agent_name = row.agentName;
-    if (row.codStatus && !match.cod_collected_at && match.cod_status !== row.codStatus) {
-      update.cod_status = row.codStatus;
-    }
-    if (!Object.keys(update).length) continue;
-    const { error } = await supabase.from('orders').update(update).eq('id', match.id);
+    if (!match || match.agent_name === row.agentName) continue;
+    const { error } = await supabase.from('orders').update({ agent_name: row.agentName }).eq('id', match.id);
     if (error) throw error;
-    Object.assign(match, update);
+    match.agent_name = row.agentName;
   }
-
-  return unmatched;
 }
 
 async function replaceIssues(tabs: string[], issues: SheetIssue[]) {
@@ -587,7 +545,8 @@ export function syncSheetTabs(tabs = recentTabs()) {
       totals.updated += result.updated;
       totals.removed += result.removed;
       totals.skipped += result.skipped;
-      issues.push(...result.issues, ...(await applyAnnotations(tab, result.annotations)));
+      issues.push(...result.issues);
+      await applyAnnotations(result.annotations);
     }
     await replaceIssues(tabs, issues);
     lastResult = { tabs, ...totals, finishedAt: new Date() };

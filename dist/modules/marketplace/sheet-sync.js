@@ -8,17 +8,11 @@ exports.syncSheetTabs = syncSheetTabs;
 const googleapis_1 = require("googleapis");
 const supabase_1 = require("../supabase");
 const monthlySheet_1 = require("../../utils/monthlySheet");
-// Staff colour rows in the monthly order tabs:
+// Staff colour marketplace rows in the monthly order tabs:
 // orange = Shopee, dark blue = Lazada.
-// Cyan (light blue) = COD already out, red = COD payment still pending.
-// Those two are WhatsApp orders that already exist in the CRM.
 const ROW_COLOURS = [
     { platform: 'shopee', rgb: [0xff, 0x99, 0x00] },
     { platform: 'lazada', rgb: [0x4a, 0x86, 0xe8] },
-];
-const COD_COLOURS = [
-    { status: 'out', rgb: [0x00, 0xff, 0xff] },
-    { status: 'pending', rgb: [0xff, 0x00, 0x00] },
 ];
 const COLOUR_TOLERANCE = 40;
 const PRODUCT_COLUMNS = {
@@ -54,11 +48,6 @@ function rowPlatform(cell) {
     var _a, _b;
     const rgb = cellRgb(cell);
     return (_b = (_a = ROW_COLOURS.find(({ rgb: target }) => near(rgb, target))) === null || _a === void 0 ? void 0 : _a.platform) !== null && _b !== void 0 ? _b : null;
-}
-function rowCodStatus(cell) {
-    var _a, _b;
-    const rgb = cellRgb(cell);
-    return (_b = (_a = COD_COLOURS.find(({ rgb: target }) => near(rgb, target))) === null || _a === void 0 ? void 0 : _a.status) !== null && _b !== void 0 ? _b : null;
 }
 function normalizePhone(phone) {
     const digits = (phone || '').replace(/\D/g, '');
@@ -149,15 +138,12 @@ function parseTab(tab, rows) {
         const agentName = columns.agent >= 0 ? text(cells[columns.agent]) : null;
         if (!platform) {
             const phone = normalizePhone(text(cells[columns.phone]));
-            if (phone && orderDate) {
+            if (phone && orderDate && agentName) {
                 annotations.push({
                     phone,
                     orderDate,
                     totalAmount: Math.round(number(cells[columns.total]) * 100) / 100,
                     agentName,
-                    codStatus: rowCodStatus(cells[columns.date]),
-                    buyerName: name || fbName,
-                    rowNumber,
                 });
             }
             return;
@@ -361,9 +347,8 @@ async function reconcileTab(tab, products, numbers) {
     }
     return result;
 }
-async function applyAnnotations(tab, annotations) {
+async function applyAnnotations(annotations) {
     var _a, _b, _c;
-    const unmatched = [];
     const phones = [...new Set(annotations.map((row) => row.phone))];
     const customerByPhone = new Map();
     for (let i = 0; i < phones.length; i += 200) {
@@ -383,7 +368,7 @@ async function applyAnnotations(tab, annotations) {
         for (let from = 0;; from += 1000) {
             const { data, error } = await supabase_1.supabase
                 .from('orders')
-                .select('id, customer_id, order_date, total_amount, cod_collected_at, agent_name, cod_status')
+                .select('id, customer_id, order_date, total_amount, agent_name')
                 .in('customer_id', chunk)
                 .is('deleted_at', null)
                 .order('id')
@@ -403,32 +388,13 @@ async function applyAnnotations(tab, annotations) {
         const customerId = customerByPhone.get(row.phone);
         const sameDay = (customerId ? (_b = ordersByCustomer.get(customerId)) !== null && _b !== void 0 ? _b : [] : []).filter((order) => String(order.order_date).slice(0, 10) === row.orderDate);
         const match = (_c = sameDay.find((order) => Math.abs(Number(order.total_amount) - row.totalAmount) < 0.5)) !== null && _c !== void 0 ? _c : (sameDay.length === 1 ? sameDay[0] : undefined);
-        if (!match) {
-            if (row.codStatus) {
-                unmatched.push({
-                    tab,
-                    rowNumber: row.rowNumber,
-                    platform: 'cod',
-                    buyerName: row.buyerName,
-                    reason: 'COD row has no matching WhatsApp order',
-                });
-            }
+        if (!match || match.agent_name === row.agentName)
             continue;
-        }
-        const update = {};
-        if (row.agentName && match.agent_name !== row.agentName)
-            update.agent_name = row.agentName;
-        if (row.codStatus && !match.cod_collected_at && match.cod_status !== row.codStatus) {
-            update.cod_status = row.codStatus;
-        }
-        if (!Object.keys(update).length)
-            continue;
-        const { error } = await supabase_1.supabase.from('orders').update(update).eq('id', match.id);
+        const { error } = await supabase_1.supabase.from('orders').update({ agent_name: row.agentName }).eq('id', match.id);
         if (error)
             throw error;
-        Object.assign(match, update);
+        match.agent_name = row.agentName;
     }
-    return unmatched;
 }
 async function replaceIssues(tabs, issues) {
     const { error: deleteError } = await supabase_1.supabase.from('sheet_row_issues').delete().in('tab', tabs);
@@ -498,7 +464,8 @@ function syncSheetTabs(tabs = recentTabs()) {
             totals.updated += result.updated;
             totals.removed += result.removed;
             totals.skipped += result.skipped;
-            issues.push(...result.issues, ...(await applyAnnotations(tab, result.annotations)));
+            issues.push(...result.issues);
+            await applyAnnotations(result.annotations);
         }
         await replaceIssues(tabs, issues);
         lastResult = Object.assign(Object.assign({ tabs }, totals), { finishedAt: new Date() });

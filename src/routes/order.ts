@@ -7,7 +7,6 @@ import { forwardToConverra } from '../modules/converra/converra-forwarder';
 import { ParcelDailyService } from '../modules/parcel-daily/service';
 import { buildShipmentFromOrder } from '../modules/orders/shipment-from-order';
 import { OrderValidationError } from '../modules/orders/database';
-import { getCodCounts, getCodOrders, markCodCollected, CodStatus } from '../modules/orders/cod';
 
 export const orderRouter = express.Router();
 
@@ -70,34 +69,6 @@ orderRouter.get('/summary', async (_req, res) => {
     res.status(200).json(summary);
   } catch (error) {
     console.error('Error fetching order summary:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-// GET /api/orders/cod - WhatsApp orders coloured as COD on the order sheet.
-orderRouter.get('/cod', async (req, res) => {
-  const status = String(req.query.status || 'pending');
-  if (!['out', 'pending', 'collected'].includes(status)) {
-    return res.status(400).json({ error: 'Status must be out, pending or collected' });
-  }
-  try {
-    const [orders, counts] = await Promise.all([
-      getCodOrders(status as CodStatus),
-      getCodCounts(),
-    ]);
-    res.status(200).json({ orders, counts });
-  } catch (error) {
-    console.error('Error fetching COD orders:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-orderRouter.post('/:id/cod-collected', async (req, res) => {
-  try {
-    const order = await markCodCollected(req.params.id as UUID);
-    res.status(200).json({ success: true, order });
-  } catch (error) {
-    console.error('Error marking COD collected:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

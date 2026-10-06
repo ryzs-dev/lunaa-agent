@@ -11,12 +11,6 @@ const CHANNEL: Record<string, string> = {
   lazada: 'Lazada',
 };
 
-const COD: Record<string, string> = {
-  out: 'COD out',
-  pending: 'Pending COD payment',
-  collected: 'COD collected',
-};
-
 export async function monthOrdersCsv(month: string) {
   const [year, monthIndex] = month.split('-').map(Number);
   const nextMonth =
@@ -29,7 +23,7 @@ export async function monthOrdersCsv(month: string) {
     const { data, error } = await supabase
       .from('orders')
       .select(
-        'order_date, order_number, source, total_amount, shipment_description, agent_name, cod_status, buyer_name, customers(name, phone_number)'
+        'order_date, order_number, source, total_amount, shipment_description, agent_name, buyer_name, customers(name, phone_number)'
       )
       .is('deleted_at', null)
       .gte('created_at', start)
@@ -42,7 +36,7 @@ export async function monthOrdersCsv(month: string) {
     if (!data || data.length < 1000) break;
   }
 
-  const header = ['Date', 'Order', 'Channel', 'Customer', 'Phone', 'Agent', 'COD', 'Items', 'Total'];
+  const header = ['Date', 'Order', 'Channel', 'Customer', 'Phone', 'Agent', 'Items', 'Total'];
   const lines = [header.join(',')];
   for (const row of rows) {
     const customer = row.customers;
@@ -54,7 +48,6 @@ export async function monthOrdersCsv(month: string) {
         customer?.name || row.buyer_name || '',
         customer?.phone_number || '',
         row.agent_name || '',
-        COD[row.cod_status] ?? '',
         row.shipment_description || '',
         row.total_amount ?? '',
       ]

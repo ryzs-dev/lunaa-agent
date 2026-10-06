@@ -53,6 +53,26 @@ function parseDate(value) {
     const date = `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
     return Number.isNaN(new Date(`${date}T00:00:00Z`).getTime()) ? null : date;
 }
+const PRODUCT_CODES = new Set(Object.values(PRODUCT_COLUMNS));
+// Some rows only have the shipment code ("2w2f1a"); gift codes are dropped.
+function itemsFromDescription(description) {
+    var _a, _b;
+    const totals = new Map();
+    for (const token of (_a = description === null || description === void 0 ? void 0 : description.replace(/\s+/g, '').match(/\d+[a-z]+(?:\d+ml)?/gi)) !== null && _a !== void 0 ? _a : []) {
+        const [, qty, code] = token.match(/^(\d+)(.+)$/);
+        const key = code.toLowerCase();
+        if (PRODUCT_CODES.has(key))
+            totals.set(key, ((_b = totals.get(key)) !== null && _b !== void 0 ? _b : 0) + Number(qty));
+    }
+    return [...totals].map(([code, quantity]) => ({ code, quantity }));
+}
+// A wrong year is a typo when the month matches the tab, e.g. 2025-06-03 in "June 26".
+function fixYear(date, tab) {
+    const month = (0, monthlySheet_1.parseMonthSheetName)(tab);
+    if (!month || Number(date.slice(5, 7)) - 1 !== month.month)
+        return date;
+    return `${month.year}${date.slice(4)}`;
+}
 const text = (cell) => { var _a; return ((_a = cell === null || cell === void 0 ? void 0 : cell.formattedValue) === null || _a === void 0 ? void 0 : _a.trim()) || null; };
 const number = (cell) => {
     var _a;
@@ -88,10 +108,14 @@ function parseTab(tab, rows) {
         const platform = rowPlatform(cells[columns.date]);
         if (!platform)
             continue;
-        const orderDate = parseDate((_d = text(cells[columns.date])) !== null && _d !== void 0 ? _d : '');
-        const items = productColumns
+        const parsedDate = parseDate((_d = text(cells[columns.date])) !== null && _d !== void 0 ? _d : '');
+        const orderDate = parsedDate && fixYear(parsedDate, tab);
+        const fromColumns = productColumns
             .map(({ index, code }) => ({ code, quantity: Math.round(number(cells[index])) }))
             .filter((item) => item.quantity > 0);
+        const items = fromColumns.length
+            ? fromColumns
+            : itemsFromDescription(text(cells[columns.description]));
         if (!orderDate || !items.length) {
             skipped++;
             continue;

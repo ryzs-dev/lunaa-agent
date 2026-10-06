@@ -1,6 +1,6 @@
 import { google } from 'googleapis';
 import { supabase } from '../supabase';
-import { monthSheetName } from '../../utils/monthlySheet';
+import { monthSheetName, parseMonthSheetName } from '../../utils/monthlySheet';
 import { Platform } from './types';
 
 // Staff colour marketplace rows in the monthly order tabs:
@@ -80,6 +80,26 @@ function parseDate(value: string): string | null {
   return Number.isNaN(new Date(`${date}T00:00:00Z`).getTime()) ? null : date;
 }
 
+const PRODUCT_CODES = new Set(Object.values(PRODUCT_COLUMNS));
+
+// Some rows only have the shipment code ("2w2f1a"); gift codes are dropped.
+function itemsFromDescription(description: string | null) {
+  const totals = new Map<string, number>();
+  for (const token of description?.replace(/\s+/g, '').match(/\d+[a-z]+(?:\d+ml)?/gi) ?? []) {
+    const [, qty, code] = token.match(/^(\d+)(.+)$/)!;
+    const key = code.toLowerCase();
+    if (PRODUCT_CODES.has(key)) totals.set(key, (totals.get(key) ?? 0) + Number(qty));
+  }
+  return [...totals].map(([code, quantity]) => ({ code, quantity }));
+}
+
+// A wrong year is a typo when the month matches the tab, e.g. 2025-06-03 in "June 26".
+function fixYear(date: string, tab: string) {
+  const month = parseMonthSheetName(tab);
+  if (!month || Number(date.slice(5, 7)) - 1 !== month.month) return date;
+  return `${month.year}${date.slice(4)}`;
+}
+
 const text = (cell: Cell | undefined) => cell?.formattedValue?.trim() || null;
 const number = (cell: Cell | undefined) => {
   const parsed = Number(String(cell?.formattedValue ?? '').replace(/[^0-9.-]/g, ''));
@@ -115,10 +135,14 @@ export function parseTab(tab: string, rows: { values?: Cell[] | null }[]): { ord
     const platform = rowPlatform(cells[columns.date]);
     if (!platform) continue;
 
-    const orderDate = parseDate(text(cells[columns.date]) ?? '');
-    const items = productColumns
+    const parsedDate = parseDate(text(cells[columns.date]) ?? '');
+    const orderDate = parsedDate && fixYear(parsedDate, tab);
+    const fromColumns = productColumns
       .map(({ index, code }) => ({ code, quantity: Math.round(number(cells[index])) }))
       .filter((item) => item.quantity > 0);
+    const items = fromColumns.length
+      ? fromColumns
+      : itemsFromDescription(text(cells[columns.description]));
     if (!orderDate || !items.length) {
       skipped++;
       continue;

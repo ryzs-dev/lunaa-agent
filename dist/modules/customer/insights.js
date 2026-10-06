@@ -6,23 +6,51 @@ exports.mergeCustomers = mergeCustomers;
 const supabase_1 = require("../supabase");
 const customer_stats_1 = require("../orders/customer-stats");
 const PAGE_SIZE = 1000;
-async function getFollowUps(days, offset, limit) {
-    const safeDays = Math.min(Math.max(days, 7), 365);
-    const safeLimit = Math.min(Math.max(limit, 1), 100);
-    const cutoff = new Date(Date.now() - safeDays * 86400000).toISOString();
-    const { count, error: countError } = await supabase_1.supabase
+// Each window is exclusive. A customer quiet for 50 days is only in the 45-day
+// list, not also in 30, 60 and 90.
+const FOLLOW_UP_WINDOWS = [
+    { days: 30, until: 45 },
+    { days: 45, until: 60 },
+    { days: 60, until: 90 },
+    { days: 90, until: null },
+];
+function daysAgo(days) {
+    return new Date(Date.now() - days * 86400000).toISOString();
+}
+function followUpWindow(days) {
+    var _a;
+    return (_a = FOLLOW_UP_WINDOWS.find((window) => window.days === days)) !== null && _a !== void 0 ? _a : FOLLOW_UP_WINDOWS[0];
+}
+async function countFollowUpWindow(window) {
+    let query = supabase_1.supabase
         .from('customers')
         .select('id', { count: 'exact', head: true })
         .gt('total_purchase_count', 0)
-        .lt('last_order_date', cutoff);
-    if (countError)
-        throw countError;
-    const { data: customers, error } = await supabase_1.supabase
+        .lte('last_order_date', daysAgo(window.days));
+    if (window.until)
+        query = query.gt('last_order_date', daysAgo(window.until));
+    const { count, error } = await query;
+    if (error)
+        throw error;
+    return count !== null && count !== void 0 ? count : 0;
+}
+async function getFollowUps(days, offset, limit) {
+    var _a, _b;
+    const window = followUpWindow(days);
+    const safeLimit = Math.min(Math.max(limit, 1), 100);
+    const counts = await Promise.all(FOLLOW_UP_WINDOWS.map(async (item) => ({
+        days: item.days,
+        total: await countFollowUpWindow(item),
+    })));
+    let listQuery = supabase_1.supabase
         .from('customers')
         .select('id, name, phone_number, last_order_date, total_purchase_count, total_amount_spent')
         .gt('total_purchase_count', 0)
-        .lt('last_order_date', cutoff)
-        .order('last_order_date', { ascending: true })
+        .lte('last_order_date', daysAgo(window.days));
+    if (window.until)
+        listQuery = listQuery.gt('last_order_date', daysAgo(window.until));
+    const { data: customers, error } = await listQuery
+        .order('last_order_date', { ascending: false })
         .range(offset, offset + safeLimit - 1);
     if (error)
         throw error;
@@ -43,8 +71,10 @@ async function getFollowUps(days, offset, limit) {
         }
     }
     return {
-        days: safeDays,
-        total: count !== null && count !== void 0 ? count : 0,
+        days: window.days,
+        until: window.until,
+        total: (_b = (_a = counts.find((item) => item.days === window.days)) === null || _a === void 0 ? void 0 : _a.total) !== null && _b !== void 0 ? _b : 0,
+        counts,
         customers: (customers !== null && customers !== void 0 ? customers : []).map((customer) => {
             var _a, _b, _c;
             const order = latest.get(customer.id);

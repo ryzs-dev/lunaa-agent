@@ -4,24 +4,54 @@ import { recalculateCustomerStats } from '../orders/customer-stats';
 
 const PAGE_SIZE = 1000;
 
-export async function getFollowUps(days: number, offset: number, limit: number) {
-  const safeDays = Math.min(Math.max(days, 7), 365);
-  const safeLimit = Math.min(Math.max(limit, 1), 100);
-  const cutoff = new Date(Date.now() - safeDays * 86_400_000).toISOString();
+// Each window is exclusive. A customer quiet for 50 days is only in the 45-day
+// list, not also in 30, 60 and 90.
+const FOLLOW_UP_WINDOWS: { days: number; until: number | null }[] = [
+  { days: 30, until: 45 },
+  { days: 45, until: 60 },
+  { days: 60, until: 90 },
+  { days: 90, until: null },
+];
 
-  const { count, error: countError } = await supabase
+function daysAgo(days: number) {
+  return new Date(Date.now() - days * 86_400_000).toISOString();
+}
+
+function followUpWindow(days: number) {
+  return FOLLOW_UP_WINDOWS.find((window) => window.days === days) ?? FOLLOW_UP_WINDOWS[0];
+}
+
+async function countFollowUpWindow(window: { days: number; until: number | null }) {
+  let query = supabase
     .from('customers')
     .select('id', { count: 'exact', head: true })
     .gt('total_purchase_count', 0)
-    .lt('last_order_date', cutoff);
-  if (countError) throw countError;
+    .lte('last_order_date', daysAgo(window.days));
+  if (window.until) query = query.gt('last_order_date', daysAgo(window.until));
+  const { count, error } = await query;
+  if (error) throw error;
+  return count ?? 0;
+}
 
-  const { data: customers, error } = await supabase
+export async function getFollowUps(days: number, offset: number, limit: number) {
+  const window = followUpWindow(days);
+  const safeLimit = Math.min(Math.max(limit, 1), 100);
+  const counts = await Promise.all(
+    FOLLOW_UP_WINDOWS.map(async (item) => ({
+      days: item.days,
+      total: await countFollowUpWindow(item),
+    }))
+  );
+
+  let listQuery = supabase
     .from('customers')
     .select('id, name, phone_number, last_order_date, total_purchase_count, total_amount_spent')
     .gt('total_purchase_count', 0)
-    .lt('last_order_date', cutoff)
-    .order('last_order_date', { ascending: true })
+    .lte('last_order_date', daysAgo(window.days));
+  if (window.until) listQuery = listQuery.gt('last_order_date', daysAgo(window.until));
+
+  const { data: customers, error } = await listQuery
+    .order('last_order_date', { ascending: false })
     .range(offset, offset + safeLimit - 1);
   if (error) throw error;
 
@@ -41,8 +71,10 @@ export async function getFollowUps(days: number, offset: number, limit: number) 
   }
 
   return {
-    days: safeDays,
-    total: count ?? 0,
+    days: window.days,
+    until: window.until,
+    total: counts.find((item) => item.days === window.days)?.total ?? 0,
+    counts,
     customers: (customers ?? []).map((customer) => {
       const order = latest.get(customer.id);
       const last = customer.last_order_date ? new Date(customer.last_order_date) : null;

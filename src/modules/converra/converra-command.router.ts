@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import { timingSafeEqual } from 'crypto';
 
 /**
  * Receives action commands emitted by Converra workflows (via webhook_call nodes)
@@ -18,6 +19,27 @@ import { Router, Request, Response } from 'express';
  * }
  */
 export const converraCommandRouter = Router();
+
+/**
+ * Commands can send WhatsApp messages, so they require the shared bridge key
+ * (CONVERRA_BRIDGE_API_KEY) as X-Bridge-Key header or body.api_key. Disabled when unset.
+ */
+function isAuthorizedCommand(req: Request): boolean {
+  const expected = process.env.CONVERRA_BRIDGE_API_KEY?.trim();
+  if (!expected) return false;
+
+  const header = req.headers['x-bridge-key'];
+  const bodyKey = (req.body as { api_key?: unknown } | undefined)?.api_key;
+  const provided =
+    typeof header === 'string' ? header.trim() : typeof bodyKey === 'string' ? bodyKey.trim() : '';
+
+  const expectedBuffer = Buffer.from(expected);
+  const providedBuffer = Buffer.from(provided);
+  return (
+    expectedBuffer.length === providedBuffer.length &&
+    timingSafeEqual(expectedBuffer, providedBuffer)
+  );
+}
 
 function getExtractorUrl(): string {
   return (
@@ -73,6 +95,10 @@ async function routeUpdateContact(
 }
 
 converraCommandRouter.post('/', async (req: Request, res: Response) => {
+  if (!isAuthorizedCommand(req)) {
+    return res.status(401).json({ success: false, error: 'Invalid bridge key' });
+  }
+
   const body = req.body as {
     type?: unknown;
     business_id?: unknown;

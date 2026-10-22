@@ -29,6 +29,7 @@ import { audienceRouter } from './modules/audience/audience.router';
 import { broadcastRouter } from './modules/broadcast/broadcast.router';
 import { converraEventRouter } from './modules/converra/converra-event.router';
 import { converraCommandRouter } from './modules/converra/converra-command.router';
+import { converraStatusRouter } from './modules/converra/converra-status.router';
 import { marketplaceRouter, startMarketplaceSync } from './modules/marketplace/router';
 
 dotenv.config({ path: path.resolve(__dirname, '../.env.local') });
@@ -66,6 +67,7 @@ app.use('/api/audience', audienceRouter);
 app.use('/api/broadcast', broadcastRouter);
 app.use('/api/converra/events', converraEventRouter);
 app.use('/api/converra/commands', converraCommandRouter);
+app.use('/api/converra', converraStatusRouter);
 
 app.get('/health', (req, res) => {
   res.json({

@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.converraCommandRouter = void 0;
 const express_1 = require("express");
+const crypto_1 = require("crypto");
 /**
  * Receives action commands emitted by Converra workflows (via webhook_call nodes)
  * and routes them to the appropriate downstream system.
@@ -20,6 +21,23 @@ const express_1 = require("express");
  * }
  */
 exports.converraCommandRouter = (0, express_1.Router)();
+/**
+ * Commands can send WhatsApp messages, so they require the shared bridge key
+ * (CONVERRA_BRIDGE_API_KEY) as X-Bridge-Key header or body.api_key. Disabled when unset.
+ */
+function isAuthorizedCommand(req) {
+    var _a, _b;
+    const expected = (_a = process.env.CONVERRA_BRIDGE_API_KEY) === null || _a === void 0 ? void 0 : _a.trim();
+    if (!expected)
+        return false;
+    const header = req.headers['x-bridge-key'];
+    const bodyKey = (_b = req.body) === null || _b === void 0 ? void 0 : _b.api_key;
+    const provided = typeof header === 'string' ? header.trim() : typeof bodyKey === 'string' ? bodyKey.trim() : '';
+    const expectedBuffer = Buffer.from(expected);
+    const providedBuffer = Buffer.from(provided);
+    return (expectedBuffer.length === providedBuffer.length &&
+        (0, crypto_1.timingSafeEqual)(expectedBuffer, providedBuffer));
+}
 function getExtractorUrl() {
     var _a, _b;
     return ((_b = (_a = process.env.LUNAA_EXTRACTOR_URL) === null || _a === void 0 ? void 0 : _a.trim()) !== null && _b !== void 0 ? _b : 'http://localhost:4001');
@@ -59,6 +77,9 @@ async function routeUpdateContact(businessId, payload) {
     return { success: true };
 }
 exports.converraCommandRouter.post('/', async (req, res) => {
+    if (!isAuthorizedCommand(req)) {
+        return res.status(401).json({ success: false, error: 'Invalid bridge key' });
+    }
     const body = req.body;
     const commandType = typeof body.type === 'string' ? body.type.trim() : null;
     const businessId = typeof body.business_id === 'string' ? body.business_id.trim() : null;

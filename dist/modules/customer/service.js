@@ -7,6 +7,7 @@ const database_1 = __importDefault(require("./database"));
 const customerName_1 = require("../../utils/customerName");
 const country_1 = require("../../utils/country");
 const country_index_1 = require("./country-index");
+const converra_contact_sync_1 = require("../converra/converra-contact-sync");
 const SORTABLE_CUSTOMER_FIELDS = [
     'created_at',
     'name',
@@ -118,7 +119,9 @@ class CustomerService {
             throw new Error('Invalid phone number');
         const name = data.name ? (0, customerName_1.cleanCustomerName)(data.name) : data.name;
         const customerData = Object.assign(Object.assign(Object.assign({}, data), (data.name !== undefined && { name: name || data.name })), { phone_number: phoneNumber });
-        return await this.customerDatabase.upsertCustomer(customerData);
+        const customer = await this.customerDatabase.upsertCustomer(customerData);
+        (0, converra_contact_sync_1.syncCustomerToConverra)(customer);
+        return customer;
     }
     async updateCustomer(id, updates) {
         if (updates.phone_number) {
@@ -127,7 +130,9 @@ class CustomerService {
                 throw new Error('Invalid phone number');
             updates.phone_number = phoneNumber;
         }
-        return await this.customerDatabase.updateCustomer(id, updates);
+        const customer = await this.customerDatabase.updateCustomer(id, updates);
+        (0, converra_contact_sync_1.syncCustomerToConverra)(customer);
+        return customer;
     }
     async deleteCustomer(id) {
         return await this.customerDatabase.deleteCustomer(id);

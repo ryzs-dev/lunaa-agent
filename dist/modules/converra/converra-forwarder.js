@@ -62,6 +62,7 @@ async function forwardToConverra(input) {
             success: true,
             event_id: result.event_id,
             duplicate: (_b = result.duplicate) !== null && _b !== void 0 ? _b : false,
+            response: result,
         };
     }
     catch (err) {

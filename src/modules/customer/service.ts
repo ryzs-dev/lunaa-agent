@@ -5,6 +5,7 @@ import { OrderInput } from '../orders/types';
 import { cleanCustomerName } from '../../utils/customerName';
 import { CountryCode, detectCustomerCountry } from '../../utils/country';
 import { countryOrFilter, customerCountry, getCountryIndex } from './country-index';
+import { syncCustomerToConverra } from '../converra/converra-contact-sync';
 
 const SORTABLE_CUSTOMER_FIELDS = [
   'created_at',
@@ -165,7 +166,9 @@ class CustomerService {
       ...(data.name !== undefined && { name: name || data.name }),
       phone_number: phoneNumber,
     };
-    return await this.customerDatabase.upsertCustomer(customerData);
+    const customer = await this.customerDatabase.upsertCustomer(customerData);
+    syncCustomerToConverra(customer);
+    return customer;
   }
 
   async updateCustomer(id: UUID, updates: Partial<CustomerInput>) {
@@ -174,7 +177,9 @@ class CustomerService {
       if (!phoneNumber) throw new Error('Invalid phone number');
       updates.phone_number = phoneNumber;
     }
-    return await this.customerDatabase.updateCustomer(id, updates);
+    const customer = await this.customerDatabase.updateCustomer(id, updates);
+    syncCustomerToConverra(customer);
+    return customer;
   }
 
   async deleteCustomer(id: UUID) {

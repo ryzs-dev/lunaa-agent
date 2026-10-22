@@ -38,6 +38,8 @@ export async function forwardToConverra(input: LunaaEventInput): Promise<{
   event_id?: string;
   duplicate?: boolean;
   error?: string;
+  /** Full Converra response (e.g. created / updated / failed counts for customer syncs). */
+  response?: Record<string, unknown>;
 }> {
   const config = getConverraConfig();
   if (!config) {
@@ -73,7 +75,7 @@ export async function forwardToConverra(input: LunaaEventInput): Promise<{
       duplicate?: boolean;
       event_id?: string;
       error?: string;
-    };
+    } & Record<string, unknown>;
 
     if (!response.ok) {
       console.error('[ConverraForwarder] Converra rejected event:', {
@@ -95,6 +97,7 @@ export async function forwardToConverra(input: LunaaEventInput): Promise<{
       success: true,
       event_id: result.event_id,
       duplicate: result.duplicate ?? false,
+      response: result,
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

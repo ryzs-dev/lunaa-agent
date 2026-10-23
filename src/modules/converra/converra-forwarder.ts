@@ -3,37 +3,28 @@
  *
  * Converra endpoint:
  *   POST /api/v1/integrations/:business_id/events/lunaa-agent
- *   X-Bridge-Key: <CONVERRA_BRIDGE_API_KEY>
+ *   X-Bridge-Key: <access key of the stored connection, or legacy CONVERRA_BRIDGE_API_KEY>
+ *
+ * Credentials come from the connection resolver (converra-connection.ts).
  */
+
+import { getConverraConfig } from './converra-connection';
+import { ConverraConfig } from './converra-config';
 
 export interface LunaaEventInput {
   event_type: string;
   external_event_id: string;
-  business_id: string;
+  /** Ignored — the business id always comes from the resolved connection. */
+  business_id?: string;
   timestamp: string;
   payload: Record<string, unknown>;
 }
 
-function getConverraConfig(): {
-  baseUrl: string;
-  businessId: string;
-  apiKey: string;
-} | null {
-  const baseUrl = process.env.CONVERRA_API_URL?.trim();
-  const businessId = process.env.CONVERRA_BUSINESS_ID?.trim();
-  const apiKey = process.env.CONVERRA_BRIDGE_API_KEY?.trim();
-
-  if (!baseUrl || !businessId || !apiKey) {
-    console.warn(
-      '[ConverraForwarder] Missing CONVERRA_API_URL, CONVERRA_BUSINESS_ID, or CONVERRA_BRIDGE_API_KEY — skipping forward',
-    );
-    return null;
-  }
-
-  return { baseUrl, businessId, apiKey };
-}
-
-export async function forwardToConverra(input: LunaaEventInput): Promise<{
+export async function forwardToConverra(
+  input: LunaaEventInput,
+  /** Pin the connection for multi-request jobs (full sync); resolved per call otherwise. */
+  configOverride?: ConverraConfig,
+): Promise<{
   success: boolean;
   event_id?: string;
   duplicate?: boolean;
@@ -41,9 +32,14 @@ export async function forwardToConverra(input: LunaaEventInput): Promise<{
   /** Full Converra response (e.g. created / updated / failed counts for customer syncs). */
   response?: Record<string, unknown>;
 }> {
-  const config = getConverraConfig();
+  let config: ConverraConfig | null;
+  try {
+    config = configOverride ?? (await getConverraConfig());
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : String(err) };
+  }
   if (!config) {
-    return { success: false, error: 'Converra config missing' };
+    return { success: false, error: 'Converra is not connected' };
   }
 
   const { baseUrl, businessId, apiKey } = config;
@@ -70,7 +66,7 @@ export async function forwardToConverra(input: LunaaEventInput): Promise<{
       },
     );
 
-    const result = (await response.json()) as {
+    const result = (await response.json().catch(() => ({}))) as {
       success?: boolean;
       duplicate?: boolean;
       event_id?: string;
@@ -104,4 +100,21 @@ export async function forwardToConverra(input: LunaaEventInput): Promise<{
     console.error('[ConverraForwarder] Failed to forward event:', message);
     return { success: false, error: message };
   }
+}
+
+/**
+ * Calls Converra's connection endpoint for this business with the bridge key
+ * (GET = who/what is connected, DELETE = revoke the key).
+ */
+export async function callConverraConnection(
+  config: ConverraConfig,
+  method: 'GET' | 'DELETE',
+): Promise<{ ok: boolean; status: number; body: Record<string, unknown> }> {
+  const response = await fetch(`${config.baseUrl}/integrations/${config.businessId}/connection`, {
+    method,
+    headers: { 'X-Bridge-Key': config.apiKey },
+    signal: AbortSignal.timeout(10_000),
+  });
+  const body = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+  return { ok: response.ok, status: response.status, body };
 }

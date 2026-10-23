@@ -6,7 +6,10 @@ Object.defineProperty(exports, "__esModule", { value: true });
  *   node dist/scripts/sync-customers-to-converra.js --dry-run
  *   node dist/scripts/sync-customers-to-converra.js
  *
- * Requires CONVERRA_API_URL, CONVERRA_BUSINESS_ID, CONVERRA_BRIDGE_API_KEY (and Supabase env).
+ * Uses the connection made in the dashboard (Integrations → Converra → Connect), or the legacy
+ * CONVERRA_API_URL / CONVERRA_BUSINESS_ID / CONVERRA_BRIDGE_API_KEY env while none was made,
+ * and honours the dashboard's sync settings (segments as tags, email, selected segments).
+ * Runs from this script are not recorded in the dashboard's sync history.
  * The same sync can be started from the dashboard: Integrations → Converra → Sync now.
  */
 const converra_full_sync_1 = require("../modules/converra/converra-full-sync");

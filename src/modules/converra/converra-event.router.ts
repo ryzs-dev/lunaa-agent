@@ -11,7 +11,7 @@ import { forwardToConverra } from './converra-forwarder';
  * {
  *   event_type: "order.created" | "whatsapp.message.received" | ...,
  *   external_event_id: "unique-id",
- *   business_id: "optional — overridden by CONVERRA_BUSINESS_ID",
+ *   business_id: "optional — ignored, the connected Converra workspace is used",
  *   timestamp: "ISO 8601",
  *   payload: { ... }
  * }
@@ -57,7 +57,6 @@ converraEventRouter.post('/ingest', async (req: Request, res: Response) => {
   const result = await forwardToConverra({
     event_type: eventType,
     external_event_id: externalEventId,
-    business_id: process.env.CONVERRA_BUSINESS_ID?.trim() ?? '',
     timestamp,
     payload,
   });

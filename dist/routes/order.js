@@ -85,7 +85,7 @@ exports.orderRouter.get('/customer/:customerId', async (req, res) => {
 });
 // POST /api/orders - Create a new order
 exports.orderRouter.post('/', async (req, res) => {
-    var _a, _b, _c, _d;
+    var _a, _b, _c;
     const orderData = req.body;
     try {
         const newOrder = await orderService.createOrder(orderData);
@@ -100,14 +100,13 @@ exports.orderRouter.post('/', async (req, res) => {
         (0, converra_forwarder_1.forwardToConverra)({
             event_type: 'order.created',
             external_event_id: `order-${orderId}`,
-            business_id: (_b = process.env.CONVERRA_BUSINESS_ID) !== null && _b !== void 0 ? _b : '',
             timestamp: new Date().toISOString(),
             payload: {
                 order_id: orderId,
                 customer_id: orderData.customer_id,
                 total_amount: orderData.total_amount,
-                status: (_c = orderData.status) !== null && _c !== void 0 ? _c : 'unpaid',
-                payment_method: (_d = orderData.payment_method) !== null && _d !== void 0 ? _d : '',
+                status: (_b = orderData.status) !== null && _b !== void 0 ? _b : 'unpaid',
+                payment_method: (_c = orderData.payment_method) !== null && _c !== void 0 ? _c : '',
                 order_date: orderData.order_date,
             },
         }).catch((err) => {
@@ -236,7 +235,6 @@ exports.orderRouter.delete('/bulk', async (req, res) => {
 });
 // DELETE /api/orders/:id - Delete an order
 exports.orderRouter.delete('/:id', async (req, res) => {
-    var _a;
     const { id } = req.params;
     const orderId = id;
     try {
@@ -248,7 +246,6 @@ exports.orderRouter.delete('/:id', async (req, res) => {
         (0, converra_forwarder_1.forwardToConverra)({
             event_type: 'order.deleted',
             external_event_id: `order-deleted-${orderId}`,
-            business_id: (_a = process.env.CONVERRA_BUSINESS_ID) !== null && _a !== void 0 ? _a : '',
             timestamp: new Date().toISOString(),
             payload: {
                 order_id: orderId,

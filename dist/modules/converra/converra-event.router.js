@@ -13,14 +13,14 @@ const converra_forwarder_1 = require("./converra-forwarder");
  * {
  *   event_type: "order.created" | "whatsapp.message.received" | ...,
  *   external_event_id: "unique-id",
- *   business_id: "optional — overridden by CONVERRA_BUSINESS_ID",
+ *   business_id: "optional — ignored, the connected Converra workspace is used",
  *   timestamp: "ISO 8601",
  *   payload: { ... }
  * }
  */
 exports.converraEventRouter = (0, express_1.Router)();
 exports.converraEventRouter.post('/ingest', async (req, res) => {
-    var _a, _b, _c, _d;
+    var _a, _b;
     const body = req.body;
     const eventType = typeof body.event_type === 'string' ? body.event_type.trim() : null;
     if (!eventType) {
@@ -41,20 +41,19 @@ exports.converraEventRouter.post('/ingest', async (req, res) => {
     const result = await (0, converra_forwarder_1.forwardToConverra)({
         event_type: eventType,
         external_event_id: externalEventId,
-        business_id: (_b = (_a = process.env.CONVERRA_BUSINESS_ID) === null || _a === void 0 ? void 0 : _a.trim()) !== null && _b !== void 0 ? _b : '',
         timestamp,
         payload,
     });
     if (!result.success) {
         return res.status(502).json({
             success: false,
-            error: (_c = result.error) !== null && _c !== void 0 ? _c : 'Failed to forward to Converra',
+            error: (_a = result.error) !== null && _a !== void 0 ? _a : 'Failed to forward to Converra',
         });
     }
     return res.status(200).json({
         success: true,
         event_id: result.event_id,
-        duplicate: (_d = result.duplicate) !== null && _d !== void 0 ? _d : false,
+        duplicate: (_b = result.duplicate) !== null && _b !== void 0 ? _b : false,
         event_type: eventType,
         external_event_id: externalEventId,
     });

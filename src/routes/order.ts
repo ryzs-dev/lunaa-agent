@@ -119,7 +119,6 @@ orderRouter.post('/', async (req, res) => {
     forwardToConverra({
       event_type: 'order.created',
       external_event_id: `order-${orderId}`,
-      business_id: process.env.CONVERRA_BUSINESS_ID ?? '',
       timestamp: new Date().toISOString(),
       payload: {
         order_id: orderId,
@@ -304,7 +303,6 @@ orderRouter.delete('/:id', async (req, res) => {
     forwardToConverra({
       event_type: 'order.deleted',
       external_event_id: `order-deleted-${orderId}`,
-      business_id: process.env.CONVERRA_BUSINESS_ID ?? '',
       timestamp: new Date().toISOString(),
       payload: {
         order_id: orderId,

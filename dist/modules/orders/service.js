@@ -5,16 +5,16 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const database_1 = __importDefault(require("./database"));
 // Status counts join every order to its tracking and take ~3s, so they are
-// served from memory and refreshed in the background once stale.
+// served from memory (per order type) and refreshed in the background once stale.
 const SUMMARY_TTL_MS = 60000;
-let summaryCache = null;
-let summaryRefresh = null;
+const summaryCache = new Map();
+const summaryRefresh = new Map();
 class OrderService {
     constructor() {
         this.orderDatabase = new database_1.default();
     }
     async getAllOrders(options) {
-        var _a, _b, _c, _d, _e;
+        var _a, _b, _c, _d, _e, _f;
         const limit = (_a = options.limit) !== null && _a !== void 0 ? _a : 10;
         const offset = (_b = options.offset) !== null && _b !== void 0 ? _b : 0;
         return this.orderDatabase.getAllOrders({
@@ -29,29 +29,32 @@ class OrderService {
             tracking: options.tracking,
             location: options.location,
             source: options.source,
+            orderType: (_f = options.orderType) !== null && _f !== void 0 ? _f : 'all',
         });
     }
-    async getOrderStatusSummary() {
-        const cached = summaryCache;
+    async getOrderStatusSummary(orderType = 'all') {
+        const cached = summaryCache.get(orderType);
         if (cached && Date.now() - cached.fetchedAt < SUMMARY_TTL_MS) {
             return cached.value;
         }
-        if (!summaryRefresh) {
-            summaryRefresh = this.orderDatabase
-                .getOrderStatusSummary()
+        let refresh = summaryRefresh.get(orderType);
+        if (!refresh) {
+            refresh = this.orderDatabase
+                .getOrderStatusSummary(orderType)
                 .then((value) => {
-                summaryCache = { value, fetchedAt: Date.now() };
+                summaryCache.set(orderType, { value, fetchedAt: Date.now() });
                 return value;
             })
                 .finally(() => {
-                summaryRefresh = null;
+                summaryRefresh.delete(orderType);
             });
+            summaryRefresh.set(orderType, refresh);
         }
         if (cached) {
-            summaryRefresh.catch((error) => console.error('Error refreshing order summary:', error));
+            refresh.catch((error) => console.error('Error refreshing order summary:', error));
             return cached.value;
         }
-        return summaryRefresh;
+        return refresh;
     }
     async getOrderById(orderId) {
         return this.orderDatabase.getOrderById(orderId);

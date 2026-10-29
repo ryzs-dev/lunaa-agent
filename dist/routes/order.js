@@ -35,6 +35,7 @@ exports.orderRouter.get('/', async (req, res) => {
             dateFrom: dateFrom ? new Date(dateFrom) : undefined,
             dateTo: dateTo ? new Date(dateTo) : undefined,
             source: req.query.source,
+            orderType: req.query.order_type,
         });
         res.status(200).json({
             success: true,
@@ -48,9 +49,10 @@ exports.orderRouter.get('/', async (req, res) => {
     }
 });
 // GET /api/orders/summary - Order counts per delivery status group
-exports.orderRouter.get('/summary', async (_req, res) => {
+exports.orderRouter.get('/summary', async (req, res) => {
     try {
-        const summary = await orderService.getOrderStatusSummary();
+        const orderType = req.query.order_type;
+        const summary = await orderService.getOrderStatusSummary(orderType === 'customer' || orderType === 'distributor' ? orderType : 'all');
         res.status(200).json(summary);
     }
     catch (error) {

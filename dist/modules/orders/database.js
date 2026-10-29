@@ -10,6 +10,9 @@ var __rest = (this && this.__rest) || function (s, e) {
         }
     return t;
 };
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.OrderValidationError = exports.ORDER_STATUS_GROUPS = void 0;
 exports.shipmentDescriptionFor = shipmentDescriptionFor;
@@ -18,6 +21,8 @@ const customer_search_1 = require("../shared/customer-search");
 const customer_stats_1 = require("./customer-stats");
 const order_number_1 = require("./order-number");
 const validate_items_1 = require("./validate-items");
+const service_1 = __importDefault(require("../distributor/service"));
+const distributorService = new service_1.default();
 const EAST_MALAYSIA_STATES = ['Sabah', 'Sarawak', 'Labuan'];
 const WEST_MALAYSIA_STATES = [
     'Johor',
@@ -117,7 +122,7 @@ function toMalaysiaDate(date) {
         .slice(0, 10);
 }
 class OrderDatabase {
-    async getAllOrders({ limit, offset, search, sortBy, sortOrder, dateFrom, dateTo, status, tracking, location, source, }) {
+    async getAllOrders({ limit, offset, search, sortBy, sortOrder, dateFrom, dateTo, status, tracking, location, source, orderType, }) {
         var _a;
         const applyLocation = location === 'east' || location === 'west';
         const statusValues = status && status !== 'all' && status !== 'needs_shipment'
@@ -176,6 +181,9 @@ class OrderDatabase {
         if (source && source !== 'all') {
             query = query.eq('source', source);
         }
+        if (orderType === 'customer' || orderType === 'distributor') {
+            query = query.eq('is_distributor', orderType === 'distributor');
+        }
         if (dateFrom) {
             query = query.gte('order_date', toMalaysiaDate(dateFrom));
         }
@@ -233,7 +241,7 @@ class OrderDatabase {
             },
         };
     }
-    async getOrderStatusSummary() {
+    async getOrderStatusSummary(orderType = 'all') {
         const countOrders = async (group) => {
             let query;
             if (group === 'needs_shipment') {
@@ -257,7 +265,11 @@ class OrderDatabase {
                     .from('orders')
                     .select('id', { count: 'exact', head: true });
             }
-            const { count, error } = await query.is('deleted_at', null);
+            query = query.is('deleted_at', null);
+            if (orderType === 'customer' || orderType === 'distributor') {
+                query = query.eq('is_distributor', orderType === 'distributor');
+            }
+            const { count, error } = await query;
             if (error)
                 throw error;
             return count !== null && count !== void 0 ? count : 0;
@@ -312,7 +324,7 @@ class OrderDatabase {
         }) || null);
     }
     async upsertOrder(orderData) {
-        var _a, _b, _c, _d, _e;
+        var _a, _b, _c, _d, _e, _f;
         const validatedItems = (0, validate_items_1.validateOrderItems)(orderData.order_items);
         const { order_items: _orderItems } = orderData, order = __rest(orderData, ["order_items"]);
         const orderNumber = (_a = order.order_number) !== null && _a !== void 0 ? _a : (await (0, order_number_1.generateOrderNumber)());
@@ -326,7 +338,7 @@ class OrderDatabase {
                 throw productsError;
             shipmentDescription = shipmentDescriptionFor(validatedItems, new Map((products !== null && products !== void 0 ? products : []).map((p) => [p.id, p])));
         }
-        const orderPayload = Object.assign(Object.assign({}, order), { shipment_description: shipmentDescription || undefined, order_number: orderNumber, order_date: (_c = order.order_date) !== null && _c !== void 0 ? _c : new Date().toISOString(), status: (_d = order.status) !== null && _d !== void 0 ? _d : 'unpaid', currency: (_e = order.currency) !== null && _e !== void 0 ? _e : 'MYR' });
+        const orderPayload = Object.assign(Object.assign({}, order), { shipment_description: shipmentDescription || undefined, order_number: orderNumber, order_date: (_c = order.order_date) !== null && _c !== void 0 ? _c : new Date().toISOString(), status: (_d = order.status) !== null && _d !== void 0 ? _d : 'unpaid', currency: (_e = order.currency) !== null && _e !== void 0 ? _e : 'MYR', is_distributor: (_f = order.is_distributor) !== null && _f !== void 0 ? _f : (await distributorService.isDistributorCustomer(order.customer_id)) });
         // 1️⃣ Upsert the order itself
         const { data: upsertedOrder, error: orderError } = await supabase_1.supabase
             .from('orders')

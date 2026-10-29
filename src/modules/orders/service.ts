@@ -4,6 +4,7 @@ import {
   GetAllOrdersOptions,
   OrderInput,
   OrderItemsInput,
+  OrderType,
   UpdateLineItemsInput,
 } from './types';
 import { supabase } from '../supabase';
@@ -13,11 +14,13 @@ type OrderStatusSummary = Awaited<
 >;
 
 // Status counts join every order to its tracking and take ~3s, so they are
-// served from memory and refreshed in the background once stale.
+// served from memory (per order type) and refreshed in the background once stale.
 const SUMMARY_TTL_MS = 60_000;
-let summaryCache: { value: OrderStatusSummary; fetchedAt: number } | null =
-  null;
-let summaryRefresh: Promise<OrderStatusSummary> | null = null;
+const summaryCache = new Map<
+  OrderType,
+  { value: OrderStatusSummary; fetchedAt: number }
+>();
+const summaryRefresh = new Map<OrderType, Promise<OrderStatusSummary>>();
 
 class OrderService {
   private orderDatabase: OrderDatabase;
@@ -42,34 +45,37 @@ class OrderService {
       tracking: options.tracking,
       location: options.location,
       source: options.source,
+      orderType: options.orderType ?? 'all',
     });
   }
 
-  async getOrderStatusSummary() {
-    const cached = summaryCache;
+  async getOrderStatusSummary(orderType: OrderType = 'all') {
+    const cached = summaryCache.get(orderType);
     if (cached && Date.now() - cached.fetchedAt < SUMMARY_TTL_MS) {
       return cached.value;
     }
 
-    if (!summaryRefresh) {
-      summaryRefresh = this.orderDatabase
-        .getOrderStatusSummary()
+    let refresh = summaryRefresh.get(orderType);
+    if (!refresh) {
+      refresh = this.orderDatabase
+        .getOrderStatusSummary(orderType)
         .then((value) => {
-          summaryCache = { value, fetchedAt: Date.now() };
+          summaryCache.set(orderType, { value, fetchedAt: Date.now() });
           return value;
         })
         .finally(() => {
-          summaryRefresh = null;
+          summaryRefresh.delete(orderType);
         });
+      summaryRefresh.set(orderType, refresh);
     }
 
     if (cached) {
-      summaryRefresh.catch((error) =>
+      refresh.catch((error) =>
         console.error('Error refreshing order summary:', error)
       );
       return cached.value;
     }
-    return summaryRefresh;
+    return refresh;
   }
 
   async getOrderById(orderId: UUID) {

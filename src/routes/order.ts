@@ -2,7 +2,7 @@ import express from 'express';
 import OrderService from '../modules/orders/service';
 import { UUID } from 'crypto';
 import OrderTrackingService from '../modules/order_tracking/service';
-import { UpdateLineItemsInput } from '../modules/orders/types';
+import { UpdateLineItemsInput, OrderType } from '../modules/orders/types';
 import { forwardToConverra } from '../modules/converra/converra-forwarder';
 import { ParcelDailyService } from '../modules/parcel-daily/service';
 import { buildShipmentFromOrder } from '../modules/orders/shipment-from-order';
@@ -49,6 +49,7 @@ orderRouter.get('/', async (req, res) => {
       dateFrom: dateFrom ? new Date(dateFrom as string) : undefined,
       dateTo: dateTo ? new Date(dateTo as string) : undefined,
       source: req.query.source as string | undefined,
+      orderType: req.query.order_type as OrderType | undefined,
     });
 
     res.status(200).json({
@@ -63,9 +64,12 @@ orderRouter.get('/', async (req, res) => {
 });
 
 // GET /api/orders/summary - Order counts per delivery status group
-orderRouter.get('/summary', async (_req, res) => {
+orderRouter.get('/summary', async (req, res) => {
   try {
-    const summary = await orderService.getOrderStatusSummary();
+    const orderType = req.query.order_type;
+    const summary = await orderService.getOrderStatusSummary(
+      orderType === 'customer' || orderType === 'distributor' ? orderType : 'all'
+    );
     res.status(200).json(summary);
   } catch (error) {
     console.error('Error fetching order summary:', error);

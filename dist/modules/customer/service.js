@@ -4,6 +4,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const database_1 = __importDefault(require("./database"));
+const phone_1 = require("../shared/phone");
 const customerName_1 = require("../../utils/customerName");
 const country_1 = require("../../utils/country");
 const country_index_1 = require("./country-index");
@@ -20,24 +21,7 @@ class CustomerService {
         this.customerDatabase = new database_1.default();
     }
     normalizePhoneNumber(phoneNumber) {
-        const digits = phoneNumber.replace(/\D/g, '');
-        if (!digits)
-            return null;
-        // Malaysia
-        if (digits.startsWith('60')) {
-            return digits;
-        }
-        if (digits.startsWith('0')) {
-            return `60${digits.substring(1)}`;
-        }
-        // Singapore
-        if (digits.startsWith('65')) {
-            return digits;
-        }
-        if (/^[89]\d{7}$/.test(digits)) {
-            return `65${digits}`;
-        }
-        return null;
+        return (0, phone_1.normalizePhoneNumber)(phoneNumber);
     }
     async getAllCustomers(options) {
         var _a, _b;

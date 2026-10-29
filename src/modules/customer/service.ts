@@ -2,6 +2,7 @@ import { UUID } from 'crypto';
 import CustomerDatabase from './database';
 import { CustomerInput } from './types';
 import { OrderInput } from '../orders/types';
+import { normalizePhoneNumber } from '../shared/phone';
 import { cleanCustomerName } from '../../utils/customerName';
 import { CountryCode, detectCustomerCountry } from '../../utils/country';
 import { countryOrFilter, customerCountry, getCountryIndex } from './country-index';
@@ -23,27 +24,7 @@ class CustomerService {
   }
 
   protected normalizePhoneNumber(phoneNumber: string): string | null {
-    const digits = phoneNumber.replace(/\D/g, '');
-
-    if (!digits) return null;
-
-    // Malaysia
-    if (digits.startsWith('60')) {
-      return digits;
-    }
-    if (digits.startsWith('0')) {
-      return `60${digits.substring(1)}`;
-    }
-
-    // Singapore
-    if (digits.startsWith('65')) {
-      return digits;
-    }
-    if (/^[89]\d{7}$/.test(digits)) {
-      return `65${digits}`;
-    }
-
-    return null;
+    return normalizePhoneNumber(phoneNumber);
   }
 
   async getAllCustomers(options: {

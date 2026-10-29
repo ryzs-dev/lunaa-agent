@@ -13,7 +13,10 @@ export interface OrderInput {
   order_items: OrderItemsInput[];
   remark?: string;
   shipment_description?: string;
+  is_distributor?: boolean;
 }
+
+export type OrderType = 'all' | 'customer' | 'distributor';
 
 export interface OrderItemsInput {
   product_id: UUID;
@@ -41,4 +44,5 @@ export interface GetAllOrdersOptions {
   dateTo?: Date;
   location?: string;
   source?: string;
+  orderType?: OrderType;
 }

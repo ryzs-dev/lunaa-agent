@@ -7,7 +7,10 @@ import {
 import { recalculateCustomerStats } from './customer-stats';
 import { generateOrderNumber } from './order-number';
 import { validateOrderItems } from './validate-items';
-import { OrderInput, UpdateLineItemsInput } from './types';
+import { OrderInput, OrderType, UpdateLineItemsInput } from './types';
+import DistributorService from '../distributor/service';
+
+const distributorService = new DistributorService();
 
 const EAST_MALAYSIA_STATES = ['Sabah', 'Sarawak', 'Labuan'];
 const WEST_MALAYSIA_STATES = [
@@ -134,6 +137,7 @@ interface QueryParams {
   dateFrom?: Date;
   dateTo?: Date;
   source?: string;
+  orderType?: OrderType;
 }
 
 class OrderDatabase {
@@ -149,6 +153,7 @@ class OrderDatabase {
     tracking,
     location,
     source,
+    orderType,
   }: QueryParams) {
     const applyLocation =
       location === 'east' || location === 'west';
@@ -214,6 +219,10 @@ class OrderDatabase {
 
     if (source && source !== 'all') {
       query = query.eq('source', source);
+    }
+
+    if (orderType === 'customer' || orderType === 'distributor') {
+      query = query.eq('is_distributor', orderType === 'distributor');
     }
 
     if (dateFrom) {
@@ -294,7 +303,7 @@ class OrderDatabase {
     };
   }
 
-  async getOrderStatusSummary() {
+  async getOrderStatusSummary(orderType: OrderType = 'all') {
     const countOrders = async (group?: string) => {
       let query;
       if (group === 'needs_shipment') {
@@ -317,7 +326,12 @@ class OrderDatabase {
           .select('id', { count: 'exact', head: true });
       }
 
-      const { count, error } = await query.is('deleted_at', null);
+      query = query.is('deleted_at', null);
+      if (orderType === 'customer' || orderType === 'distributor') {
+        query = query.eq('is_distributor', orderType === 'distributor');
+      }
+
+      const { count, error } = await query;
       if (error) throw error;
       return count ?? 0;
     };
@@ -421,6 +435,9 @@ class OrderDatabase {
       order_date: order.order_date ?? new Date().toISOString(),
       status: order.status ?? 'unpaid',
       currency: order.currency ?? 'MYR',
+      is_distributor:
+        order.is_distributor ??
+        (await distributorService.isDistributorCustomer(order.customer_id)),
     };
 
     // 1️⃣ Upsert the order itself

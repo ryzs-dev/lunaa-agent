@@ -1,6 +1,7 @@
 import axios from 'axios';
 import ReceiptDatabase, { ReceiptRow } from './database';
-import { readReceipt, receiptReadingEnabled } from './reader';
+import { readReceipt } from './reader';
+import { costOf, readingConfig } from './settings';
 
 const GRAPH = 'https://graph.facebook.com/v25.0';
 // A receipt sent on its own belongs to the sender's order from shortly before.
@@ -54,6 +55,7 @@ class ReceiptService {
     const path = `${receipt.received_at?.slice(0, 10) ?? new Date().toISOString().slice(0, 10)}/${receipt.wamid}.${EXTENSIONS[type] ?? 'bin'}`;
     await this.db.upload(path, file, type);
 
+    const config = await readingConfig();
     const row = await this.db.insert({
       order_id: orderId,
       wamid: receipt.wamid,
@@ -62,10 +64,11 @@ class ReceiptService {
       storage_path: path,
       mime_type: type,
       received_at: receipt.received_at ?? new Date().toISOString(),
-      check_status: receiptReadingEnabled() ? 'pending' : 'not_checked',
+      check_status: config.ready ? 'pending' : 'not_checked',
+      check_note: config.ready ? null : config.reason,
     });
 
-    return receiptReadingEnabled() ? this.read(row, file) : row;
+    return config.ready ? this.read(row, file) : row;
   }
 
   // A receipt sent without an order caption: attach it to the sender's latest order.
@@ -82,12 +85,32 @@ class ReceiptService {
   }
 
   private async read(row: ReceiptRow, file?: Buffer) {
+    // Checked again here: the key, the switch or the monthly limit may have
+    // changed since the receipt arrived.
+    const config = await readingConfig();
+    if (!config.ready) {
+      return this.db.update(row.id, { check_status: 'not_checked', check_note: config.reason });
+    }
+
     try {
       const data = file ?? (await this.db.download(row.storage_path!));
-      const { reading, note } = await readReceipt(data, row.mime_type ?? 'application/octet-stream');
+      const { reading, note, usage } = await readReceipt(
+        data,
+        row.mime_type ?? 'application/octet-stream',
+        config
+      );
+      const spend = usage
+        ? {
+            read_model: usage.model,
+            input_tokens: usage.input_tokens,
+            output_tokens: usage.output_tokens,
+            cost_usd: Math.round(costOf(usage) * 1_000_000) / 1_000_000,
+          }
+        : {};
 
       if (!reading || !reading.is_payment_receipt) {
         return this.db.update(row.id, {
+          ...spend,
           check_status: 'unreadable',
           check_note: note ?? reading?.note ?? 'This does not look like a payment receipt',
           checked_at: new Date().toISOString(),
@@ -95,6 +118,7 @@ class ReceiptService {
       }
 
       const read = await this.db.update(row.id, {
+        ...spend,
         amount: reading.amount,
         currency: reading.currency,
         paid_on: /^\d{4}-\d{2}-\d{2}$/.test(reading.paid_on ?? '') ? reading.paid_on : null,
@@ -138,7 +162,6 @@ class ReceiptService {
 
   async attach(receiptId: string, orderId: string) {
     const row = await this.db.update(receiptId, { order_id: orderId });
-    if (row.check_status === 'not_checked') return row;
     return row.amount === null ? this.read(row) : this.compare(row);
   }
 
@@ -149,7 +172,6 @@ class ReceiptService {
   async recheck(receiptId: string) {
     const row = await this.db.get(receiptId);
     if (!row) return null;
-    if (!receiptReadingEnabled()) return row;
     return this.read(await this.db.update(row.id, { check_status: 'pending' }));
   }
 

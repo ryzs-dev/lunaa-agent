@@ -3,7 +3,6 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.receiptReadingEnabled = receiptReadingEnabled;
 exports.readReceipt = readReceipt;
 const sdk_1 = __importDefault(require("@anthropic-ai/sdk"));
 const zod_1 = require("@anthropic-ai/sdk/helpers/beta/zod");
@@ -34,11 +33,17 @@ Use null for anything the receipt does not show. Do not guess.`;
 const IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
 // The API's per-image limit; larger photos are left for a person to check.
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
-let client = null;
-function receiptReadingEnabled() {
-    return Boolean(process.env.ANTHROPIC_API_KEY);
-}
-async function readReceipt(file, mimeType) {
+const clients = new Map();
+const clientFor = (apiKey) => {
+    let client = clients.get(apiKey);
+    if (!client) {
+        client = new sdk_1.default({ apiKey });
+        clients.clear(); // keep only the current key
+        clients.set(apiKey, client);
+    }
+    return client;
+};
+async function readReceipt(file, mimeType, config) {
     var _a;
     const type = mimeType.split(';')[0].trim().toLowerCase();
     let source;
@@ -64,24 +69,26 @@ async function readReceipt(file, mimeType) {
     else {
         return { reading: null, note: `Can't read ${type} files` };
     }
-    client !== null && client !== void 0 ? client : (client = new sdk_1.default());
-    const response = await client.beta.messages.parse({
-        model: 'claude-opus-5-5',
-        max_tokens: 4000,
-        // If the request is declined, the API retries it on a fallback model.
-        betas: ['server-side-fallback-2026-07-01'],
-        fallbacks: 'default',
-        output_config: { effort: 'low', format: (0, zod_1.betaZodOutputFormat)(ReceiptReading) },
-        system: SYSTEM,
-        messages: [
+    // Opus and Sonnet retry a declined request on a fallback model; Haiku has no
+    // server-side fallback.
+    const fallback = config.model === 'claude-haiku-5-5'
+        ? {}
+        : { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' };
+    const response = await clientFor(config.apiKey).beta.messages.parse(Object.assign(Object.assign({ model: config.model, max_tokens: 4000 }, fallback), { output_config: { effort: 'low', format: (0, zod_1.betaZodOutputFormat)(ReceiptReading) }, system: SYSTEM, messages: [
             {
                 role: 'user',
                 content: [source, { type: 'text', text: 'Read this receipt.' }],
             },
-        ],
-    });
+        ] }));
+    const usage = {
+        model: response.model,
+        input_tokens: response.usage.input_tokens,
+        output_tokens: response.usage.output_tokens,
+        cache_creation_input_tokens: response.usage.cache_creation_input_tokens,
+        cache_read_input_tokens: response.usage.cache_read_input_tokens,
+    };
     if (response.stop_reason === 'refusal') {
-        return { reading: null, note: 'The receipt could not be read' };
+        return { reading: null, note: 'The receipt could not be read', usage };
     }
-    return { reading: (_a = response.parsed_output) !== null && _a !== void 0 ? _a : null };
+    return { reading: (_a = response.parsed_output) !== null && _a !== void 0 ? _a : null, usage };
 }

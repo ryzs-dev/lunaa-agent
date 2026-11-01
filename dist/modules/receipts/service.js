@@ -6,6 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const axios_1 = __importDefault(require("axios"));
 const database_1 = __importDefault(require("./database"));
 const reader_1 = require("./reader");
+const settings_1 = require("./settings");
 const GRAPH = 'https://graph.facebook.com/v25.0';
 // A receipt sent on its own belongs to the sender's order from shortly before.
 const MATCH_BEFORE_MS = 30 * 60 * 1000;
@@ -47,6 +48,7 @@ class ReceiptService {
         const type = mimeType.split(';')[0].trim().toLowerCase();
         const path = `${(_b = (_a = receipt.received_at) === null || _a === void 0 ? void 0 : _a.slice(0, 10)) !== null && _b !== void 0 ? _b : new Date().toISOString().slice(0, 10)}/${receipt.wamid}.${(_c = EXTENSIONS[type]) !== null && _c !== void 0 ? _c : 'bin'}`;
         await this.db.upload(path, file, type);
+        const config = await (0, settings_1.readingConfig)();
         const row = await this.db.insert({
             order_id: orderId,
             wamid: receipt.wamid,
@@ -55,9 +57,10 @@ class ReceiptService {
             storage_path: path,
             mime_type: type,
             received_at: (_d = receipt.received_at) !== null && _d !== void 0 ? _d : new Date().toISOString(),
-            check_status: (0, reader_1.receiptReadingEnabled)() ? 'pending' : 'not_checked',
+            check_status: config.ready ? 'pending' : 'not_checked',
+            check_note: config.ready ? null : config.reason,
         });
-        return (0, reader_1.receiptReadingEnabled)() ? this.read(row, file) : row;
+        return config.ready ? this.read(row, file) : row;
     }
     // A receipt sent without an order caption: attach it to the sender's latest order.
     async ingestStandalone(receipt) {
@@ -70,26 +73,27 @@ class ReceiptService {
     }
     async read(row, file) {
         var _a, _b, _c;
+        // Checked again here: the key, the switch or the monthly limit may have
+        // changed since the receipt arrived.
+        const config = await (0, settings_1.readingConfig)();
+        if (!config.ready) {
+            return this.db.update(row.id, { check_status: 'not_checked', check_note: config.reason });
+        }
         try {
             const data = file !== null && file !== void 0 ? file : (await this.db.download(row.storage_path));
-            const { reading, note } = await (0, reader_1.readReceipt)(data, (_a = row.mime_type) !== null && _a !== void 0 ? _a : 'application/octet-stream');
+            const { reading, note, usage } = await (0, reader_1.readReceipt)(data, (_a = row.mime_type) !== null && _a !== void 0 ? _a : 'application/octet-stream', config);
+            const spend = usage
+                ? {
+                    read_model: usage.model,
+                    input_tokens: usage.input_tokens,
+                    output_tokens: usage.output_tokens,
+                    cost_usd: Math.round((0, settings_1.costOf)(usage) * 1000000) / 1000000,
+                }
+                : {};
             if (!reading || !reading.is_payment_receipt) {
-                return this.db.update(row.id, {
-                    check_status: 'unreadable',
-                    check_note: (_b = note !== null && note !== void 0 ? note : reading === null || reading === void 0 ? void 0 : reading.note) !== null && _b !== void 0 ? _b : 'This does not look like a payment receipt',
-                    checked_at: new Date().toISOString(),
-                });
+                return this.db.update(row.id, Object.assign(Object.assign({}, spend), { check_status: 'unreadable', check_note: (_b = note !== null && note !== void 0 ? note : reading === null || reading === void 0 ? void 0 : reading.note) !== null && _b !== void 0 ? _b : 'This does not look like a payment receipt', checked_at: new Date().toISOString() }));
             }
-            const read = await this.db.update(row.id, {
-                amount: reading.amount,
-                currency: reading.currency,
-                paid_on: /^\d{4}-\d{2}-\d{2}$/.test((_c = reading.paid_on) !== null && _c !== void 0 ? _c : '') ? reading.paid_on : null,
-                reference: reading.reference,
-                bank: reading.bank,
-                payer: reading.payer,
-                check_note: reading.note,
-                checked_at: new Date().toISOString(),
-            });
+            const read = await this.db.update(row.id, Object.assign(Object.assign({}, spend), { amount: reading.amount, currency: reading.currency, paid_on: /^\d{4}-\d{2}-\d{2}$/.test((_c = reading.paid_on) !== null && _c !== void 0 ? _c : '') ? reading.paid_on : null, reference: reading.reference, bank: reading.bank, payer: reading.payer, check_note: reading.note, checked_at: new Date().toISOString() }));
             return this.compare(read);
         }
         catch (error) {
@@ -123,8 +127,6 @@ class ReceiptService {
     }
     async attach(receiptId, orderId) {
         const row = await this.db.update(receiptId, { order_id: orderId });
-        if (row.check_status === 'not_checked')
-            return row;
         return row.amount === null ? this.read(row) : this.compare(row);
     }
     findOrderByNumber(orderNumber) {
@@ -134,8 +136,6 @@ class ReceiptService {
         const row = await this.db.get(receiptId);
         if (!row)
             return null;
-        if (!(0, reader_1.receiptReadingEnabled)())
-            return row;
         return this.read(await this.db.update(row.id, { check_status: 'pending' }));
     }
     async withUrl(row) {

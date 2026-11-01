@@ -6,15 +6,38 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.receiptRouter = void 0;
 const express_1 = __importDefault(require("express"));
 const service_1 = __importDefault(require("../modules/receipts/service"));
-const reader_1 = require("../modules/receipts/reader");
+const settings_1 = require("../modules/receipts/settings");
 exports.receiptRouter = express_1.default.Router();
 const receipts = new service_1.default();
+// GET /api/receipts/settings - reading switch, key hint (never the key), model, limit, this month's spend
+exports.receiptRouter.get('/settings', async (_req, res) => {
+    try {
+        res.json({ success: true, settings: await (0, settings_1.publicSettings)() });
+    }
+    catch (error) {
+        console.error('Error fetching receipt settings:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+// PUT /api/receipts/settings { enabled?, api_key?, clear_key?, model?, monthly_cap_usd?, updated_by? }
+exports.receiptRouter.put('/settings', async (req, res) => {
+    var _a;
+    try {
+        res.json({ success: true, settings: await (0, settings_1.updateSettings)((_a = req.body) !== null && _a !== void 0 ? _a : {}) });
+    }
+    catch (error) {
+        if (error instanceof settings_1.SettingsError)
+            return res.status(400).json({ error: error.message });
+        console.error('Error saving receipt settings:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
 // GET /api/receipts/order/:orderId - receipts for one order, with view links
 exports.receiptRouter.get('/order/:orderId', async (req, res) => {
     try {
         res.json({
             success: true,
-            reading_enabled: (0, reader_1.receiptReadingEnabled)(),
+            reading_enabled: (await (0, settings_1.readingConfig)()).ready,
             receipts: await receipts.listByOrder(req.params.orderId),
         });
     }

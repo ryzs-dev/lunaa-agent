@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { betaZodOutputFormat } from '@anthropic-ai/sdk/helpers/beta/zod';
 import { z } from 'zod/v4';
+import { ReceiptModel, Usage } from './settings';
 
 const ReceiptReading = z.object({
   is_payment_receipt: z.boolean(),
@@ -33,16 +34,22 @@ const IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp
 // The API's per-image limit; larger photos are left for a person to check.
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
-let client: Anthropic | null = null;
-
-export function receiptReadingEnabled() {
-  return Boolean(process.env.ANTHROPIC_API_KEY);
-}
+const clients = new Map<string, Anthropic>();
+const clientFor = (apiKey: string) => {
+  let client = clients.get(apiKey);
+  if (!client) {
+    client = new Anthropic({ apiKey });
+    clients.clear(); // keep only the current key
+    clients.set(apiKey, client);
+  }
+  return client;
+};
 
 export async function readReceipt(
   file: Buffer,
-  mimeType: string
-): Promise<{ reading: ReceiptReading | null; note?: string }> {
+  mimeType: string,
+  config: { apiKey: string; model: ReceiptModel }
+): Promise<{ reading: ReceiptReading | null; note?: string; usage?: Usage }> {
   const type = mimeType.split(';')[0].trim().toLowerCase();
   let source: Anthropic.Beta.BetaContentBlockParam;
 
@@ -67,13 +74,17 @@ export async function readReceipt(
     return { reading: null, note: `Can't read ${type} files` };
   }
 
-  client ??= new Anthropic();
-  const response = await client.beta.messages.parse({
-    model: 'claude-opus-5-5',
+  // Opus and Sonnet retry a declined request on a fallback model; Haiku has no
+  // server-side fallback.
+  const fallback =
+    config.model === 'claude-haiku-5-5'
+      ? {}
+      : { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' as const };
+
+  const response = await clientFor(config.apiKey).beta.messages.parse({
+    model: config.model,
     max_tokens: 4000,
-    // If the request is declined, the API retries it on a fallback model.
-    betas: ['server-side-fallback-2026-07-01'],
-    fallbacks: 'default',
+    ...fallback,
     output_config: { effort: 'low', format: betaZodOutputFormat(ReceiptReading) },
     system: SYSTEM,
     messages: [
@@ -84,8 +95,16 @@ export async function readReceipt(
     ],
   });
 
+  const usage: Usage = {
+    model: response.model,
+    input_tokens: response.usage.input_tokens,
+    output_tokens: response.usage.output_tokens,
+    cache_creation_input_tokens: response.usage.cache_creation_input_tokens,
+    cache_read_input_tokens: response.usage.cache_read_input_tokens,
+  };
+
   if (response.stop_reason === 'refusal') {
-    return { reading: null, note: 'The receipt could not be read' };
+    return { reading: null, note: 'The receipt could not be read', usage };
   }
-  return { reading: response.parsed_output ?? null };
+  return { reading: response.parsed_output ?? null, usage };
 }

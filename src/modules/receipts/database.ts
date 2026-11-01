@@ -20,6 +20,10 @@ export interface ReceiptRow {
   payer: string | null;
   check_note: string | null;
   checked_at: string | null;
+  read_model: string | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  cost_usd: number | null;
   created_at: string;
 }
 

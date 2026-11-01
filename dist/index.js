@@ -22,6 +22,8 @@ const meta_1 = __importDefault(require("./routes/meta"));
 const customers_1 = __importDefault(require("./routes/customers"));
 const order_1 = require("./routes/order");
 const distributors_1 = require("./routes/distributors");
+const autopilot_1 = require("./routes/autopilot");
+const scheduler_1 = require("./modules/autopilot/scheduler");
 const address_1 = require("./routes/address");
 const tracking_1 = require("./routes/tracking");
 const route_1 = require("./routes/parcel-daily/route");
@@ -56,6 +58,7 @@ app.use('/api/meta', meta_1.default);
 app.use('/api/customers', customers_1.default);
 app.use('/api/orders', order_1.orderRouter);
 app.use('/api/distributors', distributors_1.distributorRouter);
+app.use('/api/autopilot', autopilot_1.autopilotRouter);
 app.use('/api/addresses', address_1.addressRouter);
 app.use('/api/tracking', tracking_1.orderTrackingRouter);
 app.use('/api/parcel-daily', route_1.parcelDailyRouter);
@@ -90,6 +93,7 @@ io.on('connection', (socket) => {
 server.listen(port, '0.0.0.0', () => {
     console.log(`🚀 Server running on http://0.0.0.0:${port}`);
 });
+(0, scheduler_1.startAutopilotScheduler)();
 if (process.env.NODE_ENV === 'production') {
     console.log('\n📅 Starting daily tracking automation...');
     (0, trackingScheduler_1.startDailyTrackingScheduler)();

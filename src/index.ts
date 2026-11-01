@@ -18,6 +18,8 @@ import metaRouter from './routes/meta';
 import customersRouter from './routes/customers';
 import { orderRouter } from './routes/order';
 import { distributorRouter } from './routes/distributors';
+import { autopilotRouter } from './routes/autopilot';
+import { startAutopilotScheduler } from './modules/autopilot/scheduler';
 import { addressRouter } from './routes/address';
 import { orderTrackingRouter } from './routes/tracking';
 import { parcelDailyRouter } from './routes/parcel-daily/route';
@@ -57,6 +59,7 @@ app.use('/api/meta', metaRouter);
 app.use('/api/customers', customersRouter);
 app.use('/api/orders', orderRouter);
 app.use('/api/distributors', distributorRouter);
+app.use('/api/autopilot', autopilotRouter);
 app.use('/api/addresses', addressRouter);
 app.use('/api/tracking', orderTrackingRouter);
 app.use('/api/parcel-daily', parcelDailyRouter);
@@ -98,6 +101,8 @@ initParcelDailySubscribers(io);
 server.listen(port, '0.0.0.0', () => {
   console.log(`🚀 Server running on http://0.0.0.0:${port}`);
 });
+
+startAutopilotScheduler();
 
 if (process.env.NODE_ENV === 'production') {
   console.log('\n📅 Starting daily tracking automation...');

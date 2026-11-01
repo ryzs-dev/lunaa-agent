@@ -2,6 +2,7 @@ import { UUID } from 'crypto';
 import AutopilotDatabase from './database';
 import { ParcelDailyService } from '../parcel-daily/service';
 import { buildShipmentFromOrder } from '../orders/shipment-from-order';
+import { bookShipment, getShippingRules, isCodOrder } from '../shipping/rules';
 import { enqueueTrackingFromAdmin } from '../queue/tracking_queue/queue';
 import {
   AutopilotRun,
@@ -80,9 +81,10 @@ class AutopilotService {
   }
 
   private async shipItems(settings: AutopilotSettings): Promise<RunItem[]> {
-    const [orders, defaults] = await Promise.all([
+    const [orders, defaults, rules] = await Promise.all([
       this.db.shipCandidates(settings.lookback_days),
       this.shippingDefaults(),
+      getShippingRules(),
     ]);
 
     const items = orders
@@ -106,8 +108,10 @@ class AutopilotService {
           { ...order, customers: customer, addresses: one(order.addresses as never) } as never,
           { serviceProvider: defaults.courier, isDropoff: defaults.isDropoff === true }
         );
-        return built.error
-          ? { ...base, state: 'needs_attention', reason: built.error }
+        if (built.error) return { ...base, state: 'needs_attention', reason: built.error };
+        const cod = rules.detect_cod && isCodOrder({ ...order, customers: customer } as never);
+        return cod
+          ? { ...base, state: 'ready', reason: `COD · collect RM ${base.amount.toFixed(2)}` }
           : { ...base, state: 'ready' };
       });
 
@@ -273,7 +277,6 @@ class AutopilotService {
       );
     }
 
-    const defaults = await this.shippingDefaults();
     const items: RunItem[] = [];
 
     for (const item of run.items) {
@@ -293,29 +296,22 @@ class AutopilotService {
         continue;
       }
 
-      const built = buildShipmentFromOrder(
-        {
-          ...order,
-          customers: one(order.customers as never),
-          addresses: one(order.addresses as never),
-        } as never,
-        { serviceProvider: defaults.courier, isDropoff: defaults.isDropoff === true }
-      );
-      if (built.error || !built.shipment) {
-        items.push({ ...item, state: 'skipped', reason: built.error ?? 'Could not build the shipment' });
+      const booking = await bookShipment({
+        ...order,
+        customers: one(order.customers as never),
+        addresses: one(order.addresses as never),
+      } as never);
+      if (!booking.success) {
+        items.push({ ...item, state: 'failed', courier: booking.courier, reason: booking.error });
         continue;
       }
-
-      const result = await this.parcelDaily.createShipment(built.shipment, order.id as UUID);
-      if (result?.success === false) {
-        items.push({
-          ...item,
-          state: 'failed',
-          reason: typeof result.message === 'string' ? result.message : 'Parcel Daily shipment failed',
-        });
-        continue;
-      }
-      items.push({ ...item, state: 'shipped', reason: undefined });
+      const notes = [booking.cod > 0 && `COD RM ${booking.cod.toFixed(2)}`, booking.note].filter(Boolean);
+      items.push({
+        ...item,
+        state: 'shipped',
+        courier: booking.courier,
+        reason: notes.length ? notes.join(' · ') : undefined,
+      });
     }
 
     return items;

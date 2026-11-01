@@ -5,7 +5,7 @@ import OrderTrackingService from '../modules/order_tracking/service';
 import { UpdateLineItemsInput, OrderType } from '../modules/orders/types';
 import { forwardToConverra } from '../modules/converra/converra-forwarder';
 import { ParcelDailyService } from '../modules/parcel-daily/service';
-import { buildShipmentFromOrder } from '../modules/orders/shipment-from-order';
+import { bookShipment } from '../modules/shipping/rules';
 import { OrderValidationError } from '../modules/orders/database';
 
 export const orderRouter = express.Router();
@@ -174,6 +174,7 @@ orderRouter.post('/create/bulk', async (req, res) => {
     order_id: string;
     success: boolean;
     error?: string;
+    note?: string;
     data?: unknown;
   }> = [];
 
@@ -182,35 +183,19 @@ orderRouter.post('/create/bulk', async (req, res) => {
 
     try {
       const order = await orderService.getOrderById(orderId as UUID);
-      const built = buildShipmentFromOrder(order, {
+      // COD orders use the COD courier and collect the total; a failed
+      // booking is retried with the fallback courier (Settings → Shipping).
+      const booking = await bookShipment(order, {
+        courier: serviceProvider,
         isDropoff: isDropoff === true,
-        serviceProvider,
       });
 
-      if (built.error || !built.shipment) {
+      if (!booking.success) {
         results.push({
           order_id: orderId,
           success: false,
-          error: built.error ?? 'Could not build shipment payload',
-        });
-        continue;
-      }
-
-      const shipmentResult = await parcelDailyService.createShipment(
-        built.shipment,
-        orderId as UUID,
-      );
-
-      if (shipmentResult?.success === false) {
-        const message =
-          typeof shipmentResult.message === 'string'
-            ? shipmentResult.message
-            : 'Parcel Daily shipment failed';
-        results.push({
-          order_id: orderId,
-          success: false,
-          error: message,
-          data: shipmentResult,
+          error: booking.error,
+          data: booking.data,
         });
         continue;
       }
@@ -218,7 +203,8 @@ orderRouter.post('/create/bulk', async (req, res) => {
       results.push({
         order_id: orderId,
         success: true,
-        data: shipmentResult?.data ?? shipmentResult,
+        data: booking.data,
+        ...(booking.note && { note: booking.note }),
       });
     } catch (error) {
       const message =

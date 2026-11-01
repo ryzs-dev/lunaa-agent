@@ -1,5 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.isBookableCourier = isBookableCourier;
 exports.buildShipmentFromOrder = buildShipmentFromOrder;
 const country_1 = require("../../utils/country");
 function hasExistingTracking(tracking) {
@@ -34,6 +35,9 @@ const ALLOWED_SERVICE_PROVIDERS = new Set([
     'sfexd',
     'sfeconomy',
 ]);
+function isBookableCourier(code) {
+    return ALLOWED_SERVICE_PROVIDERS.has(code);
+}
 const LEGACY_SERVICE_PROVIDERS = { sf_express: 'sfexd' };
 function buildShipmentFromOrder(order, options) {
     var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u;
@@ -66,9 +70,7 @@ function buildShipmentFromOrder(order, options) {
     if (!ALLOWED_SERVICE_PROVIDERS.has(serviceProvider)) {
         return { error: `Unsupported courier "${options === null || options === void 0 ? void 0 : options.serviceProvider}"` };
     }
-    const shipment = {
-        serviceProvider,
-        clientAddress: {
+    const shipment = Object.assign({ serviceProvider, clientAddress: {
             fullName: ((_m = (_l = order.customers) === null || _l === void 0 ? void 0 : _l.name) === null || _m === void 0 ? void 0 : _m.trim()) || 'Customer',
             countryCode: phoneIsSingapore ? '+65' : '+60',
             phone,
@@ -79,13 +81,8 @@ function buildShipmentFromOrder(order, options) {
             postcode,
             state: ((_t = (_s = order.addresses) === null || _s === void 0 ? void 0 : _s.state) === null || _t === void 0 ? void 0 : _t.trim()) || '',
             country: isSingapore ? 'Singapore' : 'Malaysia',
-        },
+        }, 
         // 0 means use the parcel weight saved in Parcel Daily settings.
-        kg: 0,
-        price: 0,
-        content: ((_u = order.shipment_description) === null || _u === void 0 ? void 0 : _u.trim()) || 'Feminine Products',
-        content_value: Number(order.total_amount) || 0,
-        isDropoff: (options === null || options === void 0 ? void 0 : options.isDropoff) === true,
-    };
+        kg: 0, price: 0, content: ((_u = order.shipment_description) === null || _u === void 0 ? void 0 : _u.trim()) || 'Feminine Products', content_value: Number(order.total_amount) || 0, isDropoff: (options === null || options === void 0 ? void 0 : options.isDropoff) === true }, ((options === null || options === void 0 ? void 0 : options.cod) && options.cod > 0 && { cod: options.cod }));
     return { shipment };
 }

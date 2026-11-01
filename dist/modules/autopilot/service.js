@@ -7,6 +7,7 @@ exports.AutopilotBusyError = void 0;
 const database_1 = __importDefault(require("./database"));
 const service_1 = require("../parcel-daily/service");
 const shipment_from_order_1 = require("../orders/shipment-from-order");
+const rules_1 = require("../shipping/rules");
 const queue_1 = require("../queue/tracking_queue/queue");
 const time_1 = require("./time");
 const PARCEL_DAILY_API_URL = process.env.PARCEL_DAILY_API_URL || 'http://localhost:4002/api/parceldaily';
@@ -67,9 +68,10 @@ class AutopilotService {
         });
     }
     async shipItems(settings) {
-        const [orders, defaults] = await Promise.all([
+        const [orders, defaults, rules] = await Promise.all([
             this.db.shipCandidates(settings.lookback_days),
             this.shippingDefaults(),
+            (0, rules_1.getShippingRules)(),
         ]);
         const items = orders
             .filter((order) => settings.include_distributors || !order.is_distributor)
@@ -87,8 +89,11 @@ class AutopilotService {
                 return Object.assign(Object.assign({}, base), { state: 'on_hold', reason: 'Held by staff' });
             }
             const built = (0, shipment_from_order_1.buildShipmentFromOrder)(Object.assign(Object.assign({}, order), { customers: customer, addresses: one(order.addresses) }), { serviceProvider: defaults.courier, isDropoff: defaults.isDropoff === true });
-            return built.error
-                ? Object.assign(Object.assign({}, base), { state: 'needs_attention', reason: built.error }) : Object.assign(Object.assign({}, base), { state: 'ready' });
+            if (built.error)
+                return Object.assign(Object.assign({}, base), { state: 'needs_attention', reason: built.error });
+            const cod = rules.detect_cod && (0, rules_1.isCodOrder)(Object.assign(Object.assign({}, order), { customers: customer }));
+            return cod
+                ? Object.assign(Object.assign({}, base), { state: 'ready', reason: `COD · collect RM ${base.amount.toFixed(2)}` }) : Object.assign(Object.assign({}, base), { state: 'ready' });
         });
         return this.capItems(items, settings.max_orders_per_run);
     }
@@ -220,7 +225,7 @@ class AutopilotService {
         }
     }
     async executeShip(run) {
-        var _a, _b;
+        var _a;
         const settings = await this.db.getSettings();
         const account = await this.parcelDaily.getAccountInfo();
         const credit = Number((_a = account === null || account === void 0 ? void 0 : account.data) === null || _a === void 0 ? void 0 : _a.credit);
@@ -230,7 +235,6 @@ class AutopilotService {
         if (credit < settings.min_credit) {
             throw new Error(`Parcel Daily credit is RM ${credit.toFixed(2)}, below the RM ${settings.min_credit.toFixed(2)} minimum. Top up, then run again.`);
         }
-        const defaults = await this.shippingDefaults();
         const items = [];
         for (const item of run.items) {
             if (item.state !== 'ready') {
@@ -247,17 +251,13 @@ class AutopilotService {
                 items.push(Object.assign(Object.assign({}, item), { state: 'skipped', reason: 'Held by staff' }));
                 continue;
             }
-            const built = (0, shipment_from_order_1.buildShipmentFromOrder)(Object.assign(Object.assign({}, order), { customers: one(order.customers), addresses: one(order.addresses) }), { serviceProvider: defaults.courier, isDropoff: defaults.isDropoff === true });
-            if (built.error || !built.shipment) {
-                items.push(Object.assign(Object.assign({}, item), { state: 'skipped', reason: (_b = built.error) !== null && _b !== void 0 ? _b : 'Could not build the shipment' }));
+            const booking = await (0, rules_1.bookShipment)(Object.assign(Object.assign({}, order), { customers: one(order.customers), addresses: one(order.addresses) }));
+            if (!booking.success) {
+                items.push(Object.assign(Object.assign({}, item), { state: 'failed', courier: booking.courier, reason: booking.error }));
                 continue;
             }
-            const result = await this.parcelDaily.createShipment(built.shipment, order.id);
-            if ((result === null || result === void 0 ? void 0 : result.success) === false) {
-                items.push(Object.assign(Object.assign({}, item), { state: 'failed', reason: typeof result.message === 'string' ? result.message : 'Parcel Daily shipment failed' }));
-                continue;
-            }
-            items.push(Object.assign(Object.assign({}, item), { state: 'shipped', reason: undefined }));
+            const notes = [booking.cod > 0 && `COD RM ${booking.cod.toFixed(2)}`, booking.note].filter(Boolean);
+            items.push(Object.assign(Object.assign({}, item), { state: 'shipped', courier: booking.courier, reason: notes.length ? notes.join(' · ') : undefined }));
         }
         return items;
     }

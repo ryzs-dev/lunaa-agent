@@ -167,7 +167,7 @@ class AutopilotDatabase {
     const { data, error } = await supabase
       .from('orders')
       .select(
-        'id, order_number, total_amount, shipment_description, source, is_distributor, autopilot_hold, created_at, customers(name, email, phone_number), addresses(full_address, city, postcode, state, country), order_tracking(id, tracking_number)'
+        'id, order_number, total_amount, payment_method, shipment_description, source, is_distributor, autopilot_hold, created_at, customers(name, email, phone_number), addresses(full_address, city, postcode, state, country), order_tracking(id, tracking_number)'
       )
       .is('deleted_at', null)
       .not('source', 'in', '(shopee,lazada)')
@@ -202,7 +202,7 @@ class AutopilotDatabase {
     const { data, error } = await supabase
       .from('orders')
       .select(
-        'id, order_number, total_amount, shipment_description, source, autopilot_hold, deleted_at, customers(name, email, phone_number), addresses(full_address, city, postcode, state, country), order_tracking(id, tracking_number)'
+        'id, order_number, total_amount, payment_method, shipment_description, source, autopilot_hold, deleted_at, customers(name, email, phone_number), addresses(full_address, city, postcode, state, country), order_tracking(id, tracking_number)'
       )
       .eq('id', orderId)
       .maybeSingle();

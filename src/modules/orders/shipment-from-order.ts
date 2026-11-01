@@ -58,11 +58,15 @@ const ALLOWED_SERVICE_PROVIDERS = new Set([
   'sfeconomy',
 ]);
 
+export function isBookableCourier(code: string) {
+  return ALLOWED_SERVICE_PROVIDERS.has(code);
+}
+
 const LEGACY_SERVICE_PROVIDERS: Record<string, string> = { sf_express: 'sfexd' };
 
 export function buildShipmentFromOrder(
   order: OrderLike,
-  options?: { isDropoff?: boolean; serviceProvider?: string },
+  options?: { isDropoff?: boolean; serviceProvider?: string; cod?: number },
 ): {
   shipment?: ShipmentInput;
   error?: string;
@@ -121,6 +125,7 @@ export function buildShipmentFromOrder(
     content: order.shipment_description?.trim() || 'Feminine Products',
     content_value: Number(order.total_amount) || 0,
     isDropoff: options?.isDropoff === true,
+    ...(options?.cod && options.cod > 0 && { cod: options.cod }),
   };
 
   return { shipment };

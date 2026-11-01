@@ -9,7 +9,7 @@ const service_1 = __importDefault(require("../modules/orders/service"));
 const service_2 = __importDefault(require("../modules/order_tracking/service"));
 const converra_forwarder_1 = require("../modules/converra/converra-forwarder");
 const service_3 = require("../modules/parcel-daily/service");
-const shipment_from_order_1 = require("../modules/orders/shipment-from-order");
+const rules_1 = require("../modules/shipping/rules");
 const database_1 = require("../modules/orders/database");
 exports.orderRouter = express_1.default.Router();
 const orderService = new service_1.default();
@@ -130,7 +130,6 @@ exports.orderRouter.post('/', async (req, res) => {
 });
 // POST /api/orders/create/bulk - Create Parcel Daily shipments for multiple CRM orders
 exports.orderRouter.post('/create/bulk', async (req, res) => {
-    var _a, _b;
     const { order_ids: orderIds, is_dropoff: isDropoff, service_provider: serviceProvider, } = req.body;
     if (!Array.isArray(orderIds) || orderIds.length === 0) {
         return res.status(400).json({ error: 'order_ids array is required' });
@@ -143,36 +142,22 @@ exports.orderRouter.post('/create/bulk', async (req, res) => {
         const orderId = String(rawId);
         try {
             const order = await orderService.getOrderById(orderId);
-            const built = (0, shipment_from_order_1.buildShipmentFromOrder)(order, {
+            // COD orders use the COD courier and collect the total; a failed
+            // booking is retried with the fallback courier (Settings → Shipping).
+            const booking = await (0, rules_1.bookShipment)(order, {
+                courier: serviceProvider,
                 isDropoff: isDropoff === true,
-                serviceProvider,
             });
-            if (built.error || !built.shipment) {
+            if (!booking.success) {
                 results.push({
                     order_id: orderId,
                     success: false,
-                    error: (_a = built.error) !== null && _a !== void 0 ? _a : 'Could not build shipment payload',
+                    error: booking.error,
+                    data: booking.data,
                 });
                 continue;
             }
-            const shipmentResult = await parcelDailyService.createShipment(built.shipment, orderId);
-            if ((shipmentResult === null || shipmentResult === void 0 ? void 0 : shipmentResult.success) === false) {
-                const message = typeof shipmentResult.message === 'string'
-                    ? shipmentResult.message
-                    : 'Parcel Daily shipment failed';
-                results.push({
-                    order_id: orderId,
-                    success: false,
-                    error: message,
-                    data: shipmentResult,
-                });
-                continue;
-            }
-            results.push({
-                order_id: orderId,
-                success: true,
-                data: (_b = shipmentResult === null || shipmentResult === void 0 ? void 0 : shipmentResult.data) !== null && _b !== void 0 ? _b : shipmentResult,
-            });
+            results.push(Object.assign({ order_id: orderId, success: true, data: booking.data }, (booking.note && { note: booking.note })));
         }
         catch (error) {
             const message = error instanceof Error ? error.message : 'Unexpected error';

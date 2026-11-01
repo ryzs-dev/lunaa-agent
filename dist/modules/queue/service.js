@@ -10,13 +10,21 @@ const service_2 = __importDefault(require("../address/service"));
 const service_3 = __importDefault(require("../orders/service"));
 const service_4 = require("../google/service");
 const service_5 = __importDefault(require("../order_tracking/service"));
+const service_6 = __importDefault(require("../receipts/service"));
 const customerService = new service_1.default();
 const addressService = new service_2.default();
 const orderService = new service_3.default();
 const googleSheetService = new service_4.GoogleSheetService();
 const orderTrackingService = new service_5.default();
+const receiptService = new service_6.default();
 const worker = new bullmq_1.Worker('orders', async (job) => {
-    var _a, _b, _c;
+    var _a, _b, _c, _d;
+    // A receipt sent on its own, after the order it pays for.
+    if (job.name === 'receipt.received') {
+        const { media, sender, caption, received_at } = job.data;
+        await receiptService.ingestStandalone(Object.assign(Object.assign({}, media), { sender, caption, received_at }));
+        return;
+    }
     try {
         const customer = await customerService.createCustomer(job.data.customer);
         const existingOrder = await orderService.findSimilarOrder({
@@ -28,7 +36,17 @@ const worker = new bullmq_1.Worker('orders', async (job) => {
         let dbResult = existingOrder;
         if (!existingOrder) {
             const address = await addressService.createAddress(Object.assign({ customer_id: customer.id }, job.data.address));
-            dbResult = await orderService.createOrder(Object.assign({ customer_id: customer.id, address_id: address.id, remark: job.data.remark }, job.data.order));
+            dbResult = await orderService.createOrder(Object.assign({ customer_id: customer.id, address_id: address.id, remark: job.data.remark, created_by_phone: job.data.sender }, job.data.order));
+        }
+        // The receipt that came with the order, as the photo it was captioned on.
+        // A failure here never loses the order.
+        if (job.data.receipt && (dbResult === null || dbResult === void 0 ? void 0 : dbResult.id)) {
+            try {
+                await receiptService.ingest(Object.assign(Object.assign({}, job.data.receipt), { sender: (_d = job.data.sender) !== null && _d !== void 0 ? _d : null, caption: null }), dbResult.id);
+            }
+            catch (error) {
+                console.error('Error saving receipt for job', job.id, error);
+            }
         }
         const sheetResult = await googleSheetService.createOrder(job.data);
         console.log('Both operations completed:', { dbResult, sheetResult });

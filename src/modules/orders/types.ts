@@ -14,6 +14,7 @@ export interface OrderInput {
   remark?: string;
   shipment_description?: string;
   is_distributor?: boolean;
+  created_by_phone?: string;
 }
 
 export type OrderType = 'all' | 'customer' | 'distributor';

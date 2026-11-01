@@ -5,16 +5,25 @@ import AddressService from '../address/service';
 import OrderService from '../orders/service';
 import { GoogleSheetService } from '../google/service';
 import OrderTrackingService from '../order_tracking/service';
+import ReceiptService from '../receipts/service';
 
 const customerService = new CustomerService();
 const addressService = new AddressService();
 const orderService = new OrderService();
 const googleSheetService = new GoogleSheetService();
 const orderTrackingService = new OrderTrackingService();
+const receiptService = new ReceiptService();
 
 const worker = new Worker(
   'orders',
   async (job) => {
+    // A receipt sent on its own, after the order it pays for.
+    if (job.name === 'receipt.received') {
+      const { media, sender, caption, received_at } = job.data;
+      await receiptService.ingestStandalone({ ...media, sender, caption, received_at });
+      return;
+    }
+
     try {
       const customer = await customerService.createCustomer(job.data.customer);
       const existingOrder = await orderService.findSimilarOrder({
@@ -34,8 +43,22 @@ const worker = new Worker(
           customer_id: customer.id,
           address_id: address.id,
           remark: job.data.remark,
+          created_by_phone: job.data.sender,
           ...job.data.order,
         });
+      }
+
+      // The receipt that came with the order, as the photo it was captioned on.
+      // A failure here never loses the order.
+      if (job.data.receipt && dbResult?.id) {
+        try {
+          await receiptService.ingest(
+            { ...job.data.receipt, sender: job.data.sender ?? null, caption: null },
+            dbResult.id
+          );
+        } catch (error) {
+          console.error('Error saving receipt for job', job.id, error);
+        }
       }
 
       const sheetResult = await googleSheetService.createOrder(job.data);

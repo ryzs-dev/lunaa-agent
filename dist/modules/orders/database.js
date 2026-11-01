@@ -218,7 +218,7 @@ class OrderDatabase {
         const { data, error: detailsError } = ids.length
             ? await supabase_1.supabase
                 .from('orders')
-                .select('*, order_items(*, products(name, code)), customers(*), addresses(*), order_tracking(*)')
+                .select('*, order_items(*, products(name, code)), customers(*), addresses(*), order_tracking(*), order_receipts(id, check_status, amount)')
                 .in('id', ids)
             : { data: [], error: null };
         if (detailsError)
@@ -284,7 +284,7 @@ class OrderDatabase {
     async getOrderById(orderId) {
         const { data: order, error } = await supabase_1.supabase
             .from('orders')
-            .select('*, addresses(*), order_items(*, products(*)), customers(*), order_tracking(*)')
+            .select('*, addresses(*), order_items(*, products(*)), customers(*), order_tracking(*), order_receipts(id, check_status, amount)')
             .eq('id', orderId)
             .is('deleted_at', null)
             .single();

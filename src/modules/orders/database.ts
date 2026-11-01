@@ -269,7 +269,7 @@ class OrderDatabase {
       ? await supabase
           .from('orders')
           .select(
-            '*, order_items(*, products(name, code)), customers(*), addresses(*), order_tracking(*)'
+            '*, order_items(*, products(name, code)), customers(*), addresses(*), order_tracking(*), order_receipts(id, check_status, amount)'
           )
           .in('id', ids)
       : { data: [], error: null };
@@ -352,7 +352,7 @@ class OrderDatabase {
     const { data: order, error } = await supabase
       .from('orders')
       .select(
-        '*, addresses(*), order_items(*, products(*)), customers(*), order_tracking(*)'
+        '*, addresses(*), order_items(*, products(*)), customers(*), order_tracking(*), order_receipts(id, check_status, amount)'
       )
       .eq('id', orderId)
       .is('deleted_at', null)

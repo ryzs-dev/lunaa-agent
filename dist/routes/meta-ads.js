@@ -146,7 +146,7 @@ const DAY = /^\d{4}-\d{2}-\d{2}$/;
 // Everything the Ads page shows for a date range: totals, each day with the
 // CRM's sales beside the spend, and each campaign. Days are Malaysia days.
 exports.metaAdsRouter.get('/report', async (req, res) => {
-    var _a, _b, _c, _d, _e, _f, _g, _h;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l;
     try {
         const from = String((_a = req.query.from) !== null && _a !== void 0 ? _a : '');
         const to = String((_b = req.query.to) !== null && _b !== void 0 ? _b : '');
@@ -157,7 +157,7 @@ exports.metaAdsRouter.get('/report', async (req, res) => {
         if (span > 400) {
             return res.status(400).json({ success: false, message: 'Pick at most about a year at a time.' });
         }
-        const [campaigns, insights, sales, first] = await Promise.all([
+        const [campaigns, insights, sales, first, last] = await Promise.all([
             campaignTotals(from, to),
             supabase_1.supabase
                 .from('meta_ad_insights')
@@ -167,6 +167,7 @@ exports.metaAdsRouter.get('/report', async (req, res) => {
                 .limit(20000),
             supabase_1.supabase.rpc('get_sales_by_day', { first_day: from, last_day: to }),
             supabase_1.supabase.from('meta_ad_insights').select('date').order('date').limit(1),
+            supabase_1.supabase.from('meta_ad_insights').select('date').gt('spend', 0).order('date', { ascending: false }).limit(1),
         ]);
         if (insights.error)
             throw insights.error;
@@ -217,6 +218,7 @@ exports.metaAdsRouter.get('/report', async (req, res) => {
             from,
             to,
             data_since: (_h = (_g = (_f = first.data) === null || _f === void 0 ? void 0 : _f[0]) === null || _g === void 0 ? void 0 : _g.date) !== null && _h !== void 0 ? _h : null,
+            last_spend_day: (_l = (_k = (_j = last.data) === null || _j === void 0 ? void 0 : _j[0]) === null || _k === void 0 ? void 0 : _k.date) !== null && _l !== void 0 ? _l : null,
             totals,
             days,
             campaigns,

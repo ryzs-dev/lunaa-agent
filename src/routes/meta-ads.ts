@@ -160,7 +160,7 @@ metaAdsRouter.get('/report', async (req, res) => {
       return res.status(400).json({ success: false, message: 'Pick at most about a year at a time.' });
     }
 
-    const [campaigns, insights, sales, first] = await Promise.all([
+    const [campaigns, insights, sales, first, last] = await Promise.all([
       campaignTotals(from, to),
       supabase
         .from('meta_ad_insights')
@@ -170,6 +170,7 @@ metaAdsRouter.get('/report', async (req, res) => {
         .limit(20000),
       supabase.rpc('get_sales_by_day', { first_day: from, last_day: to }),
       supabase.from('meta_ad_insights').select('date').order('date').limit(1),
+      supabase.from('meta_ad_insights').select('date').gt('spend', 0).order('date', { ascending: false }).limit(1),
     ]);
     if (insights.error) throw insights.error;
     if (sales.error) throw sales.error;
@@ -220,6 +221,7 @@ metaAdsRouter.get('/report', async (req, res) => {
       from,
       to,
       data_since: first.data?.[0]?.date ?? null,
+      last_spend_day: last.data?.[0]?.date ?? null,
       totals,
       days,
       campaigns,

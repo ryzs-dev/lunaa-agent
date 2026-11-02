@@ -48,6 +48,13 @@ const worker = new bullmq_1.Worker('orders', async (job) => {
                 console.error('Error saving receipt for job', job.id, error);
             }
         }
+        // The same order often arrives twice: pasted as text, then forwarded with
+        // its receipt photo. The first copy already wrote the sheet row. On a retry
+        // the order may be this job's own from the failed attempt, so write again.
+        if (existingOrder && job.attemptsMade === 0) {
+            console.log('Order already recorded, skipping sheet row:', existingOrder.id);
+            return;
+        }
         const sheetResult = await googleSheetService.createOrder(job.data);
         console.log('Both operations completed:', { dbResult, sheetResult });
         if (!sheetResult.success) {

@@ -22,6 +22,8 @@ import { autopilotRouter } from './routes/autopilot';
 import { receiptRouter } from './routes/receipts';
 import { shippingRouter } from './routes/shipping';
 import { startAutopilotScheduler } from './modules/autopilot/scheduler';
+import { startMetaAdsScheduler } from './modules/meta-ads/scheduler';
+import { metaAdsRouter } from './routes/meta-ads';
 import { addressRouter } from './routes/address';
 import { orderTrackingRouter } from './routes/tracking';
 import { parcelDailyRouter } from './routes/parcel-daily/route';
@@ -64,6 +66,7 @@ app.use('/api/distributors', distributorRouter);
 app.use('/api/autopilot', autopilotRouter);
 app.use('/api/receipts', receiptRouter);
 app.use('/api/shipping', shippingRouter);
+app.use('/api/meta-ads', metaAdsRouter);
 app.use('/api/addresses', addressRouter);
 app.use('/api/tracking', orderTrackingRouter);
 app.use('/api/parcel-daily', parcelDailyRouter);
@@ -107,6 +110,7 @@ server.listen(port, '0.0.0.0', () => {
 });
 
 startAutopilotScheduler();
+startMetaAdsScheduler();
 
 if (process.env.NODE_ENV === 'production') {
   console.log('\n📅 Starting daily tracking automation...');

@@ -1,6 +1,7 @@
 import express from 'express';
 import StatsService from '../../modules/stats/service';
 import { monthOrdersCsv } from '../../modules/stats/export';
+import { buildReport, ORDER_COLUMNS, OrderColumn, REPORT_SECTIONS, ReportSection } from '../../modules/stats/report';
 import { resolveMonthKey } from '../../utils/timezone';
 
 export const statsRouter = express.Router();
@@ -43,6 +44,40 @@ statsRouter.get('/daily', async (req, res) => {
   } catch (error) {
     console.error('Error fetching daily breakdown:', error);
     res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+});
+
+// A report staff put together: ?period=day&date=YYYY-MM-DD or
+// ?period=month&month=YYYY-MM, sections=a,b,c, columns=a,b,c, format=xlsx|csv.
+statsRouter.get('/report', async (req, res) => {
+  try {
+    const q = (k: string) => (typeof req.query[k] === 'string' ? (req.query[k] as string) : '');
+    const list = (k: string) => q(k).split(',').map((s) => s.trim()).filter(Boolean);
+
+    const period =
+      q('period') === 'day'
+        ? (() => {
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(q('date'))) throw new Error('Pick a day');
+            return { kind: 'day' as const, date: q('date') };
+          })()
+        : { kind: 'month' as const, month: resolveMonthKey(q('month') || undefined) };
+
+    const sections = list('sections').filter((s): s is ReportSection => (REPORT_SECTIONS as readonly string[]).includes(s));
+    if (!sections.length) throw new Error('Choose at least one thing to include');
+    const orderColumns = list('columns').filter((c): c is OrderColumn => c in ORDER_COLUMNS);
+
+    const report = await buildReport({
+      period,
+      sections,
+      orderColumns,
+      format: q('format') === 'csv' ? 'csv' : 'xlsx',
+    });
+    res.setHeader('Content-Type', report.contentType);
+    res.setHeader('Content-Disposition', `attachment; filename="${report.filename}"`);
+    res.status(200).send(report.body);
+  } catch (error: any) {
+    console.error('Error building report:', error);
+    res.status(400).json({ success: false, message: error.message ?? 'Could not build the report' });
   }
 });
 

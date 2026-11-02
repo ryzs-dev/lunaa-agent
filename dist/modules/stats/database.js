@@ -209,6 +209,7 @@ class StatsDatabase {
                 new_customers: Number((_c = row.new_customers) !== null && _c !== void 0 ? _c : 0),
                 returns: Number((_d = row.returns) !== null && _d !== void 0 ? _d : 0),
                 returned_value: Number((_e = row.returned_value) !== null && _e !== void 0 ? _e : 0),
+                ad_spend: row.ad_spend == null ? null : Number(row.ad_spend),
             });
         });
     }

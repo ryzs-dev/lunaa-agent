@@ -33,6 +33,7 @@ export type DailyBreakdownRow = {
   new_customers: number;
   returns: number;
   returned_value: number;
+  ad_spend: number | null;
 };
 
 export type RepeatOrderValue = {
@@ -298,6 +299,7 @@ class StatsDatabase {
       new_customers: Number(row.new_customers ?? 0),
       returns: Number(row.returns ?? 0),
       returned_value: Number(row.returned_value ?? 0),
+      ad_spend: row.ad_spend == null ? null : Number(row.ad_spend),
     }));
   }
 }

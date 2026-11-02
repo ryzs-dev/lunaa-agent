@@ -11,18 +11,14 @@ const SEND_EVERY_MS = 10 * 60 * 1000;
 const RECENT_DAYS = 7;
 // About 13 months, so the Ads page can compare with the same month last year.
 exports.BACKFILL_DAYS = 400;
-let syncing = false;
 let sending = false;
-async function runSync(days = RECENT_DAYS) {
-    if (syncing)
-        return { busy: true };
-    syncing = true;
-    try {
-        return await (0, sync_1.syncInsights)(days);
-    }
-    finally {
-        syncing = false;
-    }
+// Syncs run one after another, so a backfill for a newly added account waits
+// for the hourly sync instead of being skipped.
+let queue = Promise.resolve();
+function runSync(days = RECENT_DAYS, only) {
+    const run = queue.then(() => (0, sync_1.syncInsights)(days, only));
+    queue = run.catch(() => undefined);
+    return run;
 }
 async function runSend() {
     if (sending)

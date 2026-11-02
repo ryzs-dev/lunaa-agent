@@ -1,6 +1,6 @@
 import express from 'express';
 import { supabase } from '../modules/supabase';
-import { disconnect, publicSettings, updateSettings } from '../modules/meta-ads/settings';
+import { connection, disconnect, publicSettings, setExtraAccounts, trackedAccounts, updateSettings } from '../modules/meta-ads/settings';
 import { BACKFILL_DAYS, runSync } from '../modules/meta-ads/scheduler';
 import {
   clearPending,
@@ -144,6 +144,30 @@ metaAdsRouter.get('/campaigns', async (req, res) => {
   }
 });
 
+// Every ad account the saved sign-in can open, to choose extra ones from.
+metaAdsRouter.get('/accounts/available', async (_req, res) => {
+  try {
+    res.json({ success: true, ...(await listAdAccounts()) });
+  } catch (error: any) {
+    res.status(400).json({ success: false, message: error?.response?.data?.error?.message ?? error.message });
+  }
+});
+
+// The extra ad accounts synced for the Ads page (the main one stays as is).
+metaAdsRouter.put('/accounts', async (req, res) => {
+  try {
+    const ids = req.body?.extra;
+    if (!Array.isArray(ids) || ids.some((id) => typeof id !== 'string')) throw new Error('Send a list of ad account IDs');
+    const { settings, added } = await setExtraAccounts(ids);
+    if (added.length) {
+      runSync(BACKFILL_DAYS, added).catch((e) => console.error('[meta-ads] backfill failed:', e.message));
+    }
+    res.json({ success: true, settings });
+  } catch (error: any) {
+    res.status(400).json({ success: false, message: error.message });
+  }
+});
+
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 // Everything the Ads page shows for a date range: totals, each day with the
@@ -160,17 +184,31 @@ metaAdsRouter.get('/report', async (req, res) => {
       return res.status(400).json({ success: false, message: 'Pick at most about a year at a time.' });
     }
 
+    const conn = await connection();
+    if (!conn) return res.status(400).json({ success: false, message: 'Connect Meta ads first.' });
+    const tracked = trackedAccounts(conn.row);
+    // "all" adds up the accounts in the main account's currency.
+    const wanted = String(req.query.account ?? 'all');
+    const chosen =
+      wanted === 'all'
+        ? tracked.filter((a) => a.currency === conn.row.currency)
+        : tracked.filter((a) => a.id === wanted);
+    if (!chosen.length) return res.status(400).json({ success: false, message: 'That ad account isn’t connected.' });
+    const ids = chosen.map((a) => a.id);
+    const currency = chosen[0].currency;
+
     const [campaigns, insights, sales, first, last] = await Promise.all([
-      campaignTotals(from, to),
+      campaignTotals(from, to, ids),
       supabase
         .from('meta_ad_insights')
         .select('date, spend, impressions, clicks, conversations, purchases, purchase_value')
+        .in('ad_account_id', ids)
         .gte('date', from)
         .lte('date', to)
         .limit(20000),
       supabase.rpc('get_sales_by_day', { first_day: from, last_day: to }),
-      supabase.from('meta_ad_insights').select('date').order('date').limit(1),
-      supabase.from('meta_ad_insights').select('date').gt('spend', 0).order('date', { ascending: false }).limit(1),
+      supabase.from('meta_ad_insights').select('date').in('ad_account_id', ids).order('date').limit(1),
+      supabase.from('meta_ad_insights').select('date').in('ad_account_id', ids).gt('spend', 0).order('date', { ascending: false }).limit(1),
     ]);
     if (insights.error) throw insights.error;
     if (sales.error) throw sales.error;
@@ -220,6 +258,9 @@ metaAdsRouter.get('/report', async (req, res) => {
       success: true,
       from,
       to,
+      account: wanted === 'all' ? 'all' : ids[0],
+      accounts: chosen,
+      currency,
       data_since: first.data?.[0]?.date ?? null,
       last_spend_day: last.data?.[0]?.date ?? null,
       totals,
@@ -231,13 +272,22 @@ metaAdsRouter.get('/report', async (req, res) => {
   }
 });
 
-export async function campaignTotals(from: string, to: string) {
+// Without `accounts`, the accounts in the main account's currency (what the
+// dashboard and the export show beside ringgit sales).
+export async function campaignTotals(from: string, to: string, accounts?: string[]) {
+  let ids = accounts;
+  if (!ids) {
+    const conn = await connection();
+    ids = conn ? trackedAccounts(conn.row).filter((a) => a.currency === conn.row.currency).map((a) => a.id) : [];
+  }
+  if (!ids.length) return [];
   const { data, error } = await supabase
     .from('meta_ad_insights')
-    .select('date, campaign_id, campaign_name, spend, impressions, reach, clicks, conversations, purchases, purchase_value')
+    .select('date, ad_account_id, campaign_id, campaign_name, spend, impressions, reach, clicks, conversations, purchases, purchase_value')
+    .in('ad_account_id', ids)
     .gte('date', from)
     .lte('date', to)
-    .limit(10000);
+    .limit(20000);
   if (error) throw error;
 
   const byCampaign = new Map<string, any>();
@@ -245,6 +295,7 @@ export async function campaignTotals(from: string, to: string) {
     const c = byCampaign.get(r.campaign_id) ?? {
       campaign_id: r.campaign_id,
       campaign_name: r.campaign_name,
+      ad_account_id: r.ad_account_id,
       spend: 0,
       impressions: 0,
       reach: 0,

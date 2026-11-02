@@ -142,11 +142,38 @@ exports.metaAdsRouter.get('/campaigns', async (req, res) => {
         res.status(500).json({ success: false, message: error.message });
     }
 });
+// Every ad account the saved sign-in can open, to choose extra ones from.
+exports.metaAdsRouter.get('/accounts/available', async (_req, res) => {
+    var _a, _b, _c, _d;
+    try {
+        res.json(Object.assign({ success: true }, (await (0, oauth_1.listAdAccounts)())));
+    }
+    catch (error) {
+        res.status(400).json({ success: false, message: (_d = (_c = (_b = (_a = error === null || error === void 0 ? void 0 : error.response) === null || _a === void 0 ? void 0 : _a.data) === null || _b === void 0 ? void 0 : _b.error) === null || _c === void 0 ? void 0 : _c.message) !== null && _d !== void 0 ? _d : error.message });
+    }
+});
+// The extra ad accounts synced for the Ads page (the main one stays as is).
+exports.metaAdsRouter.put('/accounts', async (req, res) => {
+    var _a;
+    try {
+        const ids = (_a = req.body) === null || _a === void 0 ? void 0 : _a.extra;
+        if (!Array.isArray(ids) || ids.some((id) => typeof id !== 'string'))
+            throw new Error('Send a list of ad account IDs');
+        const { settings, added } = await (0, settings_1.setExtraAccounts)(ids);
+        if (added.length) {
+            (0, scheduler_1.runSync)(scheduler_1.BACKFILL_DAYS, added).catch((e) => console.error('[meta-ads] backfill failed:', e.message));
+        }
+        res.json({ success: true, settings });
+    }
+    catch (error) {
+        res.status(400).json({ success: false, message: error.message });
+    }
+});
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 // Everything the Ads page shows for a date range: totals, each day with the
 // CRM's sales beside the spend, and each campaign. Days are Malaysia days.
 exports.metaAdsRouter.get('/report', async (req, res) => {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m;
     try {
         const from = String((_a = req.query.from) !== null && _a !== void 0 ? _a : '');
         const to = String((_b = req.query.to) !== null && _b !== void 0 ? _b : '');
@@ -157,31 +184,45 @@ exports.metaAdsRouter.get('/report', async (req, res) => {
         if (span > 400) {
             return res.status(400).json({ success: false, message: 'Pick at most about a year at a time.' });
         }
+        const conn = await (0, settings_1.connection)();
+        if (!conn)
+            return res.status(400).json({ success: false, message: 'Connect Meta ads first.' });
+        const tracked = (0, settings_1.trackedAccounts)(conn.row);
+        // "all" adds up the accounts in the main account's currency.
+        const wanted = String((_c = req.query.account) !== null && _c !== void 0 ? _c : 'all');
+        const chosen = wanted === 'all'
+            ? tracked.filter((a) => a.currency === conn.row.currency)
+            : tracked.filter((a) => a.id === wanted);
+        if (!chosen.length)
+            return res.status(400).json({ success: false, message: 'That ad account isn’t connected.' });
+        const ids = chosen.map((a) => a.id);
+        const currency = chosen[0].currency;
         const [campaigns, insights, sales, first, last] = await Promise.all([
-            campaignTotals(from, to),
+            campaignTotals(from, to, ids),
             supabase_1.supabase
                 .from('meta_ad_insights')
                 .select('date, spend, impressions, clicks, conversations, purchases, purchase_value')
+                .in('ad_account_id', ids)
                 .gte('date', from)
                 .lte('date', to)
                 .limit(20000),
             supabase_1.supabase.rpc('get_sales_by_day', { first_day: from, last_day: to }),
-            supabase_1.supabase.from('meta_ad_insights').select('date').order('date').limit(1),
-            supabase_1.supabase.from('meta_ad_insights').select('date').gt('spend', 0).order('date', { ascending: false }).limit(1),
+            supabase_1.supabase.from('meta_ad_insights').select('date').in('ad_account_id', ids).order('date').limit(1),
+            supabase_1.supabase.from('meta_ad_insights').select('date').in('ad_account_id', ids).gt('spend', 0).order('date', { ascending: false }).limit(1),
         ]);
         if (insights.error)
             throw insights.error;
         if (sales.error)
             throw sales.error;
         const ads = new Map();
-        for (const r of (_c = insights.data) !== null && _c !== void 0 ? _c : []) {
-            const d = (_d = ads.get(r.date)) !== null && _d !== void 0 ? _d : { spend: 0, impressions: 0, clicks: 0, conversations: 0, purchases: 0, purchase_value: 0 };
+        for (const r of (_d = insights.data) !== null && _d !== void 0 ? _d : []) {
+            const d = (_e = ads.get(r.date)) !== null && _e !== void 0 ? _e : { spend: 0, impressions: 0, clicks: 0, conversations: 0, purchases: 0, purchase_value: 0 };
             for (const k of Object.keys(d))
                 d[k] += Number(r[k]) || 0;
             ads.set(r.date, d);
         }
         const round = (n) => Math.round(n * 100) / 100;
-        const days = ((_e = sales.data) !== null && _e !== void 0 ? _e : []).map((s) => {
+        const days = ((_f = sales.data) !== null && _f !== void 0 ? _f : []).map((s) => {
             var _a, _b, _c, _d, _e;
             const a = (_a = ads.get(s.day)) !== null && _a !== void 0 ? _a : {};
             return {
@@ -217,8 +258,11 @@ exports.metaAdsRouter.get('/report', async (req, res) => {
             success: true,
             from,
             to,
-            data_since: (_h = (_g = (_f = first.data) === null || _f === void 0 ? void 0 : _f[0]) === null || _g === void 0 ? void 0 : _g.date) !== null && _h !== void 0 ? _h : null,
-            last_spend_day: (_l = (_k = (_j = last.data) === null || _j === void 0 ? void 0 : _j[0]) === null || _k === void 0 ? void 0 : _k.date) !== null && _l !== void 0 ? _l : null,
+            account: wanted === 'all' ? 'all' : ids[0],
+            accounts: chosen,
+            currency,
+            data_since: (_j = (_h = (_g = first.data) === null || _g === void 0 ? void 0 : _g[0]) === null || _h === void 0 ? void 0 : _h.date) !== null && _j !== void 0 ? _j : null,
+            last_spend_day: (_m = (_l = (_k = last.data) === null || _k === void 0 ? void 0 : _k[0]) === null || _l === void 0 ? void 0 : _l.date) !== null && _m !== void 0 ? _m : null,
             totals,
             days,
             campaigns,
@@ -228,14 +272,24 @@ exports.metaAdsRouter.get('/report', async (req, res) => {
         res.status(500).json({ success: false, message: error.message });
     }
 });
-async function campaignTotals(from, to) {
+// Without `accounts`, the accounts in the main account's currency (what the
+// dashboard and the export show beside ringgit sales).
+async function campaignTotals(from, to, accounts) {
     var _a;
+    let ids = accounts;
+    if (!ids) {
+        const conn = await (0, settings_1.connection)();
+        ids = conn ? (0, settings_1.trackedAccounts)(conn.row).filter((a) => a.currency === conn.row.currency).map((a) => a.id) : [];
+    }
+    if (!ids.length)
+        return [];
     const { data, error } = await supabase_1.supabase
         .from('meta_ad_insights')
-        .select('date, campaign_id, campaign_name, spend, impressions, reach, clicks, conversations, purchases, purchase_value')
+        .select('date, ad_account_id, campaign_id, campaign_name, spend, impressions, reach, clicks, conversations, purchases, purchase_value')
+        .in('ad_account_id', ids)
         .gte('date', from)
         .lte('date', to)
-        .limit(10000);
+        .limit(20000);
     if (error)
         throw error;
     const byCampaign = new Map();
@@ -243,6 +297,7 @@ async function campaignTotals(from, to) {
         const c = (_a = byCampaign.get(r.campaign_id)) !== null && _a !== void 0 ? _a : {
             campaign_id: r.campaign_id,
             campaign_name: r.campaign_name,
+            ad_account_id: r.ad_account_id,
             spend: 0,
             impressions: 0,
             reach: 0,

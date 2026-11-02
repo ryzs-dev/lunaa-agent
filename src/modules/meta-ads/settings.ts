@@ -2,7 +2,10 @@ import { supabase } from '../supabase';
 import { decryptSecret, encryptSecret } from '../receipts/secret';
 import { graphError, graphGet, normaliseAccountId } from './graph';
 
+export type TrackedAccount = { id: string; name: string | null; currency: string | null; timezone: string | null };
+
 export type MetaAdsRow = {
+  extra_accounts: TrackedAccount[];
   ad_account_id: string | null;
   account_name: string | null;
   currency: string | null;
@@ -37,6 +40,13 @@ async function saveRow(patch: Partial<MetaAdsRow>) {
   if (error) throw error;
 }
 
+// The main account first, then the extra ones shown on the Ads page.
+export function trackedAccounts(row: MetaAdsRow): TrackedAccount[] {
+  if (!row.ad_account_id) return [];
+  const main = { id: row.ad_account_id, name: row.account_name, currency: row.currency, timezone: row.timezone };
+  return [main, ...(row.extra_accounts ?? []).filter((a) => a.id !== row.ad_account_id)];
+}
+
 // Ready to call Meta: an account and a token that still decrypts.
 export async function connection() {
   const row = await getRow();
@@ -62,6 +72,7 @@ export async function publicSettings() {
     connected: Boolean(row.ad_account_id && row.token_encrypted),
     ad_account_id: row.ad_account_id,
     account_name: row.account_name,
+    accounts: trackedAccounts(row),
     currency: row.currency,
     timezone: row.timezone,
     token_hint: row.token_hint,
@@ -128,6 +139,10 @@ export async function updateSettings(input: Update) {
       patch.connected_by = input.by ?? null;
       patch.token_expires_at = input.expires_at ?? null;
     }
+    if (accountChanged) {
+      // The new main account can't also be an extra one.
+      patch.extra_accounts = (row.extra_accounts ?? []).filter((a) => a.id !== accountId);
+    }
     if (!row.connected_at || accountChanged) {
       patch.connected_at = new Date().toISOString();
       patch.last_sync_at = null;
@@ -156,6 +171,9 @@ export async function updateSettings(input: Update) {
   }
 
   await saveRow(patch);
+  if (accountChanged && row.ad_account_id && !(row.extra_accounts ?? []).some((a) => a.id === row.ad_account_id)) {
+    await deleteAccountRows([row.ad_account_id]);
+  }
   return { settings: await publicSettings(), needsBackfill: Boolean(patch.connected_at) };
 }
 
@@ -171,6 +189,7 @@ export async function disconnect() {
     connected_via: null,
     connected_by: null,
     token_expires_at: null,
+    extra_accounts: [],
     connected_at: null,
     last_sync_at: null,
     last_sync_error: null,
@@ -184,4 +203,40 @@ export async function markSync(result: { error?: string | null }) {
     last_sync_at: new Date().toISOString(),
     last_sync_error: result.error ?? null,
   });
+}
+
+async function deleteAccountRows(ids: string[]) {
+  if (!ids.length) return;
+  const { error } = await supabase.from('meta_ad_insights').delete().in('ad_account_id', ids);
+  if (error) throw error;
+}
+
+// Sets which other ad accounts are synced for the Ads page. Each one is checked
+// with the saved sign-in first; dropping one deletes its stored numbers.
+export async function setExtraAccounts(ids: string[]) {
+  const conn = await connection();
+  if (!conn) throw new Error('Connect Meta ads first');
+  const { row, token } = conn;
+  const wanted = [...new Set(ids.map((id) => normaliseAccountId(id)).filter((id) => id && id !== row.ad_account_id))];
+  if (wanted.length > 10) throw new Error('Pick at most 10 extra ad accounts');
+
+  const current = new Map((row.extra_accounts ?? []).map((a) => [a.id, a]));
+  const next: TrackedAccount[] = [];
+  for (const id of wanted) {
+    const known = current.get(id);
+    if (known) {
+      next.push(known);
+      continue;
+    }
+    try {
+      const a = await graphGet(id, token, { fields: 'name,currency,timezone_name' });
+      next.push({ id, name: a.name ?? null, currency: a.currency ?? null, timezone: a.timezone_name ?? null });
+    } catch (error) {
+      throw new Error(`Meta refused ad account ${id}: ${graphError(error)}`);
+    }
+  }
+
+  await saveRow({ extra_accounts: next });
+  await deleteAccountRows([...current.keys()].filter((id) => !wanted.includes(id)));
+  return { settings: await publicSettings(), added: next.filter((a) => !current.has(a.id)).map((a) => a.id) };
 }

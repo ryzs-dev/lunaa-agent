@@ -1,11 +1,13 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getRow = getRow;
+exports.trackedAccounts = trackedAccounts;
 exports.connection = connection;
 exports.publicSettings = publicSettings;
 exports.updateSettings = updateSettings;
 exports.disconnect = disconnect;
 exports.markSync = markSync;
+exports.setExtraAccounts = setExtraAccounts;
 const supabase_1 = require("../supabase");
 const secret_1 = require("../receipts/secret");
 const graph_1 = require("./graph");
@@ -22,6 +24,14 @@ async function saveRow(patch) {
         .eq('id', 1);
     if (error)
         throw error;
+}
+// The main account first, then the extra ones shown on the Ads page.
+function trackedAccounts(row) {
+    var _a;
+    if (!row.ad_account_id)
+        return [];
+    const main = { id: row.ad_account_id, name: row.account_name, currency: row.currency, timezone: row.timezone };
+    return [main, ...((_a = row.extra_accounts) !== null && _a !== void 0 ? _a : []).filter((a) => a.id !== row.ad_account_id)];
 }
 // Ready to call Meta: an account and a token that still decrypts.
 async function connection() {
@@ -48,6 +58,7 @@ async function publicSettings() {
         connected: Boolean(row.ad_account_id && row.token_encrypted),
         ad_account_id: row.ad_account_id,
         account_name: row.account_name,
+        accounts: trackedAccounts(row),
         currency: row.currency,
         timezone: row.timezone,
         token_hint: row.token_hint,
@@ -72,7 +83,7 @@ async function publicSettings() {
 // Checks every new value against Meta before saving, so a wrong ID or a token
 // without access fails here with Meta's own reason, not later in a sync.
 async function updateSettings(input) {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o;
     const row = await getRow();
     const patch = {};
     const token = ((_a = input.access_token) === null || _a === void 0 ? void 0 : _a.trim())
@@ -103,6 +114,10 @@ async function updateSettings(input) {
             patch.connected_by = (_j = input.by) !== null && _j !== void 0 ? _j : null;
             patch.token_expires_at = (_k = input.expires_at) !== null && _k !== void 0 ? _k : null;
         }
+        if (accountChanged) {
+            // The new main account can't also be an extra one.
+            patch.extra_accounts = ((_l = row.extra_accounts) !== null && _l !== void 0 ? _l : []).filter((a) => a.id !== accountId);
+        }
         if (!row.connected_at || accountChanged) {
             patch.connected_at = new Date().toISOString();
             patch.last_sync_at = null;
@@ -110,7 +125,7 @@ async function updateSettings(input) {
         }
     }
     if (input.dataset_id !== undefined) {
-        const datasetId = ((_l = input.dataset_id) === null || _l === void 0 ? void 0 : _l.replace(/\D/g, '')) || null;
+        const datasetId = ((_m = input.dataset_id) === null || _m === void 0 ? void 0 : _m.replace(/\D/g, '')) || null;
         if (datasetId && datasetId !== row.dataset_id) {
             try {
                 await (0, graph_1.graphGet)(datasetId, token, { fields: 'name' });
@@ -131,6 +146,9 @@ async function updateSettings(input) {
             patch.conversions_since = new Date().toISOString();
     }
     await saveRow(patch);
+    if (accountChanged && row.ad_account_id && !((_o = row.extra_accounts) !== null && _o !== void 0 ? _o : []).some((a) => a.id === row.ad_account_id)) {
+        await deleteAccountRows([row.ad_account_id]);
+    }
     return { settings: await publicSettings(), needsBackfill: Boolean(patch.connected_at) };
 }
 async function disconnect() {
@@ -145,6 +163,7 @@ async function disconnect() {
         connected_via: null,
         connected_by: null,
         token_expires_at: null,
+        extra_accounts: [],
         connected_at: null,
         last_sync_at: null,
         last_sync_error: null,
@@ -159,4 +178,42 @@ async function markSync(result) {
         last_sync_at: new Date().toISOString(),
         last_sync_error: (_a = result.error) !== null && _a !== void 0 ? _a : null,
     });
+}
+async function deleteAccountRows(ids) {
+    if (!ids.length)
+        return;
+    const { error } = await supabase_1.supabase.from('meta_ad_insights').delete().in('ad_account_id', ids);
+    if (error)
+        throw error;
+}
+// Sets which other ad accounts are synced for the Ads page. Each one is checked
+// with the saved sign-in first; dropping one deletes its stored numbers.
+async function setExtraAccounts(ids) {
+    var _a, _b, _c, _d;
+    const conn = await connection();
+    if (!conn)
+        throw new Error('Connect Meta ads first');
+    const { row, token } = conn;
+    const wanted = [...new Set(ids.map((id) => (0, graph_1.normaliseAccountId)(id)).filter((id) => id && id !== row.ad_account_id))];
+    if (wanted.length > 10)
+        throw new Error('Pick at most 10 extra ad accounts');
+    const current = new Map(((_a = row.extra_accounts) !== null && _a !== void 0 ? _a : []).map((a) => [a.id, a]));
+    const next = [];
+    for (const id of wanted) {
+        const known = current.get(id);
+        if (known) {
+            next.push(known);
+            continue;
+        }
+        try {
+            const a = await (0, graph_1.graphGet)(id, token, { fields: 'name,currency,timezone_name' });
+            next.push({ id, name: (_b = a.name) !== null && _b !== void 0 ? _b : null, currency: (_c = a.currency) !== null && _c !== void 0 ? _c : null, timezone: (_d = a.timezone_name) !== null && _d !== void 0 ? _d : null });
+        }
+        catch (error) {
+            throw new Error(`Meta refused ad account ${id}: ${(0, graph_1.graphError)(error)}`);
+        }
+    }
+    await saveRow({ extra_accounts: next });
+    await deleteAccountRows([...current.keys()].filter((id) => !wanted.includes(id)));
+    return { settings: await publicSettings(), added: next.filter((a) => !current.has(a.id)).map((a) => a.id) };
 }

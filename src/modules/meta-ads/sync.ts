@@ -1,5 +1,5 @@
 import { supabase } from '../supabase';
-import { connection, markSync } from './settings';
+import { connection, markSync, trackedAccounts, TrackedAccount } from './settings';
 import { graphError, graphGet } from './graph';
 
 type Action = { action_type: string; value: string };
@@ -39,22 +39,41 @@ function chunks(since: string, until: string, size: number) {
   return out;
 }
 
-// Pulls campaign numbers per day for the last `days` days (the ad account's
+// Pulls campaign numbers per day for the last `days` days (each ad account's
 // own calendar) and replaces what was stored for those days. Meta keeps
 // revising recent days as late conversions come in, so recent days are re-read.
-export async function syncInsights(days: number) {
+// `only` limits it to some accounts, e.g. one just added.
+export async function syncInsights(days: number, only?: string[]) {
   const conn = await connection();
   if (!conn) return { skipped: true as const };
 
-  const tz = conn.row.timezone || 'Asia/Kuala_Lumpur';
+  const accounts = trackedAccounts(conn.row).filter((a) => !only || only.includes(a.id));
+  const results: Record<string, unknown>[] = [];
+  const failures: string[] = [];
+  for (const account of accounts) {
+    try {
+      results.push({ account: account.id, ...(await syncAccount(account, conn.token, days)) });
+    } catch (error: any) {
+      const message = error?.response ? graphError(error) : error?.message ?? String(error);
+      failures.push(accounts.length > 1 ? `${account.name ?? account.id}: ${message}` : message);
+    }
+  }
+
+  // A partial sync (only some accounts) doesn't clear an error from the others.
+  if (!only || failures.length) await markSync({ error: failures.join(' · ') || null });
+  if (failures.length) throw new Error(failures.join(' · '));
+  return { accounts: results };
+}
+
+async function syncAccount(account: TrackedAccount, token: string, days: number) {
+  const tz = account.timezone || 'Asia/Kuala_Lumpur';
   const until = ymd(new Date(), tz);
   const since = ymd(new Date(Date.now() - (days - 1) * 86400000), tz);
 
-  try {
-    const rows: Record<string, any>[] = [];
-    // Long ranges go in 90-day pieces; Meta times out on a year of daily rows.
-    for (const range of chunks(since, until, 90)) {
-    let page: any = await graphGet(`${conn.row.ad_account_id}/insights`, conn.token, {
+  const rows: Record<string, any>[] = [];
+  // Long ranges go in 90-day pieces; Meta times out on a year of daily rows.
+  for (const range of chunks(since, until, 90)) {
+    let page: any = await graphGet(`${account.id}/insights`, token, {
       level: 'campaign',
       time_increment: 1,
       time_range: JSON.stringify(range),
@@ -65,6 +84,8 @@ export async function syncInsights(days: number) {
       for (const r of page.data ?? []) {
         rows.push({
           date: r.date_start,
+          ad_account_id: account.id,
+          currency: account.currency,
           campaign_id: r.campaign_id,
           campaign_name: r.campaign_name ?? null,
           spend: Number(r.spend) || 0,
@@ -78,26 +99,20 @@ export async function syncInsights(days: number) {
         });
       }
       if (!page.paging?.next) break;
-      page = await graphGet(page.paging.next, conn.token);
+      page = await graphGet(page.paging.next, token);
     }
-    }
-
-    const { error: delError } = await supabase
-      .from('meta_ad_insights')
-      .delete()
-      .gte('date', since)
-      .lte('date', until);
-    if (delError) throw delError;
-    for (let i = 0; i < rows.length; i += 500) {
-      const { error } = await supabase.from('meta_ad_insights').insert(rows.slice(i, i + 500));
-      if (error) throw error;
-    }
-
-    await markSync({});
-    return { since, until, rows: rows.length };
-  } catch (error: any) {
-    const message = error?.response ? graphError(error) : error?.message ?? String(error);
-    await markSync({ error: message });
-    throw new Error(message);
   }
+
+  const { error: delError } = await supabase
+    .from('meta_ad_insights')
+    .delete()
+    .eq('ad_account_id', account.id)
+    .gte('date', since)
+    .lte('date', until);
+  if (delError) throw delError;
+  for (let i = 0; i < rows.length; i += 500) {
+    const { error } = await supabase.from('meta_ad_insights').insert(rows.slice(i, i + 500));
+    if (error) throw error;
+  }
+  return { since, until, rows: rows.length };
 }

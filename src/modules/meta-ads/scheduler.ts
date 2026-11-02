@@ -5,7 +5,8 @@ const SYNC_EVERY_MS = 60 * 60 * 1000;
 const SEND_EVERY_MS = 10 * 60 * 1000;
 // Meta keeps adjusting the last week as late conversions are counted.
 const RECENT_DAYS = 7;
-export const BACKFILL_DAYS = 90;
+// About 13 months, so the Ads page can compare with the same month last year.
+export const BACKFILL_DAYS = 400;
 
 let syncing = false;
 let sending = false;

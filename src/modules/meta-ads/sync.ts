@@ -27,6 +27,18 @@ function ymd(date: Date, timeZone: string) {
   return new Intl.DateTimeFormat('en-CA', { timeZone }).format(date);
 }
 
+function chunks(since: string, until: string, size: number) {
+  const out: { since: string; until: string }[] = [];
+  let start = new Date(`${since}T00:00:00Z`);
+  const end = new Date(`${until}T00:00:00Z`);
+  while (start <= end) {
+    const stop = new Date(Math.min(start.getTime() + (size - 1) * 86400000, end.getTime()));
+    out.push({ since: start.toISOString().slice(0, 10), until: stop.toISOString().slice(0, 10) });
+    start = new Date(stop.getTime() + 86400000);
+  }
+  return out;
+}
+
 // Pulls campaign numbers per day for the last `days` days (the ad account's
 // own calendar) and replaces what was stored for those days. Meta keeps
 // revising recent days as late conversions come in, so recent days are re-read.
@@ -40,10 +52,12 @@ export async function syncInsights(days: number) {
 
   try {
     const rows: Record<string, any>[] = [];
+    // Long ranges go in 90-day pieces; Meta times out on a year of daily rows.
+    for (const range of chunks(since, until, 90)) {
     let page: any = await graphGet(`${conn.row.ad_account_id}/insights`, conn.token, {
       level: 'campaign',
       time_increment: 1,
-      time_range: JSON.stringify({ since, until }),
+      time_range: JSON.stringify(range),
       fields: 'campaign_id,campaign_name,spend,impressions,reach,clicks,actions,action_values',
       limit: 500,
     });
@@ -65,6 +79,7 @@ export async function syncInsights(days: number) {
       }
       if (!page.paging?.next) break;
       page = await graphGet(page.paging.next, conn.token);
+    }
     }
 
     const { error: delError } = await supabase

@@ -142,11 +142,95 @@ exports.metaAdsRouter.get('/campaigns', async (req, res) => {
         res.status(500).json({ success: false, message: error.message });
     }
 });
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
+// Everything the Ads page shows for a date range: totals, each day with the
+// CRM's sales beside the spend, and each campaign. Days are Malaysia days.
+exports.metaAdsRouter.get('/report', async (req, res) => {
+    var _a, _b, _c, _d, _e, _f, _g, _h;
+    try {
+        const from = String((_a = req.query.from) !== null && _a !== void 0 ? _a : '');
+        const to = String((_b = req.query.to) !== null && _b !== void 0 ? _b : '');
+        if (!DAY.test(from) || !DAY.test(to) || from > to) {
+            return res.status(400).json({ success: false, message: 'Pick a start and end date.' });
+        }
+        const span = (Date.parse(to) - Date.parse(from)) / 86400000;
+        if (span > 400) {
+            return res.status(400).json({ success: false, message: 'Pick at most about a year at a time.' });
+        }
+        const [campaigns, insights, sales, first] = await Promise.all([
+            campaignTotals(from, to),
+            supabase_1.supabase
+                .from('meta_ad_insights')
+                .select('date, spend, impressions, clicks, conversations, purchases, purchase_value')
+                .gte('date', from)
+                .lte('date', to)
+                .limit(20000),
+            supabase_1.supabase.rpc('get_sales_by_day', { first_day: from, last_day: to }),
+            supabase_1.supabase.from('meta_ad_insights').select('date').order('date').limit(1),
+        ]);
+        if (insights.error)
+            throw insights.error;
+        if (sales.error)
+            throw sales.error;
+        const ads = new Map();
+        for (const r of (_c = insights.data) !== null && _c !== void 0 ? _c : []) {
+            const d = (_d = ads.get(r.date)) !== null && _d !== void 0 ? _d : { spend: 0, impressions: 0, clicks: 0, conversations: 0, purchases: 0, purchase_value: 0 };
+            for (const k of Object.keys(d))
+                d[k] += Number(r[k]) || 0;
+            ads.set(r.date, d);
+        }
+        const round = (n) => Math.round(n * 100) / 100;
+        const days = ((_e = sales.data) !== null && _e !== void 0 ? _e : []).map((s) => {
+            var _a, _b, _c, _d, _e;
+            const a = (_a = ads.get(s.day)) !== null && _a !== void 0 ? _a : {};
+            return {
+                date: s.day,
+                spend: round((_b = a.spend) !== null && _b !== void 0 ? _b : 0),
+                impressions: (_c = a.impressions) !== null && _c !== void 0 ? _c : 0,
+                clicks: (_d = a.clicks) !== null && _d !== void 0 ? _d : 0,
+                conversations: (_e = a.conversations) !== null && _e !== void 0 ? _e : 0,
+                orders: Number(s.orders),
+                revenue: Number(s.revenue),
+                chat_orders: Number(s.chat_orders),
+                chat_revenue: Number(s.chat_revenue),
+                new_customers: Number(s.new_customers),
+            };
+        });
+        const sum = (key) => days.reduce((t, d) => t + d[key], 0);
+        const purchases = campaigns.reduce((t, c) => t + c.purchases, 0);
+        const purchaseValue = campaigns.reduce((t, c) => t + c.purchase_value, 0);
+        const totals = {
+            spend: round(sum('spend')),
+            impressions: sum('impressions'),
+            clicks: sum('clicks'),
+            conversations: sum('conversations'),
+            purchases,
+            purchase_value: round(purchaseValue),
+            orders: sum('orders'),
+            revenue: round(sum('revenue')),
+            chat_orders: sum('chat_orders'),
+            chat_revenue: round(sum('chat_revenue')),
+            new_customers: sum('new_customers'),
+        };
+        res.json({
+            success: true,
+            from,
+            to,
+            data_since: (_h = (_g = (_f = first.data) === null || _f === void 0 ? void 0 : _f[0]) === null || _g === void 0 ? void 0 : _g.date) !== null && _h !== void 0 ? _h : null,
+            totals,
+            days,
+            campaigns,
+        });
+    }
+    catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
 async function campaignTotals(from, to) {
     var _a;
     const { data, error } = await supabase_1.supabase
         .from('meta_ad_insights')
-        .select('campaign_id, campaign_name, spend, impressions, reach, clicks, conversations, purchases, purchase_value')
+        .select('date, campaign_id, campaign_name, spend, impressions, reach, clicks, conversations, purchases, purchase_value')
         .gte('date', from)
         .lte('date', to)
         .limit(10000);
@@ -164,13 +248,22 @@ async function campaignTotals(from, to) {
             conversations: 0,
             purchases: 0,
             purchase_value: 0,
+            first_day: null,
+            last_day: null,
         };
+        if (Number(r.spend) > 0) {
+            if (!c.first_day || r.date < c.first_day)
+                c.first_day = r.date;
+            if (!c.last_day || r.date > c.last_day)
+                c.last_day = r.date;
+        }
         for (const key of ['spend', 'impressions', 'reach', 'clicks', 'conversations', 'purchases', 'purchase_value']) {
             c[key] += Number(r[key]) || 0;
         }
         byCampaign.set(r.campaign_id, c);
     }
     return [...byCampaign.values()]
-        .map((c) => (Object.assign(Object.assign({}, c), { spend: Math.round(c.spend * 100) / 100, cost_per_conversation: c.conversations ? Math.round((c.spend / c.conversations) * 100) / 100 : null, roas: c.spend ? Math.round((c.purchase_value / c.spend) * 100) / 100 : null })))
+        .map((c) => (Object.assign(Object.assign({}, c), { spend: Math.round(c.spend * 100) / 100, purchase_value: Math.round(c.purchase_value * 100) / 100, ctr: c.impressions ? Math.round((c.clicks / c.impressions) * 10000) / 100 : null, cost_per_conversation: c.conversations ? Math.round((c.spend / c.conversations) * 100) / 100 : null, roas: c.spend ? Math.round((c.purchase_value / c.spend) * 100) / 100 : null })))
+        .filter((c) => c.spend > 0 || c.impressions > 0)
         .sort((a, b) => b.spend - a.spend);
 }

@@ -144,10 +144,95 @@ metaAdsRouter.get('/campaigns', async (req, res) => {
   }
 });
 
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+// Everything the Ads page shows for a date range: totals, each day with the
+// CRM's sales beside the spend, and each campaign. Days are Malaysia days.
+metaAdsRouter.get('/report', async (req, res) => {
+  try {
+    const from = String(req.query.from ?? '');
+    const to = String(req.query.to ?? '');
+    if (!DAY.test(from) || !DAY.test(to) || from > to) {
+      return res.status(400).json({ success: false, message: 'Pick a start and end date.' });
+    }
+    const span = (Date.parse(to) - Date.parse(from)) / 86400000;
+    if (span > 400) {
+      return res.status(400).json({ success: false, message: 'Pick at most about a year at a time.' });
+    }
+
+    const [campaigns, insights, sales, first] = await Promise.all([
+      campaignTotals(from, to),
+      supabase
+        .from('meta_ad_insights')
+        .select('date, spend, impressions, clicks, conversations, purchases, purchase_value')
+        .gte('date', from)
+        .lte('date', to)
+        .limit(20000),
+      supabase.rpc('get_sales_by_day', { first_day: from, last_day: to }),
+      supabase.from('meta_ad_insights').select('date').order('date').limit(1),
+    ]);
+    if (insights.error) throw insights.error;
+    if (sales.error) throw sales.error;
+
+    const ads = new Map<string, any>();
+    for (const r of insights.data ?? []) {
+      const d = ads.get(r.date) ?? { spend: 0, impressions: 0, clicks: 0, conversations: 0, purchases: 0, purchase_value: 0 };
+      for (const k of Object.keys(d)) d[k] += Number((r as any)[k]) || 0;
+      ads.set(r.date, d);
+    }
+
+    const round = (n: number) => Math.round(n * 100) / 100;
+    const days = (sales.data ?? []).map((s: any) => {
+      const a = ads.get(s.day) ?? {};
+      return {
+        date: s.day,
+        spend: round(a.spend ?? 0),
+        impressions: a.impressions ?? 0,
+        clicks: a.clicks ?? 0,
+        conversations: a.conversations ?? 0,
+        orders: Number(s.orders),
+        revenue: Number(s.revenue),
+        chat_orders: Number(s.chat_orders),
+        chat_revenue: Number(s.chat_revenue),
+        new_customers: Number(s.new_customers),
+      };
+    });
+
+    const sum = (key: string) => days.reduce((t: number, d: any) => t + d[key], 0);
+    const purchases = campaigns.reduce((t, c) => t + c.purchases, 0);
+    const purchaseValue = campaigns.reduce((t, c) => t + c.purchase_value, 0);
+    const totals = {
+      spend: round(sum('spend')),
+      impressions: sum('impressions'),
+      clicks: sum('clicks'),
+      conversations: sum('conversations'),
+      purchases,
+      purchase_value: round(purchaseValue),
+      orders: sum('orders'),
+      revenue: round(sum('revenue')),
+      chat_orders: sum('chat_orders'),
+      chat_revenue: round(sum('chat_revenue')),
+      new_customers: sum('new_customers'),
+    };
+
+    res.json({
+      success: true,
+      from,
+      to,
+      data_since: first.data?.[0]?.date ?? null,
+      totals,
+      days,
+      campaigns,
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 export async function campaignTotals(from: string, to: string) {
   const { data, error } = await supabase
     .from('meta_ad_insights')
-    .select('campaign_id, campaign_name, spend, impressions, reach, clicks, conversations, purchases, purchase_value')
+    .select('date, campaign_id, campaign_name, spend, impressions, reach, clicks, conversations, purchases, purchase_value')
     .gte('date', from)
     .lte('date', to)
     .limit(10000);
@@ -165,7 +250,13 @@ export async function campaignTotals(from: string, to: string) {
       conversations: 0,
       purchases: 0,
       purchase_value: 0,
+      first_day: null as string | null,
+      last_day: null as string | null,
     };
+    if (Number(r.spend) > 0) {
+      if (!c.first_day || r.date < c.first_day) c.first_day = r.date;
+      if (!c.last_day || r.date > c.last_day) c.last_day = r.date;
+    }
     for (const key of ['spend', 'impressions', 'reach', 'clicks', 'conversations', 'purchases', 'purchase_value']) {
       c[key] += Number((r as any)[key]) || 0;
     }
@@ -175,8 +266,11 @@ export async function campaignTotals(from: string, to: string) {
     .map((c) => ({
       ...c,
       spend: Math.round(c.spend * 100) / 100,
+      purchase_value: Math.round(c.purchase_value * 100) / 100,
+      ctr: c.impressions ? Math.round((c.clicks / c.impressions) * 10000) / 100 : null,
       cost_per_conversation: c.conversations ? Math.round((c.spend / c.conversations) * 100) / 100 : null,
       roas: c.spend ? Math.round((c.purchase_value / c.spend) * 100) / 100 : null,
     }))
+    .filter((c) => c.spend > 0 || c.impressions > 0)
     .sort((a, b) => b.spend - a.spend);
 }

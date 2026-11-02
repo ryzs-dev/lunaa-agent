@@ -25,6 +25,17 @@ function pick(actions, types) {
 function ymd(date, timeZone) {
     return new Intl.DateTimeFormat('en-CA', { timeZone }).format(date);
 }
+function chunks(since, until, size) {
+    const out = [];
+    let start = new Date(`${since}T00:00:00Z`);
+    const end = new Date(`${until}T00:00:00Z`);
+    while (start <= end) {
+        const stop = new Date(Math.min(start.getTime() + (size - 1) * 86400000, end.getTime()));
+        out.push({ since: start.toISOString().slice(0, 10), until: stop.toISOString().slice(0, 10) });
+        start = new Date(stop.getTime() + 86400000);
+    }
+    return out;
+}
 // Pulls campaign numbers per day for the last `days` days (the ad account's
 // own calendar) and replaces what was stored for those days. Meta keeps
 // revising recent days as late conversions come in, so recent days are re-read.
@@ -38,32 +49,35 @@ async function syncInsights(days) {
     const since = ymd(new Date(Date.now() - (days - 1) * 86400000), tz);
     try {
         const rows = [];
-        let page = await (0, graph_1.graphGet)(`${conn.row.ad_account_id}/insights`, conn.token, {
-            level: 'campaign',
-            time_increment: 1,
-            time_range: JSON.stringify({ since, until }),
-            fields: 'campaign_id,campaign_name,spend,impressions,reach,clicks,actions,action_values',
-            limit: 500,
-        });
-        for (;;) {
-            for (const r of (_a = page.data) !== null && _a !== void 0 ? _a : []) {
-                rows.push({
-                    date: r.date_start,
-                    campaign_id: r.campaign_id,
-                    campaign_name: (_b = r.campaign_name) !== null && _b !== void 0 ? _b : null,
-                    spend: Number(r.spend) || 0,
-                    impressions: Number(r.impressions) || 0,
-                    reach: Number(r.reach) || 0,
-                    clicks: Number(r.clicks) || 0,
-                    conversations: pick(r.actions, CONVERSATION_TYPES),
-                    purchases: pick(r.actions, PURCHASE_TYPES),
-                    purchase_value: pick(r.action_values, PURCHASE_TYPES),
-                    synced_at: new Date().toISOString(),
-                });
+        // Long ranges go in 90-day pieces; Meta times out on a year of daily rows.
+        for (const range of chunks(since, until, 90)) {
+            let page = await (0, graph_1.graphGet)(`${conn.row.ad_account_id}/insights`, conn.token, {
+                level: 'campaign',
+                time_increment: 1,
+                time_range: JSON.stringify(range),
+                fields: 'campaign_id,campaign_name,spend,impressions,reach,clicks,actions,action_values',
+                limit: 500,
+            });
+            for (;;) {
+                for (const r of (_a = page.data) !== null && _a !== void 0 ? _a : []) {
+                    rows.push({
+                        date: r.date_start,
+                        campaign_id: r.campaign_id,
+                        campaign_name: (_b = r.campaign_name) !== null && _b !== void 0 ? _b : null,
+                        spend: Number(r.spend) || 0,
+                        impressions: Number(r.impressions) || 0,
+                        reach: Number(r.reach) || 0,
+                        clicks: Number(r.clicks) || 0,
+                        conversations: pick(r.actions, CONVERSATION_TYPES),
+                        purchases: pick(r.actions, PURCHASE_TYPES),
+                        purchase_value: pick(r.action_values, PURCHASE_TYPES),
+                        synced_at: new Date().toISOString(),
+                    });
+                }
+                if (!((_c = page.paging) === null || _c === void 0 ? void 0 : _c.next))
+                    break;
+                page = await (0, graph_1.graphGet)(page.paging.next, conn.token);
             }
-            if (!((_c = page.paging) === null || _c === void 0 ? void 0 : _c.next))
-                break;
-            page = await (0, graph_1.graphGet)(page.paging.next, conn.token);
         }
         const { error: delError } = await supabase_1.supabase
             .from('meta_ad_insights')

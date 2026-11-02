@@ -194,5 +194,23 @@ class StatsDatabase {
             });
         });
     }
+    async getDailyBreakdown(month) {
+        const { data, error } = await supabase_1.supabase.rpc('get_daily_breakdown', {
+            month_start: `${month}-01`,
+        });
+        if (error)
+            throw error;
+        return (data !== null && data !== void 0 ? data : []).map((row) => {
+            var _a, _b, _c, _d, _e;
+            return ({
+                day: row.day,
+                orders: Number((_a = row.orders) !== null && _a !== void 0 ? _a : 0),
+                revenue: Number((_b = row.revenue) !== null && _b !== void 0 ? _b : 0),
+                new_customers: Number((_c = row.new_customers) !== null && _c !== void 0 ? _c : 0),
+                returns: Number((_d = row.returns) !== null && _d !== void 0 ? _d : 0),
+                returned_value: Number((_e = row.returned_value) !== null && _e !== void 0 ? _e : 0),
+            });
+        });
+    }
 }
 exports.default = StatsDatabase;

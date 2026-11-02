@@ -36,6 +36,9 @@ class StatsService {
             charts: (_f = result.charts) !== null && _f !== void 0 ? _f : {},
         };
     }
+    async getDailyBreakdown(month) {
+        return this.statsDatabase.getDailyBreakdown(month);
+    }
     async getProductPerformance(month) {
         if (!month) {
             throw new Error('Month is required (YYYY-MM)');

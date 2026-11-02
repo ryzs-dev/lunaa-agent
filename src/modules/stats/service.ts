@@ -37,6 +37,10 @@ class StatsService {
     };
   }
 
+  async getDailyBreakdown(month: string) {
+    return this.statsDatabase.getDailyBreakdown(month);
+  }
+
   async getProductPerformance(month: string) {
     if (!month) {
       throw new Error('Month is required (YYYY-MM)');

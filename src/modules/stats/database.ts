@@ -26,6 +26,15 @@ export type ProductMonthlyTrendRow = {
   repeat_customer_rate: number;
 };
 
+export type DailyBreakdownRow = {
+  day: string;
+  orders: number;
+  revenue: number;
+  new_customers: number;
+  returns: number;
+  returned_value: number;
+};
+
 export type RepeatOrderValue = {
   repeatCustomers: number;
   repeatOrders: number;
@@ -272,6 +281,23 @@ class StatsDatabase {
       first_time_buyers: Number(row.first_time_buyers ?? 0),
       returning_buyers: Number(row.returning_buyers ?? 0),
       repeat_customer_rate: Number(row.repeat_customer_rate ?? 0),
+    }));
+  }
+
+  async getDailyBreakdown(month: string): Promise<DailyBreakdownRow[]> {
+    const { data, error } = await supabase.rpc('get_daily_breakdown', {
+      month_start: `${month}-01`,
+    });
+
+    if (error) throw error;
+
+    return (data ?? []).map((row: DailyBreakdownRow) => ({
+      day: row.day,
+      orders: Number(row.orders ?? 0),
+      revenue: Number(row.revenue ?? 0),
+      new_customers: Number(row.new_customers ?? 0),
+      returns: Number(row.returns ?? 0),
+      returned_value: Number(row.returned_value ?? 0),
     }));
   }
 }

@@ -8,6 +8,8 @@ exports.updateSettings = updateSettings;
 exports.disconnect = disconnect;
 exports.markSync = markSync;
 exports.setExtraAccounts = setExtraAccounts;
+exports.markAccountsSynced = markAccountsSynced;
+exports.addExtraAccount = addExtraAccount;
 const supabase_1 = require("../supabase");
 const secret_1 = require("../receipts/secret");
 const graph_1 = require("./graph");
@@ -30,7 +32,13 @@ function trackedAccounts(row) {
     var _a;
     if (!row.ad_account_id)
         return [];
-    const main = { id: row.ad_account_id, name: row.account_name, currency: row.currency, timezone: row.timezone };
+    const main = {
+        id: row.ad_account_id,
+        name: row.account_name,
+        currency: row.currency,
+        timezone: row.timezone,
+        synced_at: row.last_sync_at,
+    };
     return [main, ...((_a = row.extra_accounts) !== null && _a !== void 0 ? _a : []).filter((a) => a.id !== row.ad_account_id)];
 }
 // Ready to call Meta: an account and a token that still decrypts.
@@ -195,8 +203,8 @@ async function setExtraAccounts(ids) {
         throw new Error('Connect Meta ads first');
     const { row, token } = conn;
     const wanted = [...new Set(ids.map((id) => (0, graph_1.normaliseAccountId)(id)).filter((id) => id && id !== row.ad_account_id))];
-    if (wanted.length > 10)
-        throw new Error('Pick at most 10 extra ad accounts');
+    if (wanted.length > 30)
+        throw new Error('Too many ad accounts');
     const current = new Map(((_a = row.extra_accounts) !== null && _a !== void 0 ? _a : []).map((a) => [a.id, a]));
     const next = [];
     for (const id of wanted) {
@@ -207,7 +215,7 @@ async function setExtraAccounts(ids) {
         }
         try {
             const a = await (0, graph_1.graphGet)(id, token, { fields: 'name,currency,timezone_name' });
-            next.push({ id, name: (_b = a.name) !== null && _b !== void 0 ? _b : null, currency: (_c = a.currency) !== null && _c !== void 0 ? _c : null, timezone: (_d = a.timezone_name) !== null && _d !== void 0 ? _d : null });
+            next.push({ id, name: (_b = a.name) !== null && _b !== void 0 ? _b : null, currency: (_c = a.currency) !== null && _c !== void 0 ? _c : null, timezone: (_d = a.timezone_name) !== null && _d !== void 0 ? _d : null, synced_at: null });
         }
         catch (error) {
             throw new Error(`Meta refused ad account ${id}: ${(0, graph_1.graphError)(error)}`);
@@ -216,4 +224,22 @@ async function setExtraAccounts(ids) {
     await saveRow({ extra_accounts: next });
     await deleteAccountRows([...current.keys()].filter((id) => !wanted.includes(id)));
     return { settings: await publicSettings(), added: next.filter((a) => !current.has(a.id)).map((a) => a.id) };
+}
+// Records when extra accounts were pulled, so the Ads page knows when they're ready.
+async function markAccountsSynced(ids) {
+    var _a;
+    const row = await getRow();
+    const now = new Date().toISOString();
+    const extras = ((_a = row.extra_accounts) !== null && _a !== void 0 ? _a : []).map((a) => (ids.includes(a.id) ? Object.assign(Object.assign({}, a), { synced_at: now }) : a));
+    await saveRow({ extra_accounts: extras });
+}
+// Adds one account to the synced ones (if it isn't already).
+async function addExtraAccount(id) {
+    var _a, _b;
+    const row = await getRow();
+    const accountId = (0, graph_1.normaliseAccountId)(id);
+    if (accountId === row.ad_account_id || ((_a = row.extra_accounts) !== null && _a !== void 0 ? _a : []).some((a) => a.id === accountId)) {
+        return { settings: await publicSettings(), added: [] };
+    }
+    return setExtraAccounts([...((_b = row.extra_accounts) !== null && _b !== void 0 ? _b : []).map((a) => a.id), accountId]);
 }

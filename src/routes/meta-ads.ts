@@ -1,6 +1,6 @@
 import express from 'express';
 import { supabase } from '../modules/supabase';
-import { connection, disconnect, publicSettings, setExtraAccounts, trackedAccounts, updateSettings } from '../modules/meta-ads/settings';
+import { addExtraAccount, connection, disconnect, publicSettings, setExtraAccounts, trackedAccounts, updateSettings } from '../modules/meta-ads/settings';
 import { BACKFILL_DAYS, runSync } from '../modules/meta-ads/scheduler';
 import {
   clearPending,
@@ -168,6 +168,21 @@ metaAdsRouter.put('/accounts', async (req, res) => {
   }
 });
 
+// Switching to an account on the Ads page that isn't synced yet adds it.
+metaAdsRouter.post('/accounts/add', async (req, res) => {
+  try {
+    const id = req.body?.id;
+    if (typeof id !== 'string' || !id) throw new Error('Pick an ad account');
+    const { settings, added } = await addExtraAccount(id);
+    if (added.length) {
+      runSync(BACKFILL_DAYS, added).catch((e) => console.error('[meta-ads] backfill failed:', e.message));
+    }
+    res.json({ success: true, settings });
+  } catch (error: any) {
+    res.status(400).json({ success: false, message: error.message });
+  }
+});
+
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 // Everything the Ads page shows for a date range: totals, each day with the
@@ -272,13 +287,13 @@ metaAdsRouter.get('/report', async (req, res) => {
   }
 });
 
-// Without `accounts`, the accounts in the main account's currency (what the
-// dashboard and the export show beside ringgit sales).
+// Without `accounts`, the main account only (what the dashboard and the
+// export show beside sales). Other accounts are for the Ads page.
 export async function campaignTotals(from: string, to: string, accounts?: string[]) {
   let ids = accounts;
   if (!ids) {
     const conn = await connection();
-    ids = conn ? trackedAccounts(conn.row).filter((a) => a.currency === conn.row.currency).map((a) => a.id) : [];
+    ids = conn ? [conn.row.ad_account_id as string] : [];
   }
   if (!ids.length) return [];
   const { data, error } = await supabase

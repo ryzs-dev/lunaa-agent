@@ -169,6 +169,23 @@ exports.metaAdsRouter.put('/accounts', async (req, res) => {
         res.status(400).json({ success: false, message: error.message });
     }
 });
+// Switching to an account on the Ads page that isn't synced yet adds it.
+exports.metaAdsRouter.post('/accounts/add', async (req, res) => {
+    var _a;
+    try {
+        const id = (_a = req.body) === null || _a === void 0 ? void 0 : _a.id;
+        if (typeof id !== 'string' || !id)
+            throw new Error('Pick an ad account');
+        const { settings, added } = await (0, settings_1.addExtraAccount)(id);
+        if (added.length) {
+            (0, scheduler_1.runSync)(scheduler_1.BACKFILL_DAYS, added).catch((e) => console.error('[meta-ads] backfill failed:', e.message));
+        }
+        res.json({ success: true, settings });
+    }
+    catch (error) {
+        res.status(400).json({ success: false, message: error.message });
+    }
+});
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 // Everything the Ads page shows for a date range: totals, each day with the
 // CRM's sales beside the spend, and each campaign. Days are Malaysia days.
@@ -272,14 +289,14 @@ exports.metaAdsRouter.get('/report', async (req, res) => {
         res.status(500).json({ success: false, message: error.message });
     }
 });
-// Without `accounts`, the accounts in the main account's currency (what the
-// dashboard and the export show beside ringgit sales).
+// Without `accounts`, the main account only (what the dashboard and the
+// export show beside sales). Other accounts are for the Ads page.
 async function campaignTotals(from, to, accounts) {
     var _a;
     let ids = accounts;
     if (!ids) {
         const conn = await (0, settings_1.connection)();
-        ids = conn ? (0, settings_1.trackedAccounts)(conn.row).filter((a) => a.currency === conn.row.currency).map((a) => a.id) : [];
+        ids = conn ? [conn.row.ad_account_id] : [];
     }
     if (!ids.length)
         return [];

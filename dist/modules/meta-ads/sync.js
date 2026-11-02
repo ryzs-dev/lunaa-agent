@@ -57,6 +57,9 @@ async function syncInsights(days, only) {
             failures.push(accounts.length > 1 ? `${(_b = account.name) !== null && _b !== void 0 ? _b : account.id}: ${message}` : message);
         }
     }
+    const done = results.map((r) => r.account).filter((id) => id !== conn.row.ad_account_id);
+    if (done.length)
+        await (0, settings_1.markAccountsSynced)(done);
     // A partial sync (only some accounts) doesn't clear an error from the others.
     if (!only || failures.length)
         await (0, settings_1.markSync)({ error: failures.join(' · ') || null });

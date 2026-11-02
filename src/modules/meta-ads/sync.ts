@@ -1,5 +1,5 @@
 import { supabase } from '../supabase';
-import { connection, markSync, trackedAccounts, TrackedAccount } from './settings';
+import { connection, markAccountsSynced, markSync, trackedAccounts, TrackedAccount } from './settings';
 import { graphError, graphGet } from './graph';
 
 type Action = { action_type: string; value: string };
@@ -58,6 +58,9 @@ export async function syncInsights(days: number, only?: string[]) {
       failures.push(accounts.length > 1 ? `${account.name ?? account.id}: ${message}` : message);
     }
   }
+
+  const done = results.map((r) => r.account as string).filter((id) => id !== conn.row.ad_account_id);
+  if (done.length) await markAccountsSynced(done);
 
   // A partial sync (only some accounts) doesn't clear an error from the others.
   if (!only || failures.length) await markSync({ error: failures.join(' · ') || null });

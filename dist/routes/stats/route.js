@@ -33,12 +33,13 @@ exports.statsRouter.get('/dashboard', async (req, res) => {
         });
     }
 });
-// One row per day of the month: orders, revenue, new customers and returns.
+// One row per day of the month: orders, revenue, new and returning customers,
+// plus month totals with each customer counted once.
 exports.statsRouter.get('/daily', async (req, res) => {
     try {
         const month = (0, timezone_1.resolveMonthKey)(typeof req.query.month === 'string' ? req.query.month : undefined);
-        const days = await statsService.getDailyBreakdown(month);
-        res.status(200).json({ success: true, month, days });
+        const { days, totals } = await statsService.getDailyBreakdown(month);
+        res.status(200).json({ success: true, month, days, totals });
     }
     catch (error) {
         console.error('Error fetching daily breakdown:', error);

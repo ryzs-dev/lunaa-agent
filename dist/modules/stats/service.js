@@ -37,7 +37,13 @@ class StatsService {
         };
     }
     async getDailyBreakdown(month) {
-        return this.statsDatabase.getDailyBreakdown(month);
+        const [y, m] = month.split('-').map(Number);
+        const lastDay = new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
+        const [days, totals] = await Promise.all([
+            this.statsDatabase.getDailyBreakdown(month),
+            this.statsDatabase.getCustomerMix(`${month}-01`, lastDay),
+        ]);
+        return { days, totals };
     }
     async getProductPerformance(month) {
         if (!month) {

@@ -31,9 +31,17 @@ export type DailyBreakdownRow = {
   orders: number;
   revenue: number;
   new_customers: number;
-  returns: number;
-  returned_value: number;
+  returning_customers: number;
+  returning_revenue: number;
   ad_spend: number | null;
+};
+
+export type CustomerMix = {
+  customers: number;
+  new_customers: number;
+  returning_customers: number;
+  returning_orders: number;
+  returning_revenue: number;
 };
 
 export type RepeatOrderValue = {
@@ -297,10 +305,24 @@ class StatsDatabase {
       orders: Number(row.orders ?? 0),
       revenue: Number(row.revenue ?? 0),
       new_customers: Number(row.new_customers ?? 0),
-      returns: Number(row.returns ?? 0),
-      returned_value: Number(row.returned_value ?? 0),
+      returning_customers: Number(row.returning_customers ?? 0),
+      returning_revenue: Number(row.returning_revenue ?? 0),
       ad_spend: row.ad_spend == null ? null : Number(row.ad_spend),
     }));
+  }
+
+  // Each customer once for the whole period: new or returning.
+  async getCustomerMix(firstDay: string, lastDay: string): Promise<CustomerMix> {
+    const { data, error } = await supabase.rpc('get_customer_mix', { first_day: firstDay, last_day: lastDay });
+    if (error) throw error;
+    const row = data?.[0] ?? {};
+    return {
+      customers: Number(row.customers ?? 0),
+      new_customers: Number(row.new_customers ?? 0),
+      returning_customers: Number(row.returning_customers ?? 0),
+      returning_orders: Number(row.returning_orders ?? 0),
+      returning_revenue: Number(row.returning_revenue ?? 0),
+    };
   }
 }
 

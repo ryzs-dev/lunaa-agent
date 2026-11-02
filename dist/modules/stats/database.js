@@ -207,11 +207,26 @@ class StatsDatabase {
                 orders: Number((_a = row.orders) !== null && _a !== void 0 ? _a : 0),
                 revenue: Number((_b = row.revenue) !== null && _b !== void 0 ? _b : 0),
                 new_customers: Number((_c = row.new_customers) !== null && _c !== void 0 ? _c : 0),
-                returns: Number((_d = row.returns) !== null && _d !== void 0 ? _d : 0),
-                returned_value: Number((_e = row.returned_value) !== null && _e !== void 0 ? _e : 0),
+                returning_customers: Number((_d = row.returning_customers) !== null && _d !== void 0 ? _d : 0),
+                returning_revenue: Number((_e = row.returning_revenue) !== null && _e !== void 0 ? _e : 0),
                 ad_spend: row.ad_spend == null ? null : Number(row.ad_spend),
             });
         });
+    }
+    // Each customer once for the whole period: new or returning.
+    async getCustomerMix(firstDay, lastDay) {
+        var _a, _b, _c, _d, _e, _f;
+        const { data, error } = await supabase_1.supabase.rpc('get_customer_mix', { first_day: firstDay, last_day: lastDay });
+        if (error)
+            throw error;
+        const row = (_a = data === null || data === void 0 ? void 0 : data[0]) !== null && _a !== void 0 ? _a : {};
+        return {
+            customers: Number((_b = row.customers) !== null && _b !== void 0 ? _b : 0),
+            new_customers: Number((_c = row.new_customers) !== null && _c !== void 0 ? _c : 0),
+            returning_customers: Number((_d = row.returning_customers) !== null && _d !== void 0 ? _d : 0),
+            returning_orders: Number((_e = row.returning_orders) !== null && _e !== void 0 ? _e : 0),
+            returning_revenue: Number((_f = row.returning_revenue) !== null && _f !== void 0 ? _f : 0),
+        };
     }
 }
 exports.default = StatsDatabase;

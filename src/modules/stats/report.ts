@@ -1,11 +1,15 @@
 import * as XLSX from 'xlsx';
 import { supabase } from '../supabase';
 import { campaignTotals } from '../../routes/meta-ads';
+import StatsDatabase from './database';
+
+const statsDb = new StatsDatabase();
+const customerMix = (firstDay: string, lastDay: string) => statsDb.getCustomerMix(firstDay, lastDay);
 
 // A report staff build themselves: one day or one month, the sections they
 // tick, and for the order list, the columns they want.
 
-export const REPORT_SECTIONS = ['summary', 'daily', 'orders', 'products', 'new_customers', 'returns', 'ads'] as const;
+export const REPORT_SECTIONS = ['summary', 'daily', 'orders', 'products', 'new_customers', 'returning_customers', 'ads'] as const;
 export type ReportSection = (typeof REPORT_SECTIONS)[number];
 
 export const ORDER_COLUMNS = {
@@ -46,7 +50,7 @@ const SECTION_TITLE: Record<ReportSection, string> = {
   orders: 'Orders',
   products: 'Products',
   new_customers: 'New customers',
-  returns: 'Returns',
+  returning_customers: 'Returning customers',
   ads: 'Meta ads',
 };
 
@@ -96,8 +100,8 @@ type DayRow = {
   orders: number;
   revenue: number;
   new_customers: number;
-  returns: number;
-  returned_value: number;
+  returning_customers: number;
+  returning_revenue: number;
   ad_spend: number | null;
 };
 
@@ -111,8 +115,8 @@ async function dailyRows(b: ReturnType<typeof bounds>): Promise<DayRow[]> {
       orders: Number(d.orders),
       revenue: Number(d.revenue),
       new_customers: Number(d.new_customers),
-      returns: Number(d.returns),
-      returned_value: Number(d.returned_value),
+      returning_customers: Number(d.returning_customers),
+      returning_revenue: Number(d.returning_revenue),
       ad_spend: d.ad_spend == null ? null : Number(d.ad_spend),
     }));
 }
@@ -212,26 +216,40 @@ async function newCustomerRows(orders: any[], start: string) {
   return rows;
 }
 
-async function returnRows(b: ReturnType<typeof bounds>) {
-  const { data, error } = await supabase
-    .from('order_tracking')
-    .select('updated_at, courier, tracking_number, status, orders!inner(order_number, total_amount, deleted_at, customers(name, phone_number))')
-    .ilike('status', 'return%')
-    .gte('updated_at', b.start)
-    .lt('updated_at', b.end)
-    .order('updated_at');
-  if (error) throw error;
-  return (data ?? [])
-    .filter((r: any) => !r.orders?.deleted_at)
-    .map((r: any) => [
-      myt(r.updated_at).slice(0, 10),
-      r.orders?.order_number ?? '',
-      r.orders?.customers?.name ?? '',
-      r.orders?.customers?.phone_number ?? '',
-      r.courier ?? '',
-      r.tracking_number ?? '',
-      money(Number(r.orders?.total_amount) || 0),
-    ]);
+// Customers who had ordered before the period and ordered again in it.
+async function returningRows(orders: any[], start: string) {
+  const ids = [...new Set(orders.map((o) => o.customer_id).filter(Boolean))];
+  const before = new Map<string, { count: number; first: string }>();
+  for (let i = 0; i < ids.length; i += 200) {
+    const { data, error } = await supabase
+      .from('orders')
+      .select('customer_id, created_at')
+      .in('customer_id', ids.slice(i, i + 200))
+      .is('deleted_at', null)
+      .lt('created_at', start)
+      .limit(10000);
+    if (error) throw error;
+    for (const r of data ?? []) {
+      const b = before.get(r.customer_id) ?? { count: 0, first: r.created_at };
+      b.count += 1;
+      if (r.created_at < b.first) b.first = r.created_at;
+      before.set(r.customer_id, b);
+    }
+  }
+  return orders
+    .filter((o) => o.customer_id && before.has(o.customer_id))
+    .map((o) => {
+      const b = before.get(o.customer_id)!;
+      return [
+        myt(o.created_at).slice(0, 10),
+        o.customers?.name || o.buyer_name || '',
+        o.customers?.phone_number ?? '',
+        o.order_number ?? '',
+        money(Number(o.total_amount) || 0),
+        myt(b.first).slice(0, 10),
+        b.count,
+      ];
+    });
 }
 
 const ratio = (a: number, b: number | null) => (b ? Math.round((a / b) * 100) / 100 : null);
@@ -239,7 +257,7 @@ const ratio = (a: number, b: number | null) => (b ? Math.round((a / b) * 100) / 
 export async function buildReport(req: ReportRequest) {
   const b = bounds(req.period);
   const wants = (s: ReportSection) => req.sections.includes(s);
-  const needOrders = wants('orders') || wants('products') || wants('new_customers');
+  const needOrders = wants('orders') || wants('products') || wants('new_customers') || wants('returning_customers');
   const [days, orders]: [DayRow[], any[]] = await Promise.all([
     wants('summary') || wants('daily') ? dailyRows(b) : Promise.resolve([] as DayRow[]),
     needOrders ? fetchOrders(b) : Promise.resolve([] as any[]),
@@ -252,27 +270,27 @@ export async function buildReport(req: ReportRequest) {
       (s, d) => ({
         orders: s.orders + d.orders,
         revenue: s.revenue + d.revenue,
-        new_customers: s.new_customers + d.new_customers,
-        returns: s.returns + d.returns,
-        returned_value: s.returned_value + d.returned_value,
         ad_spend: d.ad_spend == null ? s.ad_spend : (s.ad_spend ?? 0) + d.ad_spend,
       }),
-      { orders: 0, revenue: 0, new_customers: 0, returns: 0, returned_value: 0, ad_spend: null as number | null }
+      { orders: 0, revenue: 0, ad_spend: null as number | null }
     );
+    const mix = await customerMix(b.firstDay, b.lastDay);
     const rows: (string | number | null)[][] = [
       ['Period', req.period.kind === 'day' ? b.firstDay : `${b.firstDay} to ${b.lastDay}`],
       ['Orders', t.orders],
       ['Revenue (RM)', money(t.revenue)],
       ['Average order (RM)', t.orders ? money(t.revenue / t.orders) : 0],
-      ['New customers', t.new_customers],
-      ['Returns', t.returns],
-      ['Returned value (RM)', money(t.returned_value)],
+      ['Customers', mix.customers],
+      ['New customers', mix.new_customers],
+      ['Returning customers', mix.returning_customers],
+      ['Orders from returning customers', mix.returning_orders],
+      ['Revenue from returning customers (RM)', money(mix.returning_revenue)],
     ];
     if (t.ad_spend != null) {
       rows.push(
         ['Ad spend', money(t.ad_spend)],
         ['ROAS (revenue ÷ ad spend)', ratio(t.revenue, t.ad_spend)],
-        ['Ad spend per new customer', t.new_customers ? money(t.ad_spend / t.new_customers) : null]
+        ['Ad spend per new customer', mix.new_customers ? money(t.ad_spend / mix.new_customers) : null]
       );
     }
     tables.push({ title: 'summary', rows: [['Measure', 'Value'], ...rows] });
@@ -283,14 +301,14 @@ export async function buildReport(req: ReportRequest) {
     tables.push({
       title: 'daily',
       rows: [
-        ['Date', 'Orders', 'Revenue (RM)', 'New customers', 'Returns', 'Returned value (RM)', ...(hasAds ? ['Ad spend', 'ROAS'] : [])],
+        ['Date', 'Orders', 'Revenue (RM)', 'New customers', 'Returning customers', 'Revenue from returning (RM)', ...(hasAds ? ['Ad spend', 'ROAS'] : [])],
         ...days.map((d) => [
           d.day,
           d.orders,
           money(d.revenue),
           d.new_customers,
-          d.returns,
-          money(d.returned_value),
+          d.returning_customers,
+          money(d.returning_revenue),
           ...(hasAds ? [d.ad_spend == null ? null : money(d.ad_spend), ratio(d.revenue, d.ad_spend)] : []),
         ]),
       ],
@@ -316,10 +334,13 @@ export async function buildReport(req: ReportRequest) {
     });
   }
 
-  if (wants('returns')) {
+  if (wants('returning_customers')) {
     tables.push({
-      title: 'returns',
-      rows: [['Returned on', 'Order', 'Customer', 'Phone', 'Courier', 'Tracking number', 'Value (RM)'], ...(await returnRows(b))],
+      title: 'returning_customers',
+      rows: [
+        ['Date', 'Customer', 'Phone', 'Order', 'Value (RM)', 'First ordered', 'Orders before'],
+        ...(await returningRows(orders, b.start)),
+      ],
     });
   }
 

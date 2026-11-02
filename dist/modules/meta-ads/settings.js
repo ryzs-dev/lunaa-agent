@@ -31,7 +31,7 @@ async function connection() {
     return { row, token: (0, secret_1.decryptSecret)(row.token_encrypted) };
 }
 async function publicSettings() {
-    var _a, _b;
+    var _a, _b, _c;
     const row = await getRow();
     const { count: sent } = await supabase_1.supabase
         .from('meta_conversion_events')
@@ -58,12 +58,21 @@ async function publicSettings() {
         last_sync_error: row.last_sync_error,
         conversions_sent_7d: sent !== null && sent !== void 0 ? sent : 0,
         last_conversion_error: (_b = (_a = failed === null || failed === void 0 ? void 0 : failed[0]) === null || _a === void 0 ? void 0 : _a.error) !== null && _b !== void 0 ? _b : null,
+        // Continue with Facebook needs Lunaa's Meta app ID and secret on the server.
+        login_available: Boolean(process.env.META_APP_ID && process.env.META_APP_SECRET),
+        connected_via: row.connected_via,
+        connected_by: row.connected_by,
+        token_expires_at: row.token_expires_at,
+        // Signed in with Facebook but no ad account picked yet (within 30 minutes).
+        pending_user: row.pending_token_encrypted && row.pending_at && Date.now() - new Date(row.pending_at).getTime() < 30 * 60 * 1000
+            ? (_c = row.pending_user) !== null && _c !== void 0 ? _c : 'your Facebook account'
+            : null,
     };
 }
 // Checks every new value against Meta before saving, so a wrong ID or a token
 // without access fails here with Meta's own reason, not later in a sync.
 async function updateSettings(input) {
-    var _a, _b, _c, _d, _e, _f, _g, _h;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l;
     const row = await getRow();
     const patch = {};
     const token = ((_a = input.access_token) === null || _a === void 0 ? void 0 : _a.trim())
@@ -90,6 +99,9 @@ async function updateSettings(input) {
         if ((_g = input.access_token) === null || _g === void 0 ? void 0 : _g.trim()) {
             patch.token_encrypted = (0, secret_1.encryptSecret)(token);
             patch.token_hint = `…${token.slice(-4)}`;
+            patch.connected_via = (_h = input.via) !== null && _h !== void 0 ? _h : 'token';
+            patch.connected_by = (_j = input.by) !== null && _j !== void 0 ? _j : null;
+            patch.token_expires_at = (_k = input.expires_at) !== null && _k !== void 0 ? _k : null;
         }
         if (!row.connected_at || accountChanged) {
             patch.connected_at = new Date().toISOString();
@@ -98,7 +110,7 @@ async function updateSettings(input) {
         }
     }
     if (input.dataset_id !== undefined) {
-        const datasetId = ((_h = input.dataset_id) === null || _h === void 0 ? void 0 : _h.replace(/\D/g, '')) || null;
+        const datasetId = ((_l = input.dataset_id) === null || _l === void 0 ? void 0 : _l.replace(/\D/g, '')) || null;
         if (datasetId && datasetId !== row.dataset_id) {
             try {
                 await (0, graph_1.graphGet)(datasetId, token, { fields: 'name' });
@@ -130,6 +142,9 @@ async function disconnect() {
         token_encrypted: null,
         token_hint: null,
         send_conversions: false,
+        connected_via: null,
+        connected_by: null,
+        token_expires_at: null,
         connected_at: null,
         last_sync_at: null,
         last_sync_error: null,

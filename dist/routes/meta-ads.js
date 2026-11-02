@@ -9,6 +9,7 @@ const express_1 = __importDefault(require("express"));
 const supabase_1 = require("../modules/supabase");
 const settings_1 = require("../modules/meta-ads/settings");
 const scheduler_1 = require("../modules/meta-ads/scheduler");
+const oauth_1 = require("../modules/meta-ads/oauth");
 const timezone_1 = require("../utils/timezone");
 exports.metaAdsRouter = express_1.default.Router();
 exports.metaAdsRouter.get('/settings', async (_req, res) => {
@@ -36,6 +37,71 @@ exports.metaAdsRouter.put('/settings', async (req, res) => {
     }
     catch (error) {
         res.status(400).json({ success: false, message: error.message });
+    }
+});
+// Continue with Facebook: the CRM sends the browser here, Meta sends it back
+// to /oauth/callback, and that returns it to the CRM to pick an ad account.
+exports.metaAdsRouter.get('/oauth/start', (req, res) => {
+    const returnTo = typeof req.query.return_to === 'string' ? req.query.return_to : (0, oauth_1.defaultReturn)();
+    try {
+        res.redirect((0, oauth_1.startUrl)(returnTo));
+    }
+    catch (error) {
+        const back = new URL((0, oauth_1.defaultReturn)());
+        back.searchParams.set('meta', 'error');
+        back.searchParams.set('reason', error.message);
+        res.redirect(back.toString());
+    }
+});
+exports.metaAdsRouter.get('/oauth/callback', async (req, res) => {
+    res.redirect(await (0, oauth_1.handleCallback)(req.query));
+});
+exports.metaAdsRouter.get('/oauth/accounts', async (_req, res) => {
+    var _a, _b, _c, _d;
+    try {
+        res.json(Object.assign({ success: true }, (await (0, oauth_1.listAdAccounts)())));
+    }
+    catch (error) {
+        res.status(400).json({ success: false, message: (_d = (_c = (_b = (_a = error === null || error === void 0 ? void 0 : error.response) === null || _a === void 0 ? void 0 : _a.data) === null || _b === void 0 ? void 0 : _b.error) === null || _c === void 0 ? void 0 : _c.message) !== null && _d !== void 0 ? _d : error.message });
+    }
+});
+exports.metaAdsRouter.get('/oauth/datasets', async (req, res) => {
+    var _a, _b, _c, _d, _e;
+    try {
+        const account = String((_a = req.query.account) !== null && _a !== void 0 ? _a : '');
+        if (!/^act_\d+$/.test(account))
+            throw new Error('Pick an ad account');
+        res.json({ success: true, datasets: await (0, oauth_1.listDatasets)(account) });
+    }
+    catch (error) {
+        res.status(400).json({ success: false, message: (_e = (_d = (_c = (_b = error === null || error === void 0 ? void 0 : error.response) === null || _b === void 0 ? void 0 : _b.data) === null || _c === void 0 ? void 0 : _c.error) === null || _d === void 0 ? void 0 : _d.message) !== null && _e !== void 0 ? _e : error.message });
+    }
+});
+// Finish signing in: save the chosen ad account (and dataset) with the token.
+exports.metaAdsRouter.post('/oauth/finish', async (req, res) => {
+    var _a;
+    try {
+        const { ad_account_id, dataset_id } = (_a = req.body) !== null && _a !== void 0 ? _a : {};
+        if (typeof ad_account_id !== 'string' || !ad_account_id)
+            throw new Error('Pick an ad account');
+        const pending = await (0, oauth_1.takePendingToken)();
+        const { settings, needsBackfill } = await (0, settings_1.updateSettings)(Object.assign({ ad_account_id, access_token: pending.token, via: 'facebook', by: pending.user, expires_at: pending.expiresAt }, (typeof dataset_id === 'string' ? { dataset_id: dataset_id || null } : {})));
+        await (0, oauth_1.clearPending)();
+        if (needsBackfill)
+            (0, scheduler_1.runSync)(scheduler_1.BACKFILL_DAYS).catch((e) => console.error('[meta-ads] backfill failed:', e.message));
+        res.json({ success: true, settings: await (0, settings_1.publicSettings)() });
+    }
+    catch (error) {
+        res.status(400).json({ success: false, message: error.message });
+    }
+});
+exports.metaAdsRouter.post('/oauth/cancel', async (_req, res) => {
+    try {
+        await (0, oauth_1.clearPending)();
+        res.json({ success: true, settings: await (0, settings_1.publicSettings)() });
+    }
+    catch (error) {
+        res.status(500).json({ success: false, message: error.message });
     }
 });
 exports.metaAdsRouter.delete('/settings', async (_req, res) => {

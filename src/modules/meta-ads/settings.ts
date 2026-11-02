@@ -15,6 +15,12 @@ export type MetaAdsRow = {
   connected_at: string | null;
   last_sync_at: string | null;
   last_sync_error: string | null;
+  connected_via: 'facebook' | 'token' | null;
+  connected_by: string | null;
+  token_expires_at: string | null;
+  pending_token_encrypted?: string | null;
+  pending_at?: string | null;
+  pending_user?: string | null;
 };
 
 export async function getRow(): Promise<MetaAdsRow> {
@@ -66,12 +72,25 @@ export async function publicSettings() {
     last_sync_error: row.last_sync_error,
     conversions_sent_7d: sent ?? 0,
     last_conversion_error: failed?.[0]?.error ?? null,
+    // Continue with Facebook needs Lunaa's Meta app ID and secret on the server.
+    login_available: Boolean(process.env.META_APP_ID && process.env.META_APP_SECRET),
+    connected_via: row.connected_via,
+    connected_by: row.connected_by,
+    token_expires_at: row.token_expires_at,
+    // Signed in with Facebook but no ad account picked yet (within 30 minutes).
+    pending_user:
+      row.pending_token_encrypted && row.pending_at && Date.now() - new Date(row.pending_at).getTime() < 30 * 60 * 1000
+        ? row.pending_user ?? 'your Facebook account'
+        : null,
   };
 }
 
 type Update = {
   ad_account_id?: string;
   access_token?: string;
+  via?: 'facebook' | 'token';
+  by?: string | null;
+  expires_at?: string | null;
   dataset_id?: string | null;
   send_conversions?: boolean;
 };
@@ -105,6 +124,9 @@ export async function updateSettings(input: Update) {
     if (input.access_token?.trim()) {
       patch.token_encrypted = encryptSecret(token);
       patch.token_hint = `…${token.slice(-4)}`;
+      patch.connected_via = input.via ?? 'token';
+      patch.connected_by = input.by ?? null;
+      patch.token_expires_at = input.expires_at ?? null;
     }
     if (!row.connected_at || accountChanged) {
       patch.connected_at = new Date().toISOString();
@@ -146,6 +168,9 @@ export async function disconnect() {
     token_encrypted: null,
     token_hint: null,
     send_conversions: false,
+    connected_via: null,
+    connected_by: null,
+    token_expires_at: null,
     connected_at: null,
     last_sync_at: null,
     last_sync_error: null,

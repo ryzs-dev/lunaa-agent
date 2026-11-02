@@ -2,6 +2,15 @@ import express from 'express';
 import { supabase } from '../modules/supabase';
 import { disconnect, publicSettings, updateSettings } from '../modules/meta-ads/settings';
 import { BACKFILL_DAYS, runSync } from '../modules/meta-ads/scheduler';
+import {
+  clearPending,
+  defaultReturn,
+  handleCallback,
+  listAdAccounts,
+  listDatasets,
+  startUrl,
+  takePendingToken,
+} from '../modules/meta-ads/oauth';
 import { resolveMonthKey } from '../utils/timezone';
 
 export const metaAdsRouter = express.Router();
@@ -28,6 +37,73 @@ metaAdsRouter.put('/settings', async (req, res) => {
     res.json({ success: true, settings });
   } catch (error: any) {
     res.status(400).json({ success: false, message: error.message });
+  }
+});
+
+// Continue with Facebook: the CRM sends the browser here, Meta sends it back
+// to /oauth/callback, and that returns it to the CRM to pick an ad account.
+metaAdsRouter.get('/oauth/start', (req, res) => {
+  const returnTo = typeof req.query.return_to === 'string' ? req.query.return_to : defaultReturn();
+  try {
+    res.redirect(startUrl(returnTo));
+  } catch (error: any) {
+    const back = new URL(defaultReturn());
+    back.searchParams.set('meta', 'error');
+    back.searchParams.set('reason', error.message);
+    res.redirect(back.toString());
+  }
+});
+
+metaAdsRouter.get('/oauth/callback', async (req, res) => {
+  res.redirect(await handleCallback(req.query));
+});
+
+metaAdsRouter.get('/oauth/accounts', async (_req, res) => {
+  try {
+    res.json({ success: true, ...(await listAdAccounts()) });
+  } catch (error: any) {
+    res.status(400).json({ success: false, message: error?.response?.data?.error?.message ?? error.message });
+  }
+});
+
+metaAdsRouter.get('/oauth/datasets', async (req, res) => {
+  try {
+    const account = String(req.query.account ?? '');
+    if (!/^act_\d+$/.test(account)) throw new Error('Pick an ad account');
+    res.json({ success: true, datasets: await listDatasets(account) });
+  } catch (error: any) {
+    res.status(400).json({ success: false, message: error?.response?.data?.error?.message ?? error.message });
+  }
+});
+
+// Finish signing in: save the chosen ad account (and dataset) with the token.
+metaAdsRouter.post('/oauth/finish', async (req, res) => {
+  try {
+    const { ad_account_id, dataset_id } = req.body ?? {};
+    if (typeof ad_account_id !== 'string' || !ad_account_id) throw new Error('Pick an ad account');
+    const pending = await takePendingToken();
+    const { settings, needsBackfill } = await updateSettings({
+      ad_account_id,
+      access_token: pending.token,
+      via: 'facebook',
+      by: pending.user,
+      expires_at: pending.expiresAt,
+      ...(typeof dataset_id === 'string' ? { dataset_id: dataset_id || null } : {}),
+    });
+    await clearPending();
+    if (needsBackfill) runSync(BACKFILL_DAYS).catch((e) => console.error('[meta-ads] backfill failed:', e.message));
+    res.json({ success: true, settings: await publicSettings() });
+  } catch (error: any) {
+    res.status(400).json({ success: false, message: error.message });
+  }
+});
+
+metaAdsRouter.post('/oauth/cancel', async (_req, res) => {
+  try {
+    await clearPending();
+    res.json({ success: true, settings: await publicSettings() });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 

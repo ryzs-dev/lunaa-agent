@@ -66,7 +66,7 @@ const round = (n, places = 2) => (n == null ? null : Math.round(n * 10 ** places
 // spend; AOV = all sales ÷ all orders.
 function derive(c) {
     const marketplace = c.shopee_orders + c.lazada_orders;
-    return Object.assign(Object.assign({}, c), { marketplace_orders: marketplace, cost_per_message: round(div(c.ad_spend, c.messages)), repeat_pct: round(div(c.wa_repeat * 100, c.wa_orders)), mp_repeat_pct: round(div(c.mp_repeat * 100, marketplace)), cost_per_conversion: round(div(c.ad_spend, c.wa_new)), conversion_rate: round(div(c.wa_new * 100, c.messages)), roas: round(div(c.sales, c.ad_spend)), aov: round(div(c.sales, c.orders)) });
+    return Object.assign(Object.assign({}, c), { marketplace_orders: marketplace, cost_per_message: round(div(c.ad_spend, c.messages)), repeat_pct: round(div(c.wa_repeat * 100, c.wa_orders)), mp_repeat_pct: round(div(c.mp_repeat * 100, marketplace)), cost_per_conversion: c.ad_spend ? round(div(c.ad_spend, c.wa_new)) : null, conversion_rate: round(div(c.wa_new * 100, c.messages)), roas: round(div(c.sales, c.ad_spend)), aov: round(div(c.sales, c.orders)) });
 }
 function todayInMalaysia() {
     return new Intl.DateTimeFormat('en-CA', { timeZone: timezone_1.APP_TIMEZONE }).format(new Date());

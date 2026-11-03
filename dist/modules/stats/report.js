@@ -134,36 +134,37 @@ async function dailyRows(b) {
 async function fetchOrders(b) {
     return pageAll((from, to) => supabase_1.supabase
         .from('orders')
-        .select('id, customer_id, created_at, order_number, source, is_distributor, total_amount, payment_method, status, agent_name, buyer_name, remark, shipment_description, customers(name, phone_number), addresses(full_address, postcode, city, state), order_items(quantity, products(name, price)), order_tracking(courier, tracking_number, status)')
+        .select('id, customer_id, created_at, sales_day, order_number, source, is_distributor, total_amount, payment_method, status, agent_name, buyer_name, remark, shipment_description, customers(name, phone_number), addresses(full_address, postcode, city, state), order_items(quantity, products(name, price)), order_tracking(courier, tracking_number, status)')
         .is('deleted_at', null)
-        .gte('created_at', b.start)
-        .lt('created_at', b.end)
+        .gte('sales_day', b.firstDay)
+        .lte('sales_day', b.lastDay)
+        .order('sales_day')
         .order('created_at')
         .range(from, to));
 }
 function orderCell(o, column) {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q;
     const tracking = Array.isArray(o.order_tracking) ? o.order_tracking[0] : o.order_tracking;
     const address = o.addresses;
     switch (column) {
-        case 'date': return myt(o.created_at).slice(0, 10);
+        case 'date': return (_a = o.sales_day) !== null && _a !== void 0 ? _a : myt(o.created_at).slice(0, 10);
         case 'time': return myt(o.created_at).slice(11, 16);
-        case 'order': return (_a = o.order_number) !== null && _a !== void 0 ? _a : '';
-        case 'channel': return (_b = CHANNEL[o.source]) !== null && _b !== void 0 ? _b : 'WhatsApp';
+        case 'order': return (_b = o.order_number) !== null && _b !== void 0 ? _b : '';
+        case 'channel': return (_c = CHANNEL[o.source]) !== null && _c !== void 0 ? _c : 'WhatsApp';
         case 'type': return o.is_distributor ? 'Distributor' : 'Customer';
-        case 'customer': return ((_c = o.customers) === null || _c === void 0 ? void 0 : _c.name) || o.buyer_name || '';
-        case 'phone': return (_e = (_d = o.customers) === null || _d === void 0 ? void 0 : _d.phone_number) !== null && _e !== void 0 ? _e : '';
+        case 'customer': return ((_d = o.customers) === null || _d === void 0 ? void 0 : _d.name) || o.buyer_name || '';
+        case 'phone': return (_f = (_e = o.customers) === null || _e === void 0 ? void 0 : _e.phone_number) !== null && _f !== void 0 ? _f : '';
         case 'address': return address ? [address.full_address, address.postcode, address.city].filter(Boolean).join(', ') : '';
-        case 'state': return (_f = address === null || address === void 0 ? void 0 : address.state) !== null && _f !== void 0 ? _f : '';
-        case 'agent': return (_g = o.agent_name) !== null && _g !== void 0 ? _g : '';
-        case 'items': return (_h = o.shipment_description) !== null && _h !== void 0 ? _h : '';
+        case 'state': return (_g = address === null || address === void 0 ? void 0 : address.state) !== null && _g !== void 0 ? _g : '';
+        case 'agent': return (_h = o.agent_name) !== null && _h !== void 0 ? _h : '';
+        case 'items': return (_j = o.shipment_description) !== null && _j !== void 0 ? _j : '';
         case 'total': return money(Number(o.total_amount) || 0);
-        case 'payment': return (_j = o.payment_method) !== null && _j !== void 0 ? _j : '';
-        case 'status': return (_k = o.status) !== null && _k !== void 0 ? _k : '';
-        case 'courier': return (_l = tracking === null || tracking === void 0 ? void 0 : tracking.courier) !== null && _l !== void 0 ? _l : '';
-        case 'tracking': return (_m = tracking === null || tracking === void 0 ? void 0 : tracking.tracking_number) !== null && _m !== void 0 ? _m : '';
-        case 'delivery': return (_o = tracking === null || tracking === void 0 ? void 0 : tracking.status) !== null && _o !== void 0 ? _o : '';
-        case 'remark': return (_p = o.remark) !== null && _p !== void 0 ? _p : '';
+        case 'payment': return (_k = o.payment_method) !== null && _k !== void 0 ? _k : '';
+        case 'status': return (_l = o.status) !== null && _l !== void 0 ? _l : '';
+        case 'courier': return (_m = tracking === null || tracking === void 0 ? void 0 : tracking.courier) !== null && _m !== void 0 ? _m : '';
+        case 'tracking': return (_o = tracking === null || tracking === void 0 ? void 0 : tracking.tracking_number) !== null && _o !== void 0 ? _o : '';
+        case 'delivery': return (_p = tracking === null || tracking === void 0 ? void 0 : tracking.status) !== null && _p !== void 0 ? _p : '';
+        case 'remark': return (_q = o.remark) !== null && _q !== void 0 ? _q : '';
     }
 }
 // Same split as the dashboard: list price × quantity, or the order total shared
@@ -201,7 +202,7 @@ async function newCustomerRows(orders, start) {
             .select('customer_id')
             .in('customer_id', ids.slice(i, i + 200))
             .is('deleted_at', null)
-            .lt('created_at', start);
+            .lt('sales_day', start);
         if (error)
             throw error;
         for (const r of data !== null && data !== void 0 ? data : [])
@@ -214,7 +215,7 @@ async function newCustomerRows(orders, start) {
             continue;
         seen.add(o.customer_id);
         rows.push([
-            myt(o.created_at).slice(0, 10),
+            o.sales_day,
             ((_a = o.customers) === null || _a === void 0 ? void 0 : _a.name) || o.buyer_name || '',
             (_c = (_b = o.customers) === null || _b === void 0 ? void 0 : _b.phone_number) !== null && _c !== void 0 ? _c : '',
             (_e = (_d = o.addresses) === null || _d === void 0 ? void 0 : _d.state) !== null && _e !== void 0 ? _e : '',
@@ -232,18 +233,18 @@ async function returningRows(orders, start) {
     for (let i = 0; i < ids.length; i += 200) {
         const { data, error } = await supabase_1.supabase
             .from('orders')
-            .select('customer_id, created_at')
+            .select('customer_id, sales_day')
             .in('customer_id', ids.slice(i, i + 200))
             .is('deleted_at', null)
-            .lt('created_at', start)
+            .lt('sales_day', start)
             .limit(10000);
         if (error)
             throw error;
         for (const r of data !== null && data !== void 0 ? data : []) {
-            const b = (_a = before.get(r.customer_id)) !== null && _a !== void 0 ? _a : { count: 0, first: r.created_at };
+            const b = (_a = before.get(r.customer_id)) !== null && _a !== void 0 ? _a : { count: 0, first: r.sales_day };
             b.count += 1;
-            if (r.created_at < b.first)
-                b.first = r.created_at;
+            if (r.sales_day < b.first)
+                b.first = r.sales_day;
             before.set(r.customer_id, b);
         }
     }
@@ -253,12 +254,12 @@ async function returningRows(orders, start) {
         var _a, _b, _c, _d;
         const b = before.get(o.customer_id);
         return [
-            myt(o.created_at).slice(0, 10),
+            o.sales_day,
             ((_a = o.customers) === null || _a === void 0 ? void 0 : _a.name) || o.buyer_name || '',
             (_c = (_b = o.customers) === null || _b === void 0 ? void 0 : _b.phone_number) !== null && _c !== void 0 ? _c : '',
             (_d = o.order_number) !== null && _d !== void 0 ? _d : '',
             money(Number(o.total_amount) || 0),
-            myt(b.first).slice(0, 10),
+            b.first,
             b.count,
         ];
     });
@@ -330,7 +331,7 @@ async function buildReport(req) {
     if (wants('new_customers')) {
         tables.push({
             title: 'new_customers',
-            rows: [['First order', 'Customer', 'Phone', 'State', 'Order', 'Value (RM)'], ...(await newCustomerRows(orders, b.start))],
+            rows: [['First order', 'Customer', 'Phone', 'State', 'Order', 'Value (RM)'], ...(await newCustomerRows(orders, b.firstDay))],
         });
     }
     if (wants('returning_customers')) {
@@ -338,7 +339,7 @@ async function buildReport(req) {
             title: 'returning_customers',
             rows: [
                 ['Date', 'Customer', 'Phone', 'Order', 'Value (RM)', 'First ordered', 'Orders before'],
-                ...(await returningRows(orders, b.start)),
+                ...(await returningRows(orders, b.firstDay)),
             ],
         });
     }

@@ -57,6 +57,11 @@ export type RepeatOrderValue = {
 
 const CUSTOMER_ID_CHUNK_SIZE = 200;
 
+// Malaysia calendar day of a moment, to compare with orders.sales_day.
+function malaysiaDay(d: Date) {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kuala_Lumpur' }).format(d);
+}
+
 // An order counts as a repeat order when the same customer has an earlier active order.
 export async function getRepeatOrderValue(
   start: Date,
@@ -66,16 +71,15 @@ export async function getRepeatOrderValue(
     .from('orders')
     .select('id, customer_id, total_amount, created_at')
     .is('deleted_at', null)
-    .gte('created_at', start.toISOString());
+    .gte('sales_day', malaysiaDay(start));
 
   if (end) {
-    periodQuery = periodQuery.lt('created_at', end.toISOString());
+    periodQuery = periodQuery.lt('sales_day', malaysiaDay(end));
   }
 
-  const { data: periodOrders, error: periodError } = await periodQuery.order(
-    'created_at',
-    { ascending: true }
-  );
+  const { data: periodOrders, error: periodError } = await periodQuery
+    .order('sales_day', { ascending: true })
+    .order('created_at', { ascending: true });
 
   if (periodError) throw periodError;
 
@@ -89,7 +93,7 @@ export async function getRepeatOrderValue(
       .from('orders')
       .select('customer_id')
       .is('deleted_at', null)
-      .lt('created_at', start.toISOString())
+      .lt('sales_day', malaysiaDay(start))
       .in('customer_id', chunk);
 
     if (priorError) throw priorError;
@@ -161,8 +165,8 @@ export async function getChannelTotals(start: Date, end: Date): Promise<ChannelT
       .from('orders')
       .select('source, total_amount')
       .is('deleted_at', null)
-      .gte('created_at', start.toISOString())
-      .lt('created_at', end.toISOString())
+      .gte('sales_day', malaysiaDay(start))
+      .lt('sales_day', malaysiaDay(end))
       .order('id')
       .range(from, from + PAGE_SIZE - 1);
 

@@ -126,11 +126,12 @@ async function fetchOrders(b: ReturnType<typeof bounds>) {
     supabase
       .from('orders')
       .select(
-        'id, customer_id, created_at, order_number, source, is_distributor, total_amount, payment_method, status, agent_name, buyer_name, remark, shipment_description, customers(name, phone_number), addresses(full_address, postcode, city, state), order_items(quantity, products(name, price)), order_tracking(courier, tracking_number, status)'
+        'id, customer_id, created_at, sales_day, order_number, source, is_distributor, total_amount, payment_method, status, agent_name, buyer_name, remark, shipment_description, customers(name, phone_number), addresses(full_address, postcode, city, state), order_items(quantity, products(name, price)), order_tracking(courier, tracking_number, status)'
       )
       .is('deleted_at', null)
-      .gte('created_at', b.start)
-      .lt('created_at', b.end)
+      .gte('sales_day', b.firstDay)
+      .lte('sales_day', b.lastDay)
+      .order('sales_day')
       .order('created_at')
       .range(from, to)
   );
@@ -140,7 +141,7 @@ function orderCell(o: any, column: OrderColumn): string | number | null {
   const tracking = Array.isArray(o.order_tracking) ? o.order_tracking[0] : o.order_tracking;
   const address = o.addresses;
   switch (column) {
-    case 'date': return myt(o.created_at).slice(0, 10);
+    case 'date': return o.sales_day ?? myt(o.created_at).slice(0, 10);
     case 'time': return myt(o.created_at).slice(11, 16);
     case 'order': return o.order_number ?? '';
     case 'channel': return CHANNEL[o.source] ?? 'WhatsApp';
@@ -195,7 +196,7 @@ async function newCustomerRows(orders: any[], start: string) {
       .select('customer_id')
       .in('customer_id', ids.slice(i, i + 200))
       .is('deleted_at', null)
-      .lt('created_at', start);
+      .lt('sales_day', start);
     if (error) throw error;
     for (const r of data ?? []) returning.add(r.customer_id);
   }
@@ -205,7 +206,7 @@ async function newCustomerRows(orders: any[], start: string) {
     if (!o.customer_id || returning.has(o.customer_id) || seen.has(o.customer_id)) continue;
     seen.add(o.customer_id);
     rows.push([
-      myt(o.created_at).slice(0, 10),
+      o.sales_day,
       o.customers?.name || o.buyer_name || '',
       o.customers?.phone_number ?? '',
       o.addresses?.state ?? '',
@@ -223,16 +224,16 @@ async function returningRows(orders: any[], start: string) {
   for (let i = 0; i < ids.length; i += 200) {
     const { data, error } = await supabase
       .from('orders')
-      .select('customer_id, created_at')
+      .select('customer_id, sales_day')
       .in('customer_id', ids.slice(i, i + 200))
       .is('deleted_at', null)
-      .lt('created_at', start)
+      .lt('sales_day', start)
       .limit(10000);
     if (error) throw error;
     for (const r of data ?? []) {
-      const b = before.get(r.customer_id) ?? { count: 0, first: r.created_at };
+      const b = before.get(r.customer_id) ?? { count: 0, first: r.sales_day };
       b.count += 1;
-      if (r.created_at < b.first) b.first = r.created_at;
+      if (r.sales_day < b.first) b.first = r.sales_day;
       before.set(r.customer_id, b);
     }
   }
@@ -241,12 +242,12 @@ async function returningRows(orders: any[], start: string) {
     .map((o) => {
       const b = before.get(o.customer_id)!;
       return [
-        myt(o.created_at).slice(0, 10),
+        o.sales_day,
         o.customers?.name || o.buyer_name || '',
         o.customers?.phone_number ?? '',
         o.order_number ?? '',
         money(Number(o.total_amount) || 0),
-        myt(b.first).slice(0, 10),
+        b.first,
         b.count,
       ];
     });
@@ -330,7 +331,7 @@ export async function buildReport(req: ReportRequest) {
   if (wants('new_customers')) {
     tables.push({
       title: 'new_customers',
-      rows: [['First order', 'Customer', 'Phone', 'State', 'Order', 'Value (RM)'], ...(await newCustomerRows(orders, b.start))],
+      rows: [['First order', 'Customer', 'Phone', 'State', 'Order', 'Value (RM)'], ...(await newCustomerRows(orders, b.firstDay))],
     });
   }
 
@@ -339,7 +340,7 @@ export async function buildReport(req: ReportRequest) {
       title: 'returning_customers',
       rows: [
         ['Date', 'Customer', 'Phone', 'Order', 'Value (RM)', 'First ordered', 'Orders before'],
-        ...(await returningRows(orders, b.start)),
+        ...(await returningRows(orders, b.firstDay)),
       ],
     });
   }

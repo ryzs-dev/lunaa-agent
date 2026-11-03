@@ -71,6 +71,7 @@ export async function getRepeatOrderValue(
     .from('orders')
     .select('id, customer_id, total_amount, created_at')
     .is('deleted_at', null)
+    .or('is_distributor.is.null,is_distributor.eq.false')
     .gte('sales_day', malaysiaDay(start));
 
   if (end) {
@@ -93,6 +94,7 @@ export async function getRepeatOrderValue(
       .from('orders')
       .select('customer_id')
       .is('deleted_at', null)
+      .or('is_distributor.is.null,is_distributor.eq.false')
       .lt('sales_day', malaysiaDay(start))
       .in('customer_id', chunk);
 
@@ -165,6 +167,7 @@ export async function getChannelTotals(start: Date, end: Date): Promise<ChannelT
       .from('orders')
       .select('source, total_amount')
       .is('deleted_at', null)
+      .or('is_distributor.is.null,is_distributor.eq.false')
       .gte('sales_day', malaysiaDay(start))
       .lt('sales_day', malaysiaDay(end))
       .order('id')

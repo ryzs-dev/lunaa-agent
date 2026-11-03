@@ -129,6 +129,7 @@ async function fetchOrders(b: ReturnType<typeof bounds>) {
         'id, customer_id, created_at, sales_day, order_number, source, is_distributor, total_amount, payment_method, status, agent_name, buyer_name, remark, shipment_description, customers(name, phone_number), addresses(full_address, postcode, city, state), order_items(quantity, products(name, price)), order_tracking(courier, tracking_number, status)'
       )
       .is('deleted_at', null)
+      .or('is_distributor.is.null,is_distributor.eq.false')
       .gte('sales_day', b.firstDay)
       .lte('sales_day', b.lastDay)
       .order('sales_day')
@@ -196,6 +197,7 @@ async function newCustomerRows(orders: any[], start: string) {
       .select('customer_id')
       .in('customer_id', ids.slice(i, i + 200))
       .is('deleted_at', null)
+      .or('is_distributor.is.null,is_distributor.eq.false')
       .lt('sales_day', start);
     if (error) throw error;
     for (const r of data ?? []) returning.add(r.customer_id);
@@ -227,6 +229,7 @@ async function returningRows(orders: any[], start: string) {
       .select('customer_id, sales_day')
       .in('customer_id', ids.slice(i, i + 200))
       .is('deleted_at', null)
+      .or('is_distributor.is.null,is_distributor.eq.false')
       .lt('sales_day', start)
       .limit(10000);
     if (error) throw error;

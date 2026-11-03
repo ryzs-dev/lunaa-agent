@@ -24,6 +24,7 @@ export async function monthOrdersCsv(month: string) {
         'order_date, order_number, source, total_amount, shipment_description, agent_name, buyer_name, customers(name, phone_number)'
       )
       .is('deleted_at', null)
+      .or('is_distributor.is.null,is_distributor.eq.false')
       .gte('sales_day', `${month}-01`)
       .lt('sales_day', `${nextMonth}-01`)
       .order('order_date')

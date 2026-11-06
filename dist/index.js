@@ -15,7 +15,6 @@ const twilio_1 = __importDefault(require("./routes/twilio"));
 const inbox_1 = __importDefault(require("./routes/inbox"));
 const whatsapp_1 = __importDefault(require("./routes/whatsapp"));
 const supabase_1 = __importDefault(require("./routes/supabase"));
-const trackingScheduler_1 = require("./scheduler/trackingScheduler");
 const products_1 = __importDefault(require("./routes/products"));
 const packages_1 = __importDefault(require("./routes/packages"));
 const meta_1 = __importDefault(require("./routes/meta"));
@@ -104,8 +103,4 @@ server.listen(port, '0.0.0.0', () => {
 });
 (0, scheduler_1.startAutopilotScheduler)();
 (0, scheduler_2.startMetaAdsScheduler)();
-if (process.env.NODE_ENV === 'production') {
-    console.log('\n📅 Starting daily tracking automation...');
-    (0, trackingScheduler_1.startDailyTrackingScheduler)();
-}
 (0, router_1.startMarketplaceSync)();

@@ -11,7 +11,6 @@ import inboxRouter from './routes/inbox';
 import whatsappRouter from './routes/whatsapp';
 import supabaseRouter from './routes/supabase';
 
-import { startDailyTrackingScheduler } from './scheduler/trackingScheduler';
 import productsRouter from './routes/products';
 import packagesRouter from './routes/packages';
 import metaRouter from './routes/meta';
@@ -113,10 +112,5 @@ server.listen(port, '0.0.0.0', () => {
 
 startAutopilotScheduler();
 startMetaAdsScheduler();
-
-if (process.env.NODE_ENV === 'production') {
-  console.log('\n📅 Starting daily tracking automation...');
-  startDailyTrackingScheduler();
-}
 
 startMarketplaceSync();

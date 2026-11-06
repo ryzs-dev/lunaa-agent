@@ -1,5 +1,6 @@
 import express from 'express';
 import ReceiptService from '../modules/receipts/service';
+import { readSignedReceipt } from '../modules/receipts/database';
 import {
   publicSettings,
   readingConfig,
@@ -10,6 +11,24 @@ import {
 export const receiptRouter = express.Router();
 
 const receipts = new ReceiptService();
+
+const FILE_TYPES: Record<string, string> = {
+  jpg: 'image/jpeg',
+  png: 'image/png',
+  webp: 'image/webp',
+  gif: 'image/gif',
+  pdf: 'application/pdf',
+};
+
+// GET /api/receipts/file?path&expires&sig - a receipt behind its expiring link.
+receiptRouter.get('/file', async (req, res) => {
+  const path = String(req.query.path ?? '');
+  const file = await readSignedReceipt(path, Number(req.query.expires), String(req.query.sig ?? ''));
+  if (!file) return res.status(403).json({ error: 'This link has expired' });
+  res.setHeader('Content-Type', FILE_TYPES[path.split('.').pop() ?? ''] ?? 'application/octet-stream');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.send(file);
+});
 
 // GET /api/receipts/settings - reading switch, key hint (never the key), model, limit, this month's spend
 receiptRouter.get('/settings', async (_req, res) => {

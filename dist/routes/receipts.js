@@ -6,9 +6,28 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.receiptRouter = void 0;
 const express_1 = __importDefault(require("express"));
 const service_1 = __importDefault(require("../modules/receipts/service"));
+const database_1 = require("../modules/receipts/database");
 const settings_1 = require("../modules/receipts/settings");
 exports.receiptRouter = express_1.default.Router();
 const receipts = new service_1.default();
+const FILE_TYPES = {
+    jpg: 'image/jpeg',
+    png: 'image/png',
+    webp: 'image/webp',
+    gif: 'image/gif',
+    pdf: 'application/pdf',
+};
+// GET /api/receipts/file?path&expires&sig - a receipt behind its expiring link.
+exports.receiptRouter.get('/file', async (req, res) => {
+    var _a, _b, _c, _d;
+    const path = String((_a = req.query.path) !== null && _a !== void 0 ? _a : '');
+    const file = await (0, database_1.readSignedReceipt)(path, Number(req.query.expires), String((_b = req.query.sig) !== null && _b !== void 0 ? _b : ''));
+    if (!file)
+        return res.status(403).json({ error: 'This link has expired' });
+    res.setHeader('Content-Type', (_d = FILE_TYPES[(_c = path.split('.').pop()) !== null && _c !== void 0 ? _c : '']) !== null && _d !== void 0 ? _d : 'application/octet-stream');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.send(file);
+});
 // GET /api/receipts/settings - reading switch, key hint (never the key), model, limit, this month's spend
 exports.receiptRouter.get('/settings', async (_req, res) => {
     try {

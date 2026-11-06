@@ -6,6 +6,14 @@ import OrderService from '../orders/service';
 import { GoogleSheetService } from '../google/service';
 import OrderTrackingService from '../order_tracking/service';
 import ReceiptService from '../receipts/service';
+import {
+  orderFailedText,
+  orderReceivedText,
+  orderRepeatText,
+  receiptOnlyText,
+  replyToStaff,
+} from '../receipts/staff-reply';
+import ReceiptDatabase from '../receipts/database';
 
 const customerService = new CustomerService();
 const addressService = new AddressService();
@@ -13,6 +21,7 @@ const orderService = new OrderService();
 const googleSheetService = new GoogleSheetService();
 const orderTrackingService = new OrderTrackingService();
 const receiptService = new ReceiptService();
+const receiptDb = new ReceiptDatabase();
 
 const worker = new Worker(
   'orders',
@@ -20,10 +29,13 @@ const worker = new Worker(
     // A receipt sent on its own, after the order it pays for.
     if (job.name === 'receipt.received') {
       const { media, sender, caption, received_at } = job.data;
-      await receiptService.ingestStandalone({ ...media, sender, caption, received_at });
+      const receipt = await receiptService.ingestStandalone({ ...media, sender, caption, received_at });
+      const order = receipt.order_id ? await receiptDb.getOrderTotal(receipt.order_id) : null;
+      await replyToStaff(sender, receiptOnlyText(order?.order_number, receipt), media.wamid);
       return;
     }
 
+    let savedOrder: any = null;
     try {
       const customer = await customerService.createCustomer(job.data.customer);
       const existingOrder = await orderService.findSimilarOrder({
@@ -34,6 +46,7 @@ const worker = new Worker(
       });
 
       let dbResult = existingOrder;
+      savedOrder = existingOrder;
       if (!existingOrder) {
         const address = await addressService.createAddress({
           customer_id: customer.id,
@@ -46,13 +59,15 @@ const worker = new Worker(
           created_by_phone: job.data.sender,
           ...job.data.order,
         });
+        savedOrder = dbResult;
       }
 
       // The receipt that came with the order, as the photo it was captioned on.
       // A failure here never loses the order.
+      let receipt: any = null;
       if (job.data.receipt && dbResult?.id) {
         try {
-          await receiptService.ingest(
+          receipt = await receiptService.ingest(
             { ...job.data.receipt, sender: job.data.sender ?? null, caption: null },
             dbResult.id
           );
@@ -66,6 +81,7 @@ const worker = new Worker(
       // the order may be this job's own from the failed attempt, so write again.
       if (existingOrder && job.attemptsMade === 0) {
         console.log('Order already recorded, skipping sheet row:', existingOrder.id);
+        await replyToStaff(job.data.sender, orderRepeatText(existingOrder, receipt), job.data.wamid);
         return;
       }
 
@@ -78,8 +94,24 @@ const worker = new Worker(
           `Google Sheets write failed after CRM save: ${sheetResult.error}`
         );
       }
+
+      await replyToStaff(
+        job.data.sender,
+        orderReceivedText(dbResult ?? {}, job.data.customer?.name, receipt),
+        job.data.wamid
+      );
     } catch (error) {
       console.error('Error processing job:', job.id, error);
+      // Staff chat comes through here too: only answer what looks like an order.
+      const lookedLikeOrder = job.data.order?.total_amount || job.data.customer?.phone_number;
+      if (lookedLikeOrder && job.attemptsMade + 1 >= (job.opts.attempts ?? 1)) {
+        const noItems = error instanceof Error && /order item/i.test(error.message);
+        await replyToStaff(
+          job.data.sender,
+          orderFailedText(savedOrder?.order_number, noItems ? 'no products found' : 'some details are missing'),
+          job.data.wamid
+        );
+      }
       throw error;
     }
   },

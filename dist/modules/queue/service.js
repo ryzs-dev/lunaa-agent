@@ -11,20 +11,26 @@ const service_3 = __importDefault(require("../orders/service"));
 const service_4 = require("../google/service");
 const service_5 = __importDefault(require("../order_tracking/service"));
 const service_6 = __importDefault(require("../receipts/service"));
+const staff_reply_1 = require("../receipts/staff-reply");
+const database_1 = __importDefault(require("../receipts/database"));
 const customerService = new service_1.default();
 const addressService = new service_2.default();
 const orderService = new service_3.default();
 const googleSheetService = new service_4.GoogleSheetService();
 const orderTrackingService = new service_5.default();
 const receiptService = new service_6.default();
+const receiptDb = new database_1.default();
 const worker = new bullmq_1.Worker('orders', async (job) => {
-    var _a, _b, _c, _d;
+    var _a, _b, _c, _d, _e, _f, _g, _h;
     // A receipt sent on its own, after the order it pays for.
     if (job.name === 'receipt.received') {
         const { media, sender, caption, received_at } = job.data;
-        await receiptService.ingestStandalone(Object.assign(Object.assign({}, media), { sender, caption, received_at }));
+        const receipt = await receiptService.ingestStandalone(Object.assign(Object.assign({}, media), { sender, caption, received_at }));
+        const order = receipt.order_id ? await receiptDb.getOrderTotal(receipt.order_id) : null;
+        await (0, staff_reply_1.replyToStaff)(sender, (0, staff_reply_1.receiptOnlyText)(order === null || order === void 0 ? void 0 : order.order_number, receipt), media.wamid);
         return;
     }
+    let savedOrder = null;
     try {
         const customer = await customerService.createCustomer(job.data.customer);
         const existingOrder = await orderService.findSimilarOrder({
@@ -34,15 +40,18 @@ const worker = new bullmq_1.Worker('orders', async (job) => {
             shipment_description: (_c = job.data.order) === null || _c === void 0 ? void 0 : _c.shipment_description,
         });
         let dbResult = existingOrder;
+        savedOrder = existingOrder;
         if (!existingOrder) {
             const address = await addressService.createAddress(Object.assign({ customer_id: customer.id }, job.data.address));
             dbResult = await orderService.createOrder(Object.assign({ customer_id: customer.id, address_id: address.id, remark: job.data.remark, created_by_phone: job.data.sender }, job.data.order));
+            savedOrder = dbResult;
         }
         // The receipt that came with the order, as the photo it was captioned on.
         // A failure here never loses the order.
+        let receipt = null;
         if (job.data.receipt && (dbResult === null || dbResult === void 0 ? void 0 : dbResult.id)) {
             try {
-                await receiptService.ingest(Object.assign(Object.assign({}, job.data.receipt), { sender: (_d = job.data.sender) !== null && _d !== void 0 ? _d : null, caption: null }), dbResult.id);
+                receipt = await receiptService.ingest(Object.assign(Object.assign({}, job.data.receipt), { sender: (_d = job.data.sender) !== null && _d !== void 0 ? _d : null, caption: null }), dbResult.id);
             }
             catch (error) {
                 console.error('Error saving receipt for job', job.id, error);
@@ -53,6 +62,7 @@ const worker = new bullmq_1.Worker('orders', async (job) => {
         // the order may be this job's own from the failed attempt, so write again.
         if (existingOrder && job.attemptsMade === 0) {
             console.log('Order already recorded, skipping sheet row:', existingOrder.id);
+            await (0, staff_reply_1.replyToStaff)(job.data.sender, (0, staff_reply_1.orderRepeatText)(existingOrder, receipt), job.data.wamid);
             return;
         }
         const sheetResult = await googleSheetService.createOrder(job.data);
@@ -60,9 +70,16 @@ const worker = new bullmq_1.Worker('orders', async (job) => {
         if (!sheetResult.success) {
             throw new Error(`Google Sheets write failed after CRM save: ${sheetResult.error}`);
         }
+        await (0, staff_reply_1.replyToStaff)(job.data.sender, (0, staff_reply_1.orderReceivedText)(dbResult !== null && dbResult !== void 0 ? dbResult : {}, (_e = job.data.customer) === null || _e === void 0 ? void 0 : _e.name, receipt), job.data.wamid);
     }
     catch (error) {
         console.error('Error processing job:', job.id, error);
+        // Staff chat comes through here too: only answer what looks like an order.
+        const lookedLikeOrder = ((_f = job.data.order) === null || _f === void 0 ? void 0 : _f.total_amount) || ((_g = job.data.customer) === null || _g === void 0 ? void 0 : _g.phone_number);
+        if (lookedLikeOrder && job.attemptsMade + 1 >= ((_h = job.opts.attempts) !== null && _h !== void 0 ? _h : 1)) {
+            const noItems = error instanceof Error && /order item/i.test(error.message);
+            await (0, staff_reply_1.replyToStaff)(job.data.sender, (0, staff_reply_1.orderFailedText)(savedOrder === null || savedOrder === void 0 ? void 0 : savedOrder.order_number, noItems ? 'no products found' : 'some details are missing'), job.data.wamid);
+        }
         throw error;
     }
 }, { connection: _1.default });

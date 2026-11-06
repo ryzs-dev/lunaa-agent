@@ -76,6 +76,72 @@ function monthBounds(month: string) {
   return { first: `${month}-01`, last, daysInMonth: Number(last.slice(8)) };
 }
 
+type MarketplaceOrder = {
+  id: string;
+  sales_day: string;
+  created_at: string;
+  buyer_name: string | null;
+  addresses: { full_address: string | null } | null;
+};
+
+const SHORT_FORMS: [RegExp, string][] = [
+  [/\bjln\b/g, 'jalan'],
+  [/\blrg\b/g, 'lorong'],
+  [/\btmn\b/g, 'taman'],
+];
+
+// The same address however it was typed; too little text to tell apart gives null.
+export function addressKey(address: string | null | undefined) {
+  let text = (address ?? '').toLowerCase();
+  for (const [short, full] of SHORT_FORMS) text = text.replace(short, full);
+  const key = text.replace(/[^a-z0-9]/g, '');
+  return key.length >= 12 ? key : null;
+}
+
+// Shopee and Lazada orders have no customer record, so a repeat buyer is
+// someone whose delivery address was used on an earlier order. Names alone
+// join strangers who share one; they're only the fallback for orders without
+// a usable address.
+export function marketplaceCounts(orders: MarketplaceOrder[], first: string, last: string) {
+  const sorted = [...orders].sort(
+    (a, b) =>
+      a.sales_day.localeCompare(b.sales_day) || a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id)
+  );
+  const seen = new Set<string>();
+  const byDay = new Map<string, { mp_new: number; mp_repeat: number }>();
+  for (const order of sorted) {
+    const address = addressKey(order.addresses?.full_address);
+    const name = (order.buyer_name ?? '').trim().toLowerCase();
+    const repeat = address ? seen.has(`a:${address}`) : Boolean(name) && seen.has(`n:${name}`);
+    if (address) seen.add(`a:${address}`);
+    if (name) seen.add(`n:${name}`);
+    if (order.sales_day < first || order.sales_day > last) continue;
+    const day = byDay.get(order.sales_day) ?? { mp_new: 0, mp_repeat: 0 };
+    if (repeat) day.mp_repeat += 1;
+    else day.mp_new += 1;
+    byDay.set(order.sales_day, day);
+  }
+  return byDay;
+}
+
+async function marketplaceOrders(until: string) {
+  const out: MarketplaceOrder[] = [];
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await supabase
+      .from('orders')
+      .select('id, sales_day, created_at, buyer_name, addresses(full_address)')
+      .in('source', ['shopee', 'lazada'])
+      .is('deleted_at', null)
+      .or('is_distributor.is.null,is_distributor.eq.false')
+      .lte('sales_day', until)
+      .order('id')
+      .range(from, from + 999);
+    if (error) throw error;
+    out.push(...((data ?? []) as unknown as MarketplaceOrder[]));
+    if (!data || data.length < 1000) return out;
+  }
+}
+
 export async function getTarget(month: string): Promise<number | null> {
   const { data, error } = await supabase.from('sales_targets').select('target').eq('month', `${month}-01`).maybeSingle();
   if (error) throw error;
@@ -100,16 +166,21 @@ export async function salesReport(month: string) {
   if (first > today) throw new Error('That month hasn’t started yet');
   const until = last < today ? last : today;
 
-  const [{ data, error }, target, ads] = await Promise.all([
+  const [{ data, error }, target, ads, marketplace] = await Promise.all([
     supabase.rpc('get_sales_report', { first_day: first, last_day: until }),
     getTarget(month),
     getRow().catch(() => null),
+    marketplaceOrders(until),
   ]);
   if (error) throw error;
+  const mpCounts = marketplaceCounts(marketplace, first, until);
 
   const days: ReportRow[] = (data ?? []).map((r: Record<string, unknown>) => {
     const c = {} as Counts;
     for (const k of KEYS) c[k] = Number(r[k] ?? 0);
+    const mp = mpCounts.get(String(r.day));
+    c.mp_new = mp?.mp_new ?? 0;
+    c.mp_repeat = mp?.mp_repeat ?? 0;
     return { date: String(r.day), ...derive(c) };
   });
 

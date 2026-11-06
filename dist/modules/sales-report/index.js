@@ -33,6 +33,8 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.addressKey = addressKey;
+exports.marketplaceCounts = marketplaceCounts;
 exports.getTarget = getTarget;
 exports.setTarget = setTarget;
 exports.salesReport = salesReport;
@@ -76,6 +78,66 @@ function monthBounds(month) {
     const last = new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
     return { first: `${month}-01`, last, daysInMonth: Number(last.slice(8)) };
 }
+const SHORT_FORMS = [
+    [/\bjln\b/g, 'jalan'],
+    [/\blrg\b/g, 'lorong'],
+    [/\btmn\b/g, 'taman'],
+];
+// The same address however it was typed; too little text to tell apart gives null.
+function addressKey(address) {
+    let text = (address !== null && address !== void 0 ? address : '').toLowerCase();
+    for (const [short, full] of SHORT_FORMS)
+        text = text.replace(short, full);
+    const key = text.replace(/[^a-z0-9]/g, '');
+    return key.length >= 12 ? key : null;
+}
+// Shopee and Lazada orders have no customer record, so a repeat buyer is
+// someone whose delivery address was used on an earlier order. Names alone
+// join strangers who share one; they're only the fallback for orders without
+// a usable address.
+function marketplaceCounts(orders, first, last) {
+    var _a, _b, _c;
+    const sorted = [...orders].sort((a, b) => a.sales_day.localeCompare(b.sales_day) || a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id));
+    const seen = new Set();
+    const byDay = new Map();
+    for (const order of sorted) {
+        const address = addressKey((_a = order.addresses) === null || _a === void 0 ? void 0 : _a.full_address);
+        const name = ((_b = order.buyer_name) !== null && _b !== void 0 ? _b : '').trim().toLowerCase();
+        const repeat = address ? seen.has(`a:${address}`) : Boolean(name) && seen.has(`n:${name}`);
+        if (address)
+            seen.add(`a:${address}`);
+        if (name)
+            seen.add(`n:${name}`);
+        if (order.sales_day < first || order.sales_day > last)
+            continue;
+        const day = (_c = byDay.get(order.sales_day)) !== null && _c !== void 0 ? _c : { mp_new: 0, mp_repeat: 0 };
+        if (repeat)
+            day.mp_repeat += 1;
+        else
+            day.mp_new += 1;
+        byDay.set(order.sales_day, day);
+    }
+    return byDay;
+}
+async function marketplaceOrders(until) {
+    const out = [];
+    for (let from = 0;; from += 1000) {
+        const { data, error } = await supabase_1.supabase
+            .from('orders')
+            .select('id, sales_day, created_at, buyer_name, addresses(full_address)')
+            .in('source', ['shopee', 'lazada'])
+            .is('deleted_at', null)
+            .or('is_distributor.is.null,is_distributor.eq.false')
+            .lte('sales_day', until)
+            .order('id')
+            .range(from, from + 999);
+        if (error)
+            throw error;
+        out.push(...(data !== null && data !== void 0 ? data : []));
+        if (!data || data.length < 1000)
+            return out;
+    }
+}
 async function getTarget(month) {
     const { data, error } = await supabase_1.supabase.from('sales_targets').select('target').eq('month', `${month}-01`).maybeSingle();
     if (error)
@@ -101,18 +163,23 @@ async function salesReport(month) {
     if (first > today)
         throw new Error('That month hasn’t started yet');
     const until = last < today ? last : today;
-    const [{ data, error }, target, ads] = await Promise.all([
+    const [{ data, error }, target, ads, marketplace] = await Promise.all([
         supabase_1.supabase.rpc('get_sales_report', { first_day: first, last_day: until }),
         getTarget(month),
         (0, settings_1.getRow)().catch(() => null),
+        marketplaceOrders(until),
     ]);
     if (error)
         throw error;
+    const mpCounts = marketplaceCounts(marketplace, first, until);
     const days = (data !== null && data !== void 0 ? data : []).map((r) => {
-        var _a;
+        var _a, _b, _c;
         const c = {};
         for (const k of KEYS)
             c[k] = Number((_a = r[k]) !== null && _a !== void 0 ? _a : 0);
+        const mp = mpCounts.get(String(r.day));
+        c.mp_new = (_b = mp === null || mp === void 0 ? void 0 : mp.mp_new) !== null && _b !== void 0 ? _b : 0;
+        c.mp_repeat = (_c = mp === null || mp === void 0 ? void 0 : mp.mp_repeat) !== null && _c !== void 0 ? _c : 0;
         return Object.assign({ date: String(r.day) }, derive(c));
     });
     const sum = {};

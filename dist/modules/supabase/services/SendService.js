@@ -4,6 +4,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.SupabaseSendService = void 0;
+const converra_send_1 = require("../../converra/converra-send");
 const axios_1 = __importDefault(require("axios"));
 class SupabaseSendService {
     constructor() {
@@ -22,11 +23,8 @@ class SupabaseSendService {
         });
     }
     async sendTextMessage(to_number, body) {
-        const response = await this.client.post(`/${this.businessPhoneNumberId}/messages`, {
-            messaging_product: 'whatsapp',
-            recipient_type: 'individual',
+        const response = await (0, converra_send_1.sendThroughConverra)({
             to: to_number,
-            type: 'text',
             text: { body },
         });
         console.log('Response: ', response.data);
@@ -47,11 +45,8 @@ class SupabaseSendService {
         }
     }
     async sendTemplateMessage(to_number, templateName, parameters) {
-        const response = await this.client.post(`/${this.businessPhoneNumberId}/messages`, {
-            messaging_product: 'whatsapp',
-            recipient_type: 'individual',
+        const response = await (0, converra_send_1.sendThroughConverra)({
             to: to_number,
-            type: 'template',
             template: {
                 name: templateName,
                 language: { code: 'zh_CN' },

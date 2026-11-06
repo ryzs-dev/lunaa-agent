@@ -1,3 +1,4 @@
+import { sendThroughConverra } from '../../converra/converra-send';
 import axios, { AxiosInstance } from 'axios';
 
 export class SupabaseSendService {
@@ -25,16 +26,10 @@ export class SupabaseSendService {
   }
 
   async sendTextMessage(to_number: string, body: string) {
-    const response = await this.client.post(
-      `/${this.businessPhoneNumberId}/messages`,
-      {
-        messaging_product: 'whatsapp',
-        recipient_type: 'individual',
-        to: to_number,
-        type: 'text',
-        text: { body },
-      }
-    );
+    const response = await sendThroughConverra({
+      to: to_number,
+      text: { body },
+    });
 
     console.log('Response: ', response.data);
     return response.data;
@@ -64,20 +59,14 @@ export class SupabaseSendService {
     templateName: string,
     parameters?: any[]
   ) {
-    const response = await this.client.post(
-      `/${this.businessPhoneNumberId}/messages`,
-      {
-        messaging_product: 'whatsapp',
-        recipient_type: 'individual',
-        to: to_number,
-        type: 'template',
-        template: {
-          name: templateName,
-          language: { code: 'zh_CN' },
-          components: parameters ? [{ type: 'body', parameters }] : undefined,
-        },
-      }
-    );
+    const response = await sendThroughConverra({
+      to: to_number,
+      template: {
+        name: templateName,
+        language: { code: 'zh_CN' },
+        components: parameters ? [{ type: 'body', parameters }] : undefined,
+      },
+    });
     return response.data;
   }
 }

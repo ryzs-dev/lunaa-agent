@@ -1,7 +1,4 @@
 "use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.receiptLine = receiptLine;
 exports.orderReceivedText = orderReceivedText;
@@ -9,8 +6,7 @@ exports.orderRepeatText = orderRepeatText;
 exports.receiptOnlyText = receiptOnlyText;
 exports.orderFailedText = orderFailedText;
 exports.replyToStaff = replyToStaff;
-const axios_1 = __importDefault(require("axios"));
-const GRAPH = 'https://graph.facebook.com/v25.0';
+const converra_send_1 = require("../converra/converra-send");
 const money = (value) => `RM ${Number(value !== null && value !== void 0 ? value : 0).toFixed(2)}`;
 // WhatsApp can deliver a message twice; each one gets one reply.
 const replied = new Set();
@@ -52,11 +48,11 @@ function orderFailedText(savedAs, reason) {
         ? `⚠️ ${savedAs} is saved, but the Google Sheet row failed. Please add it to the sheet.`
         : `⚠️ Order not saved: ${reason}. Please check and send it again.`;
 }
-// Answers only the staff member who sent the message, as a reply to it. This
-// is a chat reply inside their open window, so it never needs a template. A
-// failed reply is logged and never affects the order.
+// Answers only the staff member who sent the message, through Converra so it
+// shows in their thread. It is a chat reply inside their open window, so it
+// never needs a template. A failed reply is logged and never affects the order.
 async function replyToStaff(to, text, wamid) {
-    var _a, _b, _c, _d;
+    var _a, _b, _c;
     if (!to)
         return;
     if (wamid) {
@@ -67,9 +63,9 @@ async function replyToStaff(to, text, wamid) {
             replied.delete(replied.values().next().value);
     }
     try {
-        await axios_1.default.post(`${GRAPH}/${process.env.WHATSAPP_PHONE_NUMBER_ID}/messages`, Object.assign({ messaging_product: 'whatsapp', to, type: 'text', text: { body: text } }, (wamid ? { context: { message_id: wamid } } : {})), { headers: { Authorization: `Bearer ${process.env.WHATSAPP_ACCESS_TOKEN}` }, timeout: 15000 });
+        await (0, converra_send_1.sendThroughConverra)({ to, text: { body: text } }, wamid ? `staff-reply:${wamid}` : undefined);
     }
     catch (error) {
-        console.error('[staff-reply] could not reply:', (_d = (_c = (_b = (_a = error.response) === null || _a === void 0 ? void 0 : _a.data) === null || _b === void 0 ? void 0 : _b.error) === null || _c === void 0 ? void 0 : _c.message) !== null && _d !== void 0 ? _d : error.message);
+        console.error('[staff-reply] could not reply:', (_c = (_b = (_a = error.response) === null || _a === void 0 ? void 0 : _a.data) === null || _b === void 0 ? void 0 : _b.error) !== null && _c !== void 0 ? _c : error.message);
     }
 }

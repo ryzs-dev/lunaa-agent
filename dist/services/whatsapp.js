@@ -5,6 +5,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.WhatsAppService = void 0;
 const axios_1 = __importDefault(require("axios"));
+const converra_send_1 = require("../modules/converra/converra-send");
 const dotenv_1 = __importDefault(require("dotenv"));
 const path_1 = __importDefault(require("path"));
 const supabase_1 = require("../modules/supabase");
@@ -35,12 +36,7 @@ class WhatsAppService {
     }
     /** Send a plain text message */
     async sendTextMessage(to, body) {
-        const response = await this.client.post(`/${this.phoneNumberId}/messages`, {
-            messaging_product: 'whatsapp',
-            to,
-            type: 'text',
-            text: { body },
-        });
+        const response = await (0, converra_send_1.sendThroughConverra)({ to, text: { body } });
         return response.data;
     }
     async getMedia(mediaId) {
@@ -66,7 +62,7 @@ class WhatsAppService {
                     components,
                 },
             };
-            const response = await this.client.post(`/${this.phoneNumberId}/messages`, payload);
+            const response = await (0, converra_send_1.sendThroughConverra)(payload);
             // Save outbound message in DB
             //   this.saveMessage({
             //     from: this.phoneNumberId, // your business phone number

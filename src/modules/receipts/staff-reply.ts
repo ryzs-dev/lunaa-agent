@@ -1,7 +1,6 @@
-import axios from 'axios';
+import { sendThroughConverra } from '../converra/converra-send';
 import { ReceiptRow } from './database';
 
-const GRAPH = 'https://graph.facebook.com/v25.0';
 const money = (value: unknown) => `RM ${Number(value ?? 0).toFixed(2)}`;
 
 // WhatsApp can deliver a message twice; each one gets one reply.
@@ -54,9 +53,9 @@ export function orderFailedText(savedAs: string | null | undefined, reason: stri
     : `⚠️ Order not saved: ${reason}. Please check and send it again.`;
 }
 
-// Answers only the staff member who sent the message, as a reply to it. This
-// is a chat reply inside their open window, so it never needs a template. A
-// failed reply is logged and never affects the order.
+// Answers only the staff member who sent the message, through Converra so it
+// shows in their thread. It is a chat reply inside their open window, so it
+// never needs a template. A failed reply is logged and never affects the order.
 export async function replyToStaff(to: string | null | undefined, text: string, wamid?: string | null) {
   if (!to) return;
   if (wamid) {
@@ -65,18 +64,8 @@ export async function replyToStaff(to: string | null | undefined, text: string, 
     if (replied.size > REMEMBERED) replied.delete(replied.values().next().value as string);
   }
   try {
-    await axios.post(
-      `${GRAPH}/${process.env.WHATSAPP_PHONE_NUMBER_ID}/messages`,
-      {
-        messaging_product: 'whatsapp',
-        to,
-        type: 'text',
-        text: { body: text },
-        ...(wamid ? { context: { message_id: wamid } } : {}),
-      },
-      { headers: { Authorization: `Bearer ${process.env.WHATSAPP_ACCESS_TOKEN}` }, timeout: 15000 }
-    );
+    await sendThroughConverra({ to, text: { body: text } }, wamid ? `staff-reply:${wamid}` : undefined);
   } catch (error: any) {
-    console.error('[staff-reply] could not reply:', error.response?.data?.error?.message ?? error.message);
+    console.error('[staff-reply] could not reply:', error.response?.data?.error ?? error.message);
   }
 }

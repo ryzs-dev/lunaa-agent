@@ -1,4 +1,5 @@
 import axios, { AxiosInstance } from 'axios';
+import { sendThroughConverra } from '../modules/converra/converra-send';
 import dotenv from 'dotenv';
 import path from 'path';
 import { supabase } from '../modules/supabase';
@@ -68,12 +69,7 @@ export class WhatsAppService {
 
   /** Send a plain text message */
   async sendTextMessage(to: string, body: string) {
-    const response = await this.client.post(`/${this.phoneNumberId}/messages`, {
-      messaging_product: 'whatsapp',
-      to,
-      type: 'text',
-      text: { body },
-    });
+    const response = await sendThroughConverra({ to, text: { body } });
 
     return response.data;
   }
@@ -115,10 +111,7 @@ export class WhatsAppService {
         },
       };
 
-      const response = await this.client.post(
-        `/${this.phoneNumberId}/messages`,
-        payload
-      );
+      const response = await sendThroughConverra(payload as any);
 
       // Save outbound message in DB
       //   this.saveMessage({

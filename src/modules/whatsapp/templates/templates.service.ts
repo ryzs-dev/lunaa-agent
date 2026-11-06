@@ -1,3 +1,4 @@
+import { sendThroughConverra } from '../../converra/converra-send';
 import axios from 'axios';
 import {
   SendTemplateInput,
@@ -224,10 +225,7 @@ export class WhatsappTemplatesService {
     };
 
     try {
-      const response = await this.metaClient.post(
-        `/${this.phoneNumberId}/messages`,
-        payload
-      );
+      const response = await sendThroughConverra(payload);
 
       console.log('✅ WhatsApp sent:', response.data);
       return response.data;

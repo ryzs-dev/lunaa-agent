@@ -4,6 +4,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.WhatsappTemplatesService = void 0;
+const converra_send_1 = require("../../converra/converra-send");
 const axios_1 = __importDefault(require("axios"));
 const API_VERSION = 'v24.0';
 class WhatsappTemplatesService {
@@ -174,7 +175,7 @@ class WhatsappTemplatesService {
             })),
         };
         try {
-            const response = await this.metaClient.post(`/${this.phoneNumberId}/messages`, payload);
+            const response = await (0, converra_send_1.sendThroughConverra)(payload);
             console.log('✅ WhatsApp sent:', response.data);
             return response.data;
         }

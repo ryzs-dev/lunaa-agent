@@ -93,6 +93,35 @@ describe('fillCorrection', () => {
   });
 });
 
+describe('fillCorrection with only part of an order', () => {
+  it('keeps the saved items and total when only a date is sent', () => {
+    const filled = fillCorrection(
+      { customer: {}, address: {}, order: { order_date: '2026-11-09', order_items: [], total_amount: 0 } } as any,
+      order
+    );
+    expect(filled.order.order_date).toBe('2026-11-09');
+    expect(filled.order.order_items).toEqual(order.order.order_items);
+    expect(filled.order.shipment_description).toBe('2p');
+    expect(filled.order.total_amount).toBe(158);
+    expect(filled.customer.phone_number).toBe('60123456789');
+  });
+
+  it('takes a new items line and keeps everything else', () => {
+    const filled = fillCorrection(
+      {
+        customer: {},
+        address: {},
+        order: { order_date: '', order_items: [{ product_id: 3, quantity: 3 }], shipment_description: '3w', total_amount: 0 },
+      } as any,
+      order
+    );
+    expect(filled.order.order_items).toEqual([{ product_id: 3, quantity: 3 }]);
+    expect(filled.order.shipment_description).toBe('3w');
+    expect(filled.order.order_date).toBe('2026-11-08');
+    expect(filled.order.total_amount).toBe(158);
+  });
+});
+
 describe('sheet correction', () => {
   const headers = ['Order Date', 'Name', 'Phone Number', 'Total Paid (RM)', 'Shipment Description', 'Status', 'Courier', 'Lunaa Pad', 'Lunaa Tea'];
   const rows = [

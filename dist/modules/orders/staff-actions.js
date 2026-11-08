@@ -43,7 +43,8 @@ async function handleOrderButton(tap) {
         }
         else {
             await (0, staff_check_1.startChange)(tap.sender, staff_check_1.TEST_ORDER);
-            await (0, staff_reply_1.replyToStaff)(tap.sender, '✏️ Test: send the corrected order now, as the whole order message. You have 30 minutes.', tap.wamid);
+            await (0, staff_reply_1.replyToStaff)(tap.sender, '✏️ Test: send what to change: the items line (3w2f2s), the date (9/11/26), ' +
+                'the total (Total: RM399), or the whole order. You have 30 minutes.', tap.wamid);
         }
         return;
     }
@@ -64,8 +65,8 @@ async function handleOrderButton(tap) {
         return;
     }
     await (0, staff_check_1.startChange)(tap.sender, order.id);
-    await (0, staff_reply_1.replyToStaff)(tap.sender, `✏️ Send the corrected order for ${order.order_number} now, as the whole order message. ` +
-        'It will replace this order and its sheet row. You have 30 minutes.', tap.wamid);
+    await (0, staff_reply_1.replyToStaff)(tap.sender, `✏️ Send what to change for ${order.order_number}: the items line (3w2f2s), ` +
+        'the date (9/11/26), the total (Total: RM399), or the whole order. You have 30 minutes.', tap.wamid);
 }
 // The staff member tapped Change: this order message replaces the saved order.
 async function correctOrder(job, orderId) {
@@ -128,10 +129,17 @@ async function correctOrder(job, orderId) {
         extraLines: [receipt ? (0, staff_reply_1.receiptLine)(receipt) : null, sheetLine],
     }), job.wamid, (0, staff_check_1.orderButtons)(orderId));
 }
-// A test number: read the order back with the buttons, save nothing.
+// A test number: read the order back with the buttons, save nothing. After
+// Change, a partial message is filled in from the last test order.
 async function previewOrder(job, changing) {
     var _a;
-    const items = await Promise.all((((_a = job.order) === null || _a === void 0 ? void 0 : _a.order_items) || []).map(async (item) => {
+    const testKey = `${staff_check_1.TEST_ORDER}:${job.sender}`;
+    if (job.partial && !changing)
+        return;
+    const data = changing ? (0, staff_check_1.fillCorrection)(job, await (0, staff_check_1.orderPayload)(testKey)) : job;
+    const items = await Promise.all((((_a = data.order) === null || _a === void 0 ? void 0 : _a.order_items) || []).map(async (item) => {
+        if (item.product_name)
+            return item;
         const product = await productService.getProductById(item.product_id).catch(() => null);
         return Object.assign(Object.assign({}, item), { product_name: (product === null || product === void 0 ? void 0 : product.name) || 'Unknown product' });
     }));
@@ -139,10 +147,12 @@ async function previewOrder(job, changing) {
         await (0, staff_reply_1.replyToStaff)(job.sender, '⚠️ Test: no products found in that order. Nothing was saved.', job.wamid);
         return;
     }
+    const shown = Object.assign(Object.assign({}, data), { order: Object.assign(Object.assign({}, data.order), { order_items: items }) });
     if (changing)
         await (0, staff_check_1.endChange)(job.sender, staff_check_1.TEST_ORDER);
+    await (0, staff_check_1.rememberOrderPayload)(testKey, shown);
     await (0, staff_reply_1.replyToStaff)(job.sender, (0, staff_check_1.orderSummaryText)({
         heading: changing ? '✏️ *Test order* updated · not saved' : '🧪 *Test order* · not saved',
-        data: Object.assign(Object.assign({}, job), { order: Object.assign(Object.assign({}, job.order), { order_items: items }) }),
+        data: shown,
     }), job.wamid, (0, staff_check_1.orderButtons)(staff_check_1.TEST_ORDER));
 }

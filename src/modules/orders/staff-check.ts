@@ -97,7 +97,8 @@ export function orderSummaryText(input: {
     .join('\n');
 }
 
-// A correction often leaves out what didn't change; the saved order fills it in.
+// A correction often leaves out what didn't change (it may be just the items
+// line, a date or a total); the saved order fills it in.
 export function fillCorrection(next: ExtractedData, previous: ExtractedData | null): ExtractedData {
   if (!previous) return next;
   const pick = <T>(value: T | undefined | null, fallback: T | undefined) =>
@@ -117,6 +118,13 @@ export function fillCorrection(next: ExtractedData, previous: ExtractedData | nu
     },
     order: {
       ...next.order,
+      ...(next.order?.order_items?.length
+        ? {}
+        : {
+            order_items: previous.order.order_items,
+            shipment_description: previous.order.shipment_description,
+          }),
+      total_amount: Number(next.order?.total_amount) > 0 ? next.order.total_amount : previous.order.total_amount,
       order_date: pick(next.order?.order_date, previous.order.order_date),
       payment_method: pick(next.order?.payment_method, previous.order.payment_method),
     },

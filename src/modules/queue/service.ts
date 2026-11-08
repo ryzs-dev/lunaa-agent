@@ -57,10 +57,12 @@ const worker = new Worker(
 
     // Staff chat comes through here too: only answer what looks like an order.
     const lookedLikeOrder = job.data.order?.total_amount || job.data.customer?.phone_number;
+    // Only part of an order (items line, date or total): used after Change only.
+    const partial = Boolean(job.data.partial);
 
     // Test numbers only see what the bot read; nothing is saved.
     if (orderTestOn(job.data.sender)) {
-      if (lookedLikeOrder) {
+      if (lookedLikeOrder || partial) {
         const changing = (await orderBeingChanged(job.data.sender)) === TEST_ORDER;
         await previewOrder(job.data, changing);
       }
@@ -68,7 +70,7 @@ const worker = new Worker(
     }
 
     // The sender tapped Change: this message replaces that order.
-    const changing = lookedLikeOrder ? await orderBeingChanged(job.data.sender) : null;
+    const changing = lookedLikeOrder || partial ? await orderBeingChanged(job.data.sender) : null;
     if (changing) {
       try {
         await correctOrder(job.data, changing);
@@ -84,6 +86,7 @@ const worker = new Worker(
       }
       return;
     }
+    if (partial) return;
 
     let savedOrder: any = null;
     try {

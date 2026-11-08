@@ -48,7 +48,8 @@ export async function handleOrderButton(tap: { sender: string; wamid: string; id
       await startChange(tap.sender, TEST_ORDER);
       await replyToStaff(
         tap.sender,
-        '✏️ Test: send the corrected order now, as the whole order message. You have 30 minutes.',
+        '✏️ Test: send what to change: the items line (3w2f2s), the date (9/11/26), ' +
+          'the total (Total: RM399), or the whole order. You have 30 minutes.',
         tap.wamid
       );
     }
@@ -74,8 +75,8 @@ export async function handleOrderButton(tap: { sender: string; wamid: string; id
   await startChange(tap.sender, order.id);
   await replyToStaff(
     tap.sender,
-    `✏️ Send the corrected order for ${order.order_number} now, as the whole order message. ` +
-      'It will replace this order and its sheet row. You have 30 minutes.',
+    `✏️ Send what to change for ${order.order_number}: the items line (3w2f2s), ` +
+      'the date (9/11/26), the total (Total: RM399), or the whole order. You have 30 minutes.',
     tap.wamid
   );
 }
@@ -159,10 +160,18 @@ export async function correctOrder(job: ExtractedData & { sender: string; wamid?
   );
 }
 
-// A test number: read the order back with the buttons, save nothing.
-export async function previewOrder(job: ExtractedData & { sender: string; wamid?: string }, changing: boolean) {
+// A test number: read the order back with the buttons, save nothing. After
+// Change, a partial message is filled in from the last test order.
+export async function previewOrder(
+  job: ExtractedData & { sender: string; wamid?: string; partial?: boolean },
+  changing: boolean
+) {
+  const testKey = `${TEST_ORDER}:${job.sender}`;
+  if (job.partial && !changing) return;
+  const data = changing ? fillCorrection(job, await orderPayload(testKey)) : job;
   const items = await Promise.all(
-    (job.order?.order_items || []).map(async (item) => {
+    (data.order?.order_items || []).map(async (item) => {
+      if (item.product_name) return item;
       const product = await productService.getProductById(item.product_id as any).catch(() => null);
       return { ...item, product_name: product?.name || 'Unknown product' };
     })
@@ -171,12 +180,14 @@ export async function previewOrder(job: ExtractedData & { sender: string; wamid?
     await replyToStaff(job.sender, '⚠️ Test: no products found in that order. Nothing was saved.', job.wamid);
     return;
   }
+  const shown = { ...data, order: { ...data.order, order_items: items } };
   if (changing) await endChange(job.sender, TEST_ORDER);
+  await rememberOrderPayload(testKey, shown);
   await replyToStaff(
     job.sender,
     orderSummaryText({
       heading: changing ? '✏️ *Test order* updated · not saved' : '🧪 *Test order* · not saved',
-      data: { ...job, order: { ...job.order, order_items: items } },
+      data: shown,
     }),
     job.wamid,
     orderButtons(TEST_ORDER)

@@ -101,9 +101,10 @@ function orderSummaryText(input) {
         .filter((line) => line !== null && line !== undefined)
         .join('\n');
 }
-// A correction often leaves out what didn't change; the saved order fills it in.
+// A correction often leaves out what didn't change (it may be just the items
+// line, a date or a total); the saved order fills it in.
 function fillCorrection(next, previous) {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _j;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m;
     if (!previous)
         return next;
     const pick = (value, fallback) => value === undefined || value === null || value === '' ? fallback : value;
@@ -116,7 +117,12 @@ function fillCorrection(next, previous) {
             city: pick((_e = next.address) === null || _e === void 0 ? void 0 : _e.city, previous.address.city),
             postcode: pick((_f = next.address) === null || _f === void 0 ? void 0 : _f.postcode, previous.address.postcode),
             state: pick((_g = next.address) === null || _g === void 0 ? void 0 : _g.state, previous.address.state),
-        }, order: Object.assign(Object.assign({}, next.order), { order_date: pick((_h = next.order) === null || _h === void 0 ? void 0 : _h.order_date, previous.order.order_date), payment_method: pick((_j = next.order) === null || _j === void 0 ? void 0 : _j.payment_method, previous.order.payment_method) }), remark: pick(next.remark, previous.remark) });
+        }, order: Object.assign(Object.assign(Object.assign({}, next.order), (((_j = (_h = next.order) === null || _h === void 0 ? void 0 : _h.order_items) === null || _j === void 0 ? void 0 : _j.length)
+            ? {}
+            : {
+                order_items: previous.order.order_items,
+                shipment_description: previous.order.shipment_description,
+            })), { total_amount: Number((_k = next.order) === null || _k === void 0 ? void 0 : _k.total_amount) > 0 ? next.order.total_amount : previous.order.total_amount, order_date: pick((_l = next.order) === null || _l === void 0 ? void 0 : _l.order_date, previous.order.order_date), payment_method: pick((_m = next.order) === null || _m === void 0 ? void 0 : _m.payment_method, previous.order.payment_method) }), remark: pick(next.remark, previous.remark) });
 }
 // The order as it was written to the sheet, so a correction can find its row.
 async function rememberOrderPayload(orderId, data) {

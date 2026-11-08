@@ -42,16 +42,18 @@ const worker = new bullmq_1.Worker('orders', async (job) => {
     }
     // Staff chat comes through here too: only answer what looks like an order.
     const lookedLikeOrder = ((_a = job.data.order) === null || _a === void 0 ? void 0 : _a.total_amount) || ((_b = job.data.customer) === null || _b === void 0 ? void 0 : _b.phone_number);
+    // Only part of an order (items line, date or total): used after Change only.
+    const partial = Boolean(job.data.partial);
     // Test numbers only see what the bot read; nothing is saved.
     if ((0, staff_check_1.orderTestOn)(job.data.sender)) {
-        if (lookedLikeOrder) {
+        if (lookedLikeOrder || partial) {
             const changing = (await (0, staff_check_1.orderBeingChanged)(job.data.sender)) === staff_check_1.TEST_ORDER;
             await (0, staff_actions_1.previewOrder)(job.data, changing);
         }
         return;
     }
     // The sender tapped Change: this message replaces that order.
-    const changing = lookedLikeOrder ? await (0, staff_check_1.orderBeingChanged)(job.data.sender) : null;
+    const changing = lookedLikeOrder || partial ? await (0, staff_check_1.orderBeingChanged)(job.data.sender) : null;
     if (changing) {
         try {
             await (0, staff_actions_1.correctOrder)(job.data, changing);
@@ -64,6 +66,8 @@ const worker = new bullmq_1.Worker('orders', async (job) => {
         }
         return;
     }
+    if (partial)
+        return;
     let savedOrder = null;
     try {
         const customer = await customerService.createCustomer(job.data.customer);

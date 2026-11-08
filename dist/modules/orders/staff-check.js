@@ -3,7 +3,9 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.TEST_ORDER = void 0;
 exports.orderButtonsOn = orderButtonsOn;
+exports.orderTestOn = orderTestOn;
 exports.orderButtons = orderButtons;
 exports.parseOrderButton = parseOrderButton;
 exports.displayDate = displayDate;
@@ -25,6 +27,14 @@ const payloadKey = (orderId) => `order-bot:order:${orderId}`;
 // ORDER_BUTTONS is "all", or a comma list of staff numbers to try it with.
 // Unset, staff get the old one-line reply.
 function orderButtonsOn(sender, setting = process.env.ORDER_BUTTONS) {
+    return numberListed(sender, setting);
+}
+// ORDER_TEST_NUMBERS: staff numbers whose orders are only read back with the
+// buttons, never saved to the CRM or the sheet.
+function orderTestOn(sender, setting = process.env.ORDER_TEST_NUMBERS) {
+    return (setting === null || setting === void 0 ? void 0 : setting.trim()) !== 'all' && numberListed(sender, setting);
+}
+function numberListed(sender, setting) {
     const value = (setting !== null && setting !== void 0 ? setting : '').trim();
     if (!value || !sender)
         return false;
@@ -33,6 +43,8 @@ function orderButtonsOn(sender, setting = process.env.ORDER_BUTTONS) {
     const digits = sender.replace(/\D/g, '');
     return value.split(',').some((phone) => phone.replace(/\D/g, '') === digits);
 }
+// Stands in for the order id on a test reply's buttons.
+exports.TEST_ORDER = 'test';
 function orderButtons(orderId) {
     return [
         { id: `order_ok:${orderId}`, title: 'Confirm' },
@@ -40,7 +52,7 @@ function orderButtons(orderId) {
     ];
 }
 function parseOrderButton(id) {
-    const match = /^order_(ok|fix):([0-9a-f-]{36})$/i.exec(String(id !== null && id !== void 0 ? id : ''));
+    const match = /^order_(ok|fix):([0-9a-f-]{36}|test)$/i.exec(String(id !== null && id !== void 0 ? id : ''));
     if (!match)
         return null;
     return { action: match[1] === 'ok' ? 'confirm' : 'change', orderId: match[2] };

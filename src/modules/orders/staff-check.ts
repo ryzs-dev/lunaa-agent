@@ -14,12 +14,25 @@ const payloadKey = (orderId: string) => `order-bot:order:${orderId}`;
 // ORDER_BUTTONS is "all", or a comma list of staff numbers to try it with.
 // Unset, staff get the old one-line reply.
 export function orderButtonsOn(sender: string | null | undefined, setting = process.env.ORDER_BUTTONS) {
+  return numberListed(sender, setting);
+}
+
+// ORDER_TEST_NUMBERS: staff numbers whose orders are only read back with the
+// buttons, never saved to the CRM or the sheet.
+export function orderTestOn(sender: string | null | undefined, setting = process.env.ORDER_TEST_NUMBERS) {
+  return setting?.trim() !== 'all' && numberListed(sender, setting);
+}
+
+function numberListed(sender: string | null | undefined, setting: string | undefined) {
   const value = (setting ?? '').trim();
   if (!value || !sender) return false;
   if (value === 'all') return true;
   const digits = sender.replace(/\D/g, '');
   return value.split(',').some((phone) => phone.replace(/\D/g, '') === digits);
 }
+
+// Stands in for the order id on a test reply's buttons.
+export const TEST_ORDER = 'test';
 
 export type OrderButton = { action: 'confirm' | 'change'; orderId: string };
 
@@ -31,7 +44,7 @@ export function orderButtons(orderId: string) {
 }
 
 export function parseOrderButton(id: unknown): OrderButton | null {
-  const match = /^order_(ok|fix):([0-9a-f-]{36})$/i.exec(String(id ?? ''));
+  const match = /^order_(ok|fix):([0-9a-f-]{36}|test)$/i.exec(String(id ?? ''));
   if (!match) return null;
   return { action: match[1] === 'ok' ? 'confirm' : 'change', orderId: match[2] };
 }

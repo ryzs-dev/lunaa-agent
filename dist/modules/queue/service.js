@@ -27,6 +27,10 @@ const worker = new bullmq_1.Worker('orders', async (job) => {
     // A receipt sent on its own, after the order it pays for.
     if (job.name === 'receipt.received') {
         const { media, sender, caption, received_at } = job.data;
+        if ((0, staff_check_1.orderTestOn)(sender)) {
+            await (0, staff_reply_1.replyToStaff)(sender, '🧪 Test: receipt received. Nothing was saved.', media.wamid);
+            return;
+        }
         const receipt = await receiptService.ingestStandalone(Object.assign(Object.assign({}, media), { sender, caption, received_at }));
         const order = receipt.order_id ? await receiptDb.getOrderTotal(receipt.order_id) : null;
         await (0, staff_reply_1.replyToStaff)(sender, (0, staff_reply_1.receiptOnlyText)(order === null || order === void 0 ? void 0 : order.order_number, receipt), media.wamid);
@@ -38,6 +42,14 @@ const worker = new bullmq_1.Worker('orders', async (job) => {
     }
     // Staff chat comes through here too: only answer what looks like an order.
     const lookedLikeOrder = ((_a = job.data.order) === null || _a === void 0 ? void 0 : _a.total_amount) || ((_b = job.data.customer) === null || _b === void 0 ? void 0 : _b.phone_number);
+    // Test numbers only see what the bot read; nothing is saved.
+    if ((0, staff_check_1.orderTestOn)(job.data.sender)) {
+        if (lookedLikeOrder) {
+            const changing = (await (0, staff_check_1.orderBeingChanged)(job.data.sender)) === staff_check_1.TEST_ORDER;
+            await (0, staff_actions_1.previewOrder)(job.data, changing);
+        }
+        return;
+    }
     // The sender tapped Change: this message replaces that order.
     const changing = lookedLikeOrder ? await (0, staff_check_1.orderBeingChanged)(job.data.sender) : null;
     if (changing) {

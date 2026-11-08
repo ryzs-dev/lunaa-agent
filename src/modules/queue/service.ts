@@ -14,12 +14,14 @@ import {
   receiptOnlyText,
   replyToStaff,
 } from '../receipts/staff-reply';
-import { correctOrder, handleOrderButton } from '../orders/staff-actions';
+import { correctOrder, handleOrderButton, previewOrder } from '../orders/staff-actions';
 import {
   orderBeingChanged,
   orderButtons,
   orderButtonsOn,
   orderSummaryText,
+  orderTestOn,
+  TEST_ORDER,
   rememberOrderPayload,
 } from '../orders/staff-check';
 import ReceiptDatabase from '../receipts/database';
@@ -38,6 +40,10 @@ const worker = new Worker(
     // A receipt sent on its own, after the order it pays for.
     if (job.name === 'receipt.received') {
       const { media, sender, caption, received_at } = job.data;
+      if (orderTestOn(sender)) {
+        await replyToStaff(sender, '🧪 Test: receipt received. Nothing was saved.', media.wamid);
+        return;
+      }
       const receipt = await receiptService.ingestStandalone({ ...media, sender, caption, received_at });
       const order = receipt.order_id ? await receiptDb.getOrderTotal(receipt.order_id) : null;
       await replyToStaff(sender, receiptOnlyText(order?.order_number, receipt), media.wamid);
@@ -51,6 +57,15 @@ const worker = new Worker(
 
     // Staff chat comes through here too: only answer what looks like an order.
     const lookedLikeOrder = job.data.order?.total_amount || job.data.customer?.phone_number;
+
+    // Test numbers only see what the bot read; nothing is saved.
+    if (orderTestOn(job.data.sender)) {
+      if (lookedLikeOrder) {
+        const changing = (await orderBeingChanged(job.data.sender)) === TEST_ORDER;
+        await previewOrder(job.data, changing);
+      }
+      return;
+    }
 
     // The sender tapped Change: this message replaces that order.
     const changing = lookedLikeOrder ? await orderBeingChanged(job.data.sender) : null;

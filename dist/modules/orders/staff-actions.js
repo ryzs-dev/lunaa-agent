@@ -5,12 +5,14 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.handleOrderButton = handleOrderButton;
 exports.correctOrder = correctOrder;
+exports.previewOrder = previewOrder;
 const supabase_1 = require("../supabase");
 const service_1 = __importDefault(require("../customer/service"));
 const service_2 = __importDefault(require("../address/service"));
 const service_3 = __importDefault(require("./service"));
 const service_4 = require("../google/service");
 const service_5 = __importDefault(require("../receipts/service"));
+const service_6 = __importDefault(require("../product/service"));
 const staff_reply_1 = require("../receipts/staff-reply");
 const staff_check_1 = require("./staff-check");
 const customerService = new service_1.default();
@@ -18,6 +20,7 @@ const addressService = new service_2.default();
 const orderService = new service_3.default();
 const googleSheetService = new service_4.GoogleSheetService();
 const receiptService = new service_5.default();
+const productService = new service_6.default();
 async function findOrder(orderId) {
     const { data, error } = await supabase_1.supabase
         .from('orders')
@@ -33,6 +36,17 @@ async function handleOrderButton(tap) {
     const button = (0, staff_check_1.parseOrderButton)(tap.id);
     if (!button)
         return;
+    if (button.orderId === staff_check_1.TEST_ORDER) {
+        if (button.action === 'confirm') {
+            await (0, staff_check_1.endChange)(tap.sender, staff_check_1.TEST_ORDER);
+            await (0, staff_reply_1.replyToStaff)(tap.sender, '👍 Test confirmed. Nothing was saved.', tap.wamid);
+        }
+        else {
+            await (0, staff_check_1.startChange)(tap.sender, staff_check_1.TEST_ORDER);
+            await (0, staff_reply_1.replyToStaff)(tap.sender, '✏️ Test: send the corrected order now, as the whole order message. You have 30 minutes.', tap.wamid);
+        }
+        return;
+    }
     const order = await findOrder(button.orderId);
     if (!order) {
         await (0, staff_reply_1.replyToStaff)(tap.sender, '⚠️ That order was deleted in the CRM.', tap.wamid);
@@ -114,4 +128,23 @@ async function correctOrder(job, orderId) {
         data,
         extraLines: [receipt ? (0, staff_reply_1.receiptLine)(receipt) : null, sheetLine],
     }), job.wamid, (0, staff_check_1.orderButtons)(orderId));
+}
+// A test number: read the order back with the buttons, save nothing.
+async function previewOrder(job, changing) {
+    var _a;
+    const items = await Promise.all((((_a = job.order) === null || _a === void 0 ? void 0 : _a.order_items) || []).map(async (item) => {
+        const product = await productService.getProductById(item.product_id).catch(() => null);
+        return Object.assign(Object.assign({}, item), { product_name: (product === null || product === void 0 ? void 0 : product.name) || 'Unknown product' });
+    }));
+    if (!items.length) {
+        await (0, staff_reply_1.replyToStaff)(job.sender, '⚠️ Test: no products found in that order. Nothing was saved.', job.wamid);
+        return;
+    }
+    if (changing)
+        await (0, staff_check_1.endChange)(job.sender, staff_check_1.TEST_ORDER);
+    await (0, staff_reply_1.replyToStaff)(job.sender, (0, staff_check_1.orderSummaryText)({
+        heading: changing ? '✏️ Test order updated' : '🧪 Test order read',
+        orderNumber: '(not saved)',
+        data: Object.assign(Object.assign({}, job), { order: Object.assign(Object.assign({}, job.order), { order_items: items }) }),
+    }), job.wamid, (0, staff_check_1.orderButtons)(staff_check_1.TEST_ORDER));
 }

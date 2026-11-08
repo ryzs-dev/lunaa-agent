@@ -1,6 +1,6 @@
 jest.mock('../../queue', () => ({ __esModule: true, default: {} }));
 
-import { displayDate, fillCorrection, orderButtons, orderButtonsOn, orderSummaryText, parseOrderButton } from '../staff-check';
+import { displayDate, fillCorrection, orderButtons, orderButtonsOn, orderSummaryText, orderTestOn, parseOrderButton } from '../staff-check';
 import { findSheetRowIndex, mergeSheetRow } from '../../../utils/sheetMapper';
 
 const id = '0f8e2d4c-1a2b-4c3d-8e9f-001122334455';
@@ -30,6 +30,14 @@ describe('order buttons', () => {
     expect(orderButtonsOn('60123456789', '+60 12-345 6789, 60111')).toBe(true);
     expect(orderButtonsOn('60199999999', '60123456789')).toBe(false);
     expect(orderButtonsOn('60199999999', 'all')).toBe(true);
+  });
+
+  it('reads test buttons and test numbers', () => {
+    expect(parseOrderButton('order_fix:test')).toEqual({ action: 'change', orderId: 'test' });
+    expect(orderTestOn('601126470411', '601126470411')).toBe(true);
+    expect(orderTestOn('60123456789', '601126470411')).toBe(false);
+    expect(orderTestOn('60123456789', 'all')).toBe(false);
+    expect(orderTestOn('60123456789', undefined)).toBe(false);
   });
 
   it('ignores other buttons', () => {

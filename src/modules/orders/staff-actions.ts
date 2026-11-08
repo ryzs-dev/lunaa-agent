@@ -4,6 +4,7 @@ import AddressService from '../address/service';
 import OrderService from './service';
 import { GoogleSheetService } from '../google/service';
 import ReceiptService from '../receipts/service';
+import ProductService from '../product/service';
 import { receiptLine, replyToStaff } from '../receipts/staff-reply';
 import { ExtractedData } from '../google/types';
 import {
@@ -15,6 +16,7 @@ import {
   parseOrderButton,
   rememberOrderPayload,
   startChange,
+  TEST_ORDER,
 } from './staff-check';
 
 const customerService = new CustomerService();
@@ -22,6 +24,7 @@ const addressService = new AddressService();
 const orderService = new OrderService();
 const googleSheetService = new GoogleSheetService();
 const receiptService = new ReceiptService();
+const productService = new ProductService();
 
 async function findOrder(orderId: string) {
   const { data, error } = await supabase
@@ -37,6 +40,20 @@ async function findOrder(orderId: string) {
 export async function handleOrderButton(tap: { sender: string; wamid: string; id: string }) {
   const button = parseOrderButton(tap.id);
   if (!button) return;
+  if (button.orderId === TEST_ORDER) {
+    if (button.action === 'confirm') {
+      await endChange(tap.sender, TEST_ORDER);
+      await replyToStaff(tap.sender, '👍 Test confirmed. Nothing was saved.', tap.wamid);
+    } else {
+      await startChange(tap.sender, TEST_ORDER);
+      await replyToStaff(
+        tap.sender,
+        '✏️ Test: send the corrected order now, as the whole order message. You have 30 minutes.',
+        tap.wamid
+      );
+    }
+    return;
+  }
   const order = await findOrder(button.orderId);
   if (!order) {
     await replyToStaff(tap.sender, '⚠️ That order was deleted in the CRM.', tap.wamid);
@@ -140,5 +157,30 @@ export async function correctOrder(job: ExtractedData & { sender: string; wamid?
     }),
     job.wamid,
     orderButtons(orderId)
+  );
+}
+
+// A test number: read the order back with the buttons, save nothing.
+export async function previewOrder(job: ExtractedData & { sender: string; wamid?: string }, changing: boolean) {
+  const items = await Promise.all(
+    (job.order?.order_items || []).map(async (item) => {
+      const product = await productService.getProductById(item.product_id as any).catch(() => null);
+      return { ...item, product_name: product?.name || 'Unknown product' };
+    })
+  );
+  if (!items.length) {
+    await replyToStaff(job.sender, '⚠️ Test: no products found in that order. Nothing was saved.', job.wamid);
+    return;
+  }
+  if (changing) await endChange(job.sender, TEST_ORDER);
+  await replyToStaff(
+    job.sender,
+    orderSummaryText({
+      heading: changing ? '✏️ Test order updated' : '🧪 Test order read',
+      orderNumber: '(not saved)',
+      data: { ...job, order: { ...job.order, order_items: items } },
+    }),
+    job.wamid,
+    orderButtons(TEST_ORDER)
   );
 }

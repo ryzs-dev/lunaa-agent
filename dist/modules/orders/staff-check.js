@@ -3,6 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.orderButtonsOn = orderButtonsOn;
 exports.orderButtons = orderButtons;
 exports.parseOrderButton = parseOrderButton;
 exports.displayDate = displayDate;
@@ -21,6 +22,17 @@ const FIX_SECONDS = 30 * 60;
 const PAYLOAD_SECONDS = 14 * 24 * 60 * 60;
 const fixKey = (sender) => `order-bot:fix:${sender}`;
 const payloadKey = (orderId) => `order-bot:order:${orderId}`;
+// ORDER_BUTTONS is "all", or a comma list of staff numbers to try it with.
+// Unset, staff get the old one-line reply.
+function orderButtonsOn(sender, setting = process.env.ORDER_BUTTONS) {
+    const value = (setting !== null && setting !== void 0 ? setting : '').trim();
+    if (!value || !sender)
+        return false;
+    if (value === 'all')
+        return true;
+    const digits = sender.replace(/\D/g, '');
+    return value.split(',').some((phone) => phone.replace(/\D/g, '') === digits);
+}
 function orderButtons(orderId) {
     return [
         { id: `order_ok:${orderId}`, title: 'Confirm' },

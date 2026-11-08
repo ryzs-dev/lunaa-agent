@@ -23,7 +23,7 @@ const orderTrackingService = new service_5.default();
 const receiptService = new service_6.default();
 const receiptDb = new database_1.default();
 const worker = new bullmq_1.Worker('orders', async (job) => {
-    var _a, _b, _c, _d, _e, _f, _g;
+    var _a, _b, _c, _d, _e, _f, _g, _h;
     // A receipt sent on its own, after the order it pays for.
     if (job.name === 'receipt.received') {
         const { media, sender, caption, received_at } = job.data;
@@ -92,21 +92,23 @@ const worker = new bullmq_1.Worker('orders', async (job) => {
         if (!sheetResult.success) {
             throw new Error(`Google Sheets write failed after CRM save: ${sheetResult.error}`);
         }
-        // The sheet write filled in product names, which the summary shows.
-        if (dbResult === null || dbResult === void 0 ? void 0 : dbResult.id) {
-            await (0, staff_check_1.rememberOrderPayload)(dbResult.id, job.data).catch((error) => console.error('Could not remember order for corrections:', error));
+        if (!(0, staff_check_1.orderButtonsOn)(job.data.sender) || !(dbResult === null || dbResult === void 0 ? void 0 : dbResult.id)) {
+            await (0, staff_reply_1.replyToStaff)(job.data.sender, (0, staff_reply_1.orderReceivedText)(dbResult !== null && dbResult !== void 0 ? dbResult : {}, (_g = job.data.customer) === null || _g === void 0 ? void 0 : _g.name, receipt), job.data.wamid);
+            return;
         }
+        // The sheet write filled in product names, which the summary shows.
+        await (0, staff_check_1.rememberOrderPayload)(dbResult.id, job.data).catch((error) => console.error('Could not remember order for corrections:', error));
         await (0, staff_reply_1.replyToStaff)(job.data.sender, (0, staff_check_1.orderSummaryText)({
             heading: '✅ Order saved',
             orderNumber: dbResult === null || dbResult === void 0 ? void 0 : dbResult.order_number,
             orderDate: dbResult === null || dbResult === void 0 ? void 0 : dbResult.order_date,
             data: job.data,
             extraLines: [receipt ? (0, staff_reply_1.receiptLine)(receipt) : null],
-        }), job.data.wamid, (dbResult === null || dbResult === void 0 ? void 0 : dbResult.id) ? (0, staff_check_1.orderButtons)(dbResult.id) : undefined);
+        }), job.data.wamid, (0, staff_check_1.orderButtons)(dbResult.id));
     }
     catch (error) {
         console.error('Error processing job:', job.id, error);
-        if (lookedLikeOrder && job.attemptsMade + 1 >= ((_g = job.opts.attempts) !== null && _g !== void 0 ? _g : 1)) {
+        if (lookedLikeOrder && job.attemptsMade + 1 >= ((_h = job.opts.attempts) !== null && _h !== void 0 ? _h : 1)) {
             const noItems = error instanceof Error && /order item/i.test(error.message);
             await (0, staff_reply_1.replyToStaff)(job.data.sender, (0, staff_reply_1.orderFailedText)(savedOrder === null || savedOrder === void 0 ? void 0 : savedOrder.order_number, noItems ? 'no products found' : 'some details are missing'), job.data.wamid);
         }

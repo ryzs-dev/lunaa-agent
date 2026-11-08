@@ -11,6 +11,16 @@ const PAYLOAD_SECONDS = 14 * 24 * 60 * 60;
 const fixKey = (sender: string) => `order-bot:fix:${sender}`;
 const payloadKey = (orderId: string) => `order-bot:order:${orderId}`;
 
+// ORDER_BUTTONS is "all", or a comma list of staff numbers to try it with.
+// Unset, staff get the old one-line reply.
+export function orderButtonsOn(sender: string | null | undefined, setting = process.env.ORDER_BUTTONS) {
+  const value = (setting ?? '').trim();
+  if (!value || !sender) return false;
+  if (value === 'all') return true;
+  const digits = sender.replace(/\D/g, '');
+  return value.split(',').some((phone) => phone.replace(/\D/g, '') === digits);
+}
+
 export type OrderButton = { action: 'confirm' | 'change'; orderId: string };
 
 export function orderButtons(orderId: string) {

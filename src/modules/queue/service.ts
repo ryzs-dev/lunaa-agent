@@ -8,6 +8,7 @@ import OrderTrackingService from '../order_tracking/service';
 import ReceiptService from '../receipts/service';
 import {
   orderFailedText,
+  orderReceivedText,
   orderRepeatText,
   receiptLine,
   receiptOnlyText,
@@ -17,6 +18,7 @@ import { correctOrder, handleOrderButton } from '../orders/staff-actions';
 import {
   orderBeingChanged,
   orderButtons,
+  orderButtonsOn,
   orderSummaryText,
   rememberOrderPayload,
 } from '../orders/staff-check';
@@ -128,12 +130,18 @@ const worker = new Worker(
         );
       }
 
-      // The sheet write filled in product names, which the summary shows.
-      if (dbResult?.id) {
-        await rememberOrderPayload(dbResult.id, job.data).catch((error) =>
-          console.error('Could not remember order for corrections:', error)
+      if (!orderButtonsOn(job.data.sender) || !dbResult?.id) {
+        await replyToStaff(
+          job.data.sender,
+          orderReceivedText(dbResult ?? {}, job.data.customer?.name, receipt),
+          job.data.wamid
         );
+        return;
       }
+      // The sheet write filled in product names, which the summary shows.
+      await rememberOrderPayload(dbResult.id, job.data).catch((error) =>
+        console.error('Could not remember order for corrections:', error)
+      );
       await replyToStaff(
         job.data.sender,
         orderSummaryText({
@@ -144,7 +152,7 @@ const worker = new Worker(
           extraLines: [receipt ? receiptLine(receipt) : null],
         }),
         job.data.wamid,
-        dbResult?.id ? orderButtons(dbResult.id) : undefined
+        orderButtons(dbResult.id)
       );
     } catch (error) {
       console.error('Error processing job:', job.id, error);

@@ -9,7 +9,6 @@ import { receiptLine, replyToStaff } from '../receipts/staff-reply';
 import { ExtractedData } from '../google/types';
 import {
   endChange,
-  fillCorrection,
   orderButtons,
   orderPayload,
   orderSummaryText,
@@ -18,6 +17,7 @@ import {
   startChange,
   TEST_ORDER,
 } from './staff-check';
+import { orderAfterChange } from './correction-reader';
 
 const customerService = new CustomerService();
 const addressService = new AddressService();
@@ -48,8 +48,8 @@ export async function handleOrderButton(tap: { sender: string; wamid: string; id
       await startChange(tap.sender, TEST_ORDER);
       await replyToStaff(
         tap.sender,
-        '✏️ Test: send what to change: the items line (3w2f2s), the date (9/11/26), ' +
-          'the total (Total: RM399), or the whole order. You have 30 minutes.',
+        '✏️ Test: what should change? Write it your way, e.g. "w + 1", "remove spray", ' +
+          '"date 9/11" or "total 420", or send the whole order. You have 30 minutes.',
         tap.wamid
       );
     }
@@ -75,14 +75,17 @@ export async function handleOrderButton(tap: { sender: string; wamid: string; id
   await startChange(tap.sender, order.id);
   await replyToStaff(
     tap.sender,
-    `✏️ Send what to change for ${order.order_number}: the items line (3w2f2s), ` +
-      'the date (9/11/26), the total (Total: RM399), or the whole order. You have 30 minutes.',
+    `✏️ What should change in ${order.order_number}? Write it your way, e.g. "w + 1", ` +
+      '"remove spray", "date 9/11" or "total 420", or send the whole order. You have 30 minutes.',
     tap.wamid
   );
 }
 
 // The staff member tapped Change: this order message replaces the saved order.
-export async function correctOrder(job: ExtractedData & { sender: string; wamid?: string; receipt?: any }, orderId: string) {
+export async function correctOrder(
+  job: ExtractedData & { sender: string; wamid?: string; receipt?: any; partial?: boolean; text?: string | null },
+  orderId: string
+) {
   const order = await findOrder(orderId);
   if (!order) {
     await endChange(job.sender);
@@ -91,7 +94,13 @@ export async function correctOrder(job: ExtractedData & { sender: string; wamid?
   }
 
   const previous = await orderPayload(orderId);
-  const data = fillCorrection(job, previous);
+  const change = await orderAfterChange(job, previous);
+  if ('reply' in change) {
+    // Still in Change: they can try again.
+    await replyToStaff(job.sender, change.reply, job.wamid);
+    return;
+  }
+  const data = change.data;
   if (!data.order.order_items?.length) {
     await replyToStaff(
       job.sender,
@@ -108,7 +117,8 @@ export async function correctOrder(job: ExtractedData & { sender: string; wamid?
     address_id: address.id,
     order_items: data.order.order_items as any,
     total_amount: data.order.total_amount,
-    shipment_description: data.order.shipment_description,
+    // Items read by Claude: the CRM writes the shipment code, keeping free gifts.
+    shipment_description: change.aiItems ? undefined : data.order.shipment_description,
     payment_method: data.order.payment_method,
     remark: data.remark,
     ...(data.order.order_date ? { order_date: data.order.order_date } : {}),
@@ -123,6 +133,9 @@ export async function correctOrder(job: ExtractedData & { sender: string; wamid?
     })
     .eq('id', orderId);
   if (error) throw error;
+  if (change.aiItems && updated.shipment_description) {
+    data.order.shipment_description = updated.shipment_description;
+  }
   await endChange(job.sender);
 
   let receipt: any = null;
@@ -163,12 +176,20 @@ export async function correctOrder(job: ExtractedData & { sender: string; wamid?
 // A test number: read the order back with the buttons, save nothing. After
 // Change, a partial message is filled in from the last test order.
 export async function previewOrder(
-  job: ExtractedData & { sender: string; wamid?: string; partial?: boolean },
+  job: ExtractedData & { sender: string; wamid?: string; partial?: boolean; text?: string | null },
   changing: boolean
 ) {
   const testKey = `${TEST_ORDER}:${job.sender}`;
   if (job.partial && !changing) return;
-  const data = changing ? fillCorrection(job, await orderPayload(testKey)) : job;
+  let data: ExtractedData = job;
+  if (changing) {
+    const change = await orderAfterChange(job, await orderPayload(testKey));
+    if ('reply' in change) {
+      await replyToStaff(job.sender, `${change.reply}\n(Test, nothing saved.)`, job.wamid);
+      return;
+    }
+    data = change.data;
+  }
   const items = await Promise.all(
     (data.order?.order_items || []).map(async (item) => {
       if (item.product_name) return item;

@@ -15,6 +15,7 @@ const service_5 = __importDefault(require("../receipts/service"));
 const service_6 = __importDefault(require("../product/service"));
 const staff_reply_1 = require("../receipts/staff-reply");
 const staff_check_1 = require("./staff-check");
+const correction_reader_1 = require("./correction-reader");
 const customerService = new service_1.default();
 const addressService = new service_2.default();
 const orderService = new service_3.default();
@@ -43,8 +44,8 @@ async function handleOrderButton(tap) {
         }
         else {
             await (0, staff_check_1.startChange)(tap.sender, staff_check_1.TEST_ORDER);
-            await (0, staff_reply_1.replyToStaff)(tap.sender, '✏️ Test: send what to change: the items line (3w2f2s), the date (9/11/26), ' +
-                'the total (Total: RM399), or the whole order. You have 30 minutes.', tap.wamid);
+            await (0, staff_reply_1.replyToStaff)(tap.sender, '✏️ Test: what should change? Write it your way, e.g. "w + 1", "remove spray", ' +
+                '"date 9/11" or "total 420", or send the whole order. You have 30 minutes.', tap.wamid);
         }
         return;
     }
@@ -65,8 +66,8 @@ async function handleOrderButton(tap) {
         return;
     }
     await (0, staff_check_1.startChange)(tap.sender, order.id);
-    await (0, staff_reply_1.replyToStaff)(tap.sender, `✏️ Send what to change for ${order.order_number}: the items line (3w2f2s), ` +
-        'the date (9/11/26), the total (Total: RM399), or the whole order. You have 30 minutes.', tap.wamid);
+    await (0, staff_reply_1.replyToStaff)(tap.sender, `✏️ What should change in ${order.order_number}? Write it your way, e.g. "w + 1", ` +
+        '"remove spray", "date 9/11" or "total 420", or send the whole order. You have 30 minutes.', tap.wamid);
 }
 // The staff member tapped Change: this order message replaces the saved order.
 async function correctOrder(job, orderId) {
@@ -78,14 +79,22 @@ async function correctOrder(job, orderId) {
         return;
     }
     const previous = await (0, staff_check_1.orderPayload)(orderId);
-    const data = (0, staff_check_1.fillCorrection)(job, previous);
+    const change = await (0, correction_reader_1.orderAfterChange)(job, previous);
+    if ('reply' in change) {
+        // Still in Change: they can try again.
+        await (0, staff_reply_1.replyToStaff)(job.sender, change.reply, job.wamid);
+        return;
+    }
+    const data = change.data;
     if (!((_a = data.order.order_items) === null || _a === void 0 ? void 0 : _a.length)) {
         await (0, staff_reply_1.replyToStaff)(job.sender, `⚠️ ${order.order_number} not changed: no products found. Please send the whole order again.`, job.wamid);
         return;
     }
     const customer = await customerService.createCustomer(data.customer);
     const address = await addressService.createAddress(Object.assign({ customer_id: customer.id }, data.address));
-    const updated = await orderService.updateOrder(orderId, Object.assign({ customer_id: customer.id, address_id: address.id, order_items: data.order.order_items, total_amount: data.order.total_amount, shipment_description: data.order.shipment_description, payment_method: data.order.payment_method, remark: data.remark }, (data.order.order_date ? { order_date: data.order.order_date } : {})));
+    const updated = await orderService.updateOrder(orderId, Object.assign({ customer_id: customer.id, address_id: address.id, order_items: data.order.order_items, total_amount: data.order.total_amount, 
+        // Items read by Claude: the CRM writes the shipment code, keeping free gifts.
+        shipment_description: change.aiItems ? undefined : data.order.shipment_description, payment_method: data.order.payment_method, remark: data.remark }, (data.order.order_date ? { order_date: data.order.order_date } : {})));
     const { error } = await supabase_1.supabase
         .from('orders')
         .update({
@@ -97,6 +106,9 @@ async function correctOrder(job, orderId) {
         .eq('id', orderId);
     if (error)
         throw error;
+    if (change.aiItems && updated.shipment_description) {
+        data.order.shipment_description = updated.shipment_description;
+    }
     await (0, staff_check_1.endChange)(job.sender);
     let receipt = null;
     if (job.receipt) {
@@ -136,7 +148,15 @@ async function previewOrder(job, changing) {
     const testKey = `${staff_check_1.TEST_ORDER}:${job.sender}`;
     if (job.partial && !changing)
         return;
-    const data = changing ? (0, staff_check_1.fillCorrection)(job, await (0, staff_check_1.orderPayload)(testKey)) : job;
+    let data = job;
+    if (changing) {
+        const change = await (0, correction_reader_1.orderAfterChange)(job, await (0, staff_check_1.orderPayload)(testKey));
+        if ('reply' in change) {
+            await (0, staff_reply_1.replyToStaff)(job.sender, `${change.reply}\n(Test, nothing saved.)`, job.wamid);
+            return;
+        }
+        data = change.data;
+    }
     const items = await Promise.all((((_a = data.order) === null || _a === void 0 ? void 0 : _a.order_items) || []).map(async (item) => {
         if (item.product_name)
             return item;

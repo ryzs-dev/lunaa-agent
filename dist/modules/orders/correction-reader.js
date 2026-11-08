@@ -6,6 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.correctionToOrder = correctionToOrder;
 exports.readCorrection = readCorrection;
 exports.orderAfterChange = orderAfterChange;
+exports.mergeItems = mergeItems;
 const sdk_1 = __importDefault(require("@anthropic-ai/sdk"));
 const zod_1 = require("@anthropic-ai/sdk/helpers/beta/zod");
 const v4_1 = require("zod/v4");
@@ -33,10 +34,10 @@ const Correction = v4_1.z.object({
 });
 const SYSTEM = `Staff of a Malaysian women's care shop record WhatsApp orders. They tapped Change on an order and sent one short message saying what to change. Work out the order after that change.
 
-Products are written as quantity then code, e.g. "2w1f" is 2 Wash and 1 Femlift 30ml. Staff may write "w + 1" or "+1w" (one more Wash), "w - 1", "w 3" or "3w" alone in reply to a change (3 Wash in total), "remove spray", "add 1 wash", or the same in Malay or Chinese.
+Products are written as quantity then code, e.g. "2w1f" is 2 Wash and 1 Femlift 30ml. Only the products a message mentions change; every other saved item stays as it is. "3w" or "w 3" sets Wash to 3. "2w1s" sets Wash to 2 and Spray to 1. "w + 1" or "+1w" adds one Wash, "w - 1" takes one away. "remove spray", "no spray" or "s 0" removes Spray. Staff may also write "add 1 wash" or the same in Malay or Chinese.
 
 Return only what changes; null keeps the saved value:
-- items: the complete item list after the change, as product codes from the list with quantities, or null if the items don't change. Drop items whose quantity becomes 0 or less.
+- items: the complete item list after the change (the saved items with the mentioned ones changed), as product codes from the list with quantities, or null if the items don't change. Drop items whose quantity becomes 0 or less.
 - order_date: YYYY-MM-DD. Dates are day/month (9/11 is 9 November). Use the year of the saved order unless one is given; "today" and "semalam" are relative to today's date given below.
 - total_amount: only if the message states a total or price. Never work one out from the items.
 - buyer_name, phone_number, full_address, city, postcode, state, remark: only if the message changes them.
@@ -155,7 +156,7 @@ async function readCorrection(text, saved) {
 // saved fields it gives; anything shorter is read by Claude, or by the plain
 // patterns (items line, date, total) when Claude can't be reached.
 async function orderAfterChange(message, saved) {
-    var _a, _b, _c, _d, _e, _f;
+    var _a, _b, _c, _d, _e, _f, _g, _h;
     if (!message.partial)
         return { data: (0, staff_check_1.fillCorrection)(message, saved), aiItems: false };
     if (!saved)
@@ -180,5 +181,21 @@ async function orderAfterChange(message, saved) {
     }
     if (!patternsFound)
         return { reply: '🤔 What should change? E.g. "w + 1", "9/11/26" or "Total RM420".' };
-    return { data: (0, staff_check_1.fillCorrection)(message, saved), aiItems: false };
+    const items = ((_h = (_g = message.order) === null || _g === void 0 ? void 0 : _g.order_items) === null || _h === void 0 ? void 0 : _h.length)
+        ? mergeItems(saved.order.order_items || [], message.order.order_items)
+        : [];
+    return {
+        data: (0, staff_check_1.fillCorrection)(Object.assign(Object.assign({}, message), { order: Object.assign(Object.assign({}, message.order), { order_items: items, shipment_description: '' }) }), saved),
+        aiItems: items.length > 0,
+    };
+}
+// An items line sent as a change sets the products it names; the rest stay.
+function mergeItems(saved, changed) {
+    var _a;
+    const byProduct = new Map(saved.map((item) => [String(item.product_id), Object.assign({}, item)]));
+    for (const item of changed) {
+        const current = byProduct.get(String(item.product_id));
+        byProduct.set(String(item.product_id), Object.assign(Object.assign(Object.assign({}, current), item), { product_name: (_a = item.product_name) !== null && _a !== void 0 ? _a : current === null || current === void 0 ? void 0 : current.product_name }));
+    }
+    return [...byProduct.values()].filter((item) => item.quantity > 0);
 }

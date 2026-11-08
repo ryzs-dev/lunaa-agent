@@ -32,10 +32,10 @@ type Product = { id: string; code: string; name: string };
 
 const SYSTEM = `Staff of a Malaysian women's care shop record WhatsApp orders. They tapped Change on an order and sent one short message saying what to change. Work out the order after that change.
 
-Products are written as quantity then code, e.g. "2w1f" is 2 Wash and 1 Femlift 30ml. Staff may write "w + 1" or "+1w" (one more Wash), "w - 1", "w 3" or "3w" alone in reply to a change (3 Wash in total), "remove spray", "add 1 wash", or the same in Malay or Chinese.
+Products are written as quantity then code, e.g. "2w1f" is 2 Wash and 1 Femlift 30ml. Only the products a message mentions change; every other saved item stays as it is. "3w" or "w 3" sets Wash to 3. "2w1s" sets Wash to 2 and Spray to 1. "w + 1" or "+1w" adds one Wash, "w - 1" takes one away. "remove spray", "no spray" or "s 0" removes Spray. Staff may also write "add 1 wash" or the same in Malay or Chinese.
 
 Return only what changes; null keeps the saved value:
-- items: the complete item list after the change, as product codes from the list with quantities, or null if the items don't change. Drop items whose quantity becomes 0 or less.
+- items: the complete item list after the change (the saved items with the mentioned ones changed), as product codes from the list with quantities, or null if the items don't change. Drop items whose quantity becomes 0 or less.
 - order_date: YYYY-MM-DD. Dates are day/month (9/11 is 9 November). Use the year of the saved order unless one is given; "today" and "semalam" are relative to today's date given below.
 - total_amount: only if the message states a total or price. Never work one out from the items.
 - buyer_name, phone_number, full_address, city, postcode, state, remark: only if the message changes them.
@@ -193,5 +193,24 @@ export async function orderAfterChange(
     }
   }
   if (!patternsFound) return { reply: '🤔 What should change? E.g. "w + 1", "9/11/26" or "Total RM420".' };
-  return { data: fillCorrection(message, saved), aiItems: false };
+  const items = message.order?.order_items?.length
+    ? mergeItems(saved.order.order_items || [], message.order.order_items)
+    : [];
+  return {
+    data: fillCorrection({ ...message, order: { ...message.order, order_items: items, shipment_description: '' } }, saved),
+    aiItems: items.length > 0,
+  };
+}
+
+// An items line sent as a change sets the products it names; the rest stay.
+export function mergeItems(
+  saved: NonNullable<ExtractedData['order']['order_items']>,
+  changed: NonNullable<ExtractedData['order']['order_items']>
+) {
+  const byProduct = new Map(saved.map((item) => [String(item.product_id), { ...item }]));
+  for (const item of changed) {
+    const current = byProduct.get(String(item.product_id));
+    byProduct.set(String(item.product_id), { ...current, ...item, product_name: item.product_name ?? current?.product_name });
+  }
+  return [...byProduct.values()].filter((item) => item.quantity > 0);
 }

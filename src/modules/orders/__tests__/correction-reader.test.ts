@@ -67,6 +67,23 @@ describe('correctionToOrder', () => {
 });
 
 describe('orderAfterChange without Claude', () => {
+  it('changes only the products the items line names', async () => {
+    const result = await orderAfterChange(
+      {
+        customer: {},
+        address: {},
+        order: { order_date: '', order_items: [{ product_id: 'p-w' as any, quantity: 3 }], shipment_description: '3w', total_amount: 0 },
+        partial: true,
+        text: '3w',
+      },
+      saved
+    );
+    expect('data' in result && result.data.order.order_items).toEqual([
+      { product_id: 'p-w', quantity: 3, product_name: 'Wash' },
+      { product_id: 'p-s', quantity: 2, product_name: 'Spray' },
+    ]);
+  });
+
   it('uses the items line when Claude is off', async () => {
     const result = await orderAfterChange(
       {
@@ -79,7 +96,11 @@ describe('orderAfterChange without Claude', () => {
       saved
     );
     expect('data' in result && result.data.order).toMatchObject({
-      order_items: [{ product_id: 'p-f', quantity: 1 }],
+      order_items: [
+        { product_id: 'p-w', quantity: 2, product_name: 'Wash' },
+        { product_id: 'p-s', quantity: 2, product_name: 'Spray' },
+        { product_id: 'p-f', quantity: 1 },
+      ],
       order_date: '2026-11-06',
       total_amount: 399,
     });

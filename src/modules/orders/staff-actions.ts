@@ -149,8 +149,7 @@ export async function correctOrder(job: ExtractedData & { sender: string; wamid?
   await replyToStaff(
     job.sender,
     orderSummaryText({
-      heading: '✏️ Order updated',
-      orderNumber: updated.order_number,
+      heading: `✏️ *${updated.order_number}* updated`,
       orderDate: updated.order_date,
       data,
       extraLines: [receipt ? receiptLine(receipt) : null, sheetLine],
@@ -176,8 +175,7 @@ export async function previewOrder(job: ExtractedData & { sender: string; wamid?
   await replyToStaff(
     job.sender,
     orderSummaryText({
-      heading: changing ? '✏️ Test order updated' : '🧪 Test order read',
-      orderNumber: '(not saved)',
+      heading: changing ? '✏️ *Test order* updated · not saved' : '🧪 *Test order* · not saved',
       data: { ...job, order: { ...job.order, order_items: items } },
     }),
     job.wamid,

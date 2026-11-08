@@ -122,8 +122,7 @@ async function correctOrder(job, orderId) {
     }
     await (0, staff_check_1.rememberOrderPayload)(orderId, data);
     await (0, staff_reply_1.replyToStaff)(job.sender, (0, staff_check_1.orderSummaryText)({
-        heading: '✏️ Order updated',
-        orderNumber: updated.order_number,
+        heading: `✏️ *${updated.order_number}* updated`,
         orderDate: updated.order_date,
         data,
         extraLines: [receipt ? (0, staff_reply_1.receiptLine)(receipt) : null, sheetLine],
@@ -143,8 +142,7 @@ async function previewOrder(job, changing) {
     if (changing)
         await (0, staff_check_1.endChange)(job.sender, staff_check_1.TEST_ORDER);
     await (0, staff_reply_1.replyToStaff)(job.sender, (0, staff_check_1.orderSummaryText)({
-        heading: changing ? '✏️ Test order updated' : '🧪 Test order read',
-        orderNumber: '(not saved)',
+        heading: changing ? '✏️ *Test order* updated · not saved' : '🧪 *Test order* · not saved',
         data: Object.assign(Object.assign({}, job), { order: Object.assign(Object.assign({}, job.order), { order_items: items }) }),
     }), job.wamid, (0, staff_check_1.orderButtons)(staff_check_1.TEST_ORDER));
 }

@@ -111,8 +111,7 @@ const worker = new bullmq_1.Worker('orders', async (job) => {
         // The sheet write filled in product names, which the summary shows.
         await (0, staff_check_1.rememberOrderPayload)(dbResult.id, job.data).catch((error) => console.error('Could not remember order for corrections:', error));
         await (0, staff_reply_1.replyToStaff)(job.data.sender, (0, staff_check_1.orderSummaryText)({
-            heading: '✅ Order saved',
-            orderNumber: dbResult === null || dbResult === void 0 ? void 0 : dbResult.order_number,
+            heading: `✅ *${dbResult.order_number}* saved`,
             orderDate: dbResult === null || dbResult === void 0 ? void 0 : dbResult.order_date,
             data: job.data,
             extraLines: [receipt ? (0, staff_reply_1.receiptLine)(receipt) : null],

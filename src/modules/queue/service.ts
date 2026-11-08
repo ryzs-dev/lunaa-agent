@@ -160,8 +160,7 @@ const worker = new Worker(
       await replyToStaff(
         job.data.sender,
         orderSummaryText({
-          heading: '✅ Order saved',
-          orderNumber: dbResult?.order_number,
+          heading: `✅ *${dbResult.order_number}* saved`,
           orderDate: dbResult?.order_date,
           data: job.data,
           extraLines: [receipt ? receiptLine(receipt) : null],

@@ -9,6 +9,7 @@ exports.orderTestOn = orderTestOn;
 exports.orderButtons = orderButtons;
 exports.parseOrderButton = parseOrderButton;
 exports.displayDate = displayDate;
+exports.displayPhone = displayPhone;
 exports.orderSummaryText = orderSummaryText;
 exports.fillCorrection = fillCorrection;
 exports.rememberOrderPayload = rememberOrderPayload;
@@ -66,25 +67,38 @@ function displayDate(value) {
     const month = MONTHS[Number(match[2]) - 1];
     return month ? `${Number(match[3])} ${month} ${match[1]}` : null;
 }
-// What the bot read, so staff can spot a wrong date, item or total at a glance.
+// Malaysian numbers as staff write them (014-331 0771); others keep their country code.
+function displayPhone(value) {
+    const digits = String(value !== null && value !== void 0 ? value : '').replace(/\D/g, '');
+    if (!digits)
+        return null;
+    if (!digits.startsWith('60'))
+        return `+${digits}`;
+    const local = `0${digits.slice(2)}`;
+    if (local.length === 11)
+        return `${local.slice(0, 3)}-${local.slice(3, 7)} ${local.slice(7)}`;
+    if (local.length === 10)
+        return `${local.slice(0, 3)}-${local.slice(3, 6)} ${local.slice(6)}`;
+    return local;
+}
+// What the bot read, short enough to check at a glance. WhatsApp shows *x* in bold.
 function orderSummaryText(input) {
-    var _a, _b, _c, _d;
+    var _a, _b, _c;
     const { customer, address, order } = input.data;
-    const items = (order.order_items || [])
-        .map((item) => `${item.quantity}× ${item.product_name || 'Unknown product'}`)
-        .join(', ');
-    const buyer = [customer.name, customer.phone_number].filter(Boolean).join(' · ');
+    const items = (order.order_items || []).map((item) => `${item.quantity}× ${item.product_name || 'Unknown product'}`);
+    const buyer = [customer.name, displayPhone(customer.phone_number)].filter(Boolean).join(' · ');
     const place = [address.city, address.state].filter(Boolean).join(', ');
     return [
-        `${input.heading}: ${(_a = input.orderNumber) !== null && _a !== void 0 ? _a : ''}`.trim(),
-        `Date: ${(_c = (_b = displayDate(input.orderDate)) !== null && _b !== void 0 ? _b : displayDate(order.order_date)) !== null && _c !== void 0 ? _c : 'not given'}`,
-        buyer ? `Buyer: ${buyer}` : null,
-        place ? `Ship to: ${place}` : null,
-        `Items: ${items || 'none'}`,
-        `Total: ${money(order.total_amount)}`,
-        ...((_d = input.extraLines) !== null && _d !== void 0 ? _d : []),
+        input.heading,
+        `📅 ${(_b = (_a = displayDate(input.orderDate)) !== null && _a !== void 0 ? _a : displayDate(order.order_date)) !== null && _b !== void 0 ? _b : 'No date'}`,
+        buyer ? `👤 ${buyer}` : null,
+        place ? `📍 ${place}` : null,
+        '',
+        ...(items.length ? items : ['No products']),
+        ...((_c = input.extraLines) !== null && _c !== void 0 ? _c : []),
+        `💰 *${money(order.total_amount)}*`,
     ]
-        .filter(Boolean)
+        .filter((line) => line !== null && line !== undefined)
         .join('\n');
 }
 // A correction often leaves out what didn't change; the saved order fills it in.

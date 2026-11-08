@@ -59,30 +59,41 @@ export function displayDate(value: unknown) {
   return month ? `${Number(match[3])} ${month} ${match[1]}` : null;
 }
 
-// What the bot read, so staff can spot a wrong date, item or total at a glance.
+// Malaysian numbers as staff write them (014-331 0771); others keep their country code.
+export function displayPhone(value: unknown) {
+  const digits = String(value ?? '').replace(/\D/g, '');
+  if (!digits) return null;
+  if (!digits.startsWith('60')) return `+${digits}`;
+  const local = `0${digits.slice(2)}`;
+  if (local.length === 11) return `${local.slice(0, 3)}-${local.slice(3, 7)} ${local.slice(7)}`;
+  if (local.length === 10) return `${local.slice(0, 3)}-${local.slice(3, 6)} ${local.slice(6)}`;
+  return local;
+}
+
+// What the bot read, short enough to check at a glance. WhatsApp shows *x* in bold.
 export function orderSummaryText(input: {
   heading: string;
-  orderNumber?: string | null;
   orderDate?: unknown;
   data: ExtractedData;
   extraLines?: Array<string | null | undefined>;
 }) {
   const { customer, address, order } = input.data;
-  const items = (order.order_items || [])
-    .map((item) => `${item.quantity}× ${item.product_name || 'Unknown product'}`)
-    .join(', ');
-  const buyer = [customer.name, customer.phone_number].filter(Boolean).join(' · ');
+  const items = (order.order_items || []).map(
+    (item) => `${item.quantity}× ${item.product_name || 'Unknown product'}`
+  );
+  const buyer = [customer.name, displayPhone(customer.phone_number)].filter(Boolean).join(' · ');
   const place = [address.city, address.state].filter(Boolean).join(', ');
   return [
-    `${input.heading}: ${input.orderNumber ?? ''}`.trim(),
-    `Date: ${displayDate(input.orderDate) ?? displayDate(order.order_date) ?? 'not given'}`,
-    buyer ? `Buyer: ${buyer}` : null,
-    place ? `Ship to: ${place}` : null,
-    `Items: ${items || 'none'}`,
-    `Total: ${money(order.total_amount)}`,
+    input.heading,
+    `📅 ${displayDate(input.orderDate) ?? displayDate(order.order_date) ?? 'No date'}`,
+    buyer ? `👤 ${buyer}` : null,
+    place ? `📍 ${place}` : null,
+    '',
+    ...(items.length ? items : ['No products']),
     ...(input.extraLines ?? []),
+    `💰 *${money(order.total_amount)}*`,
   ]
-    .filter(Boolean)
+    .filter((line) => line !== null && line !== undefined)
     .join('\n');
 }
 

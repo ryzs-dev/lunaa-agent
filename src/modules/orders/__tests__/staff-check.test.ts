@@ -1,6 +1,6 @@
 jest.mock('../../queue', () => ({ __esModule: true, default: {} }));
 
-import { displayDate, fillCorrection, orderButtons, orderButtonsOn, orderSummaryText, orderTestOn, parseOrderButton } from '../staff-check';
+import { displayDate, displayPhone, fillCorrection, orderButtons, orderButtonsOn, orderSummaryText, orderTestOn, parseOrderButton } from '../staff-check';
 import { findSheetRowIndex, mergeSheetRow } from '../../../utils/sheetMapper';
 
 const id = '0f8e2d4c-1a2b-4c3d-8e9f-001122334455';
@@ -49,24 +49,31 @@ describe('order buttons', () => {
 describe('orderSummaryText', () => {
   it('shows what the bot read', () => {
     expect(
-      orderSummaryText({ heading: '✅ Order saved', orderNumber: 'ORD-1', orderDate: '2026-11-08', data: order })
+      orderSummaryText({ heading: '✅ *ORD-1* saved', orderDate: '2026-11-08', data: order })
     ).toBe(
       [
-        '✅ Order saved: ORD-1',
-        'Date: 8 Nov 2026',
-        'Buyer: Tan Mei Ling · 60123456789',
-        'Ship to: Klang, Selangor',
-        'Items: 2× Lunaa Pad',
-        'Total: RM 158.00',
+        '✅ *ORD-1* saved',
+        '📅 8 Nov 2026',
+        '👤 Tan Mei Ling · 012-345 6789',
+        '📍 Klang, Selangor',
+        '',
+        '2× Lunaa Pad',
+        '💰 *RM 158.00*',
       ].join('\n')
     );
+  });
+
+  it('writes phone numbers the local way', () => {
+    expect(displayPhone('60143310771')).toBe('014-331 0771');
+    expect(displayPhone('601126470411')).toBe('011-2647 0411');
+    expect(displayPhone('6591234567')).toBe('+6591234567');
   });
 
   it('says when no date was given', () => {
     expect(displayDate('')).toBeNull();
     expect(
       orderSummaryText({ heading: 'x', data: { ...order, order: { ...order.order, order_date: '' } } })
-    ).toContain('Date: not given');
+    ).toContain('📅 No date');
   });
 });
 

@@ -17,8 +17,10 @@ const supabase_1 = require("../supabase");
 const secret_1 = require("../receipts/secret");
 const graph_1 = require("./graph");
 const settings_1 = require("./settings");
-// "Continue with Facebook": Lunaa signs in with their own Meta app, picks an
-// ad account, and the CRM keeps the token. With a Facebook Login for Business
+// "Continue with Facebook": Lunaa signs in with their own Meta app and the CRM
+// keeps the token. There's no picking step: signing in again keeps the main ad
+// account (the Ads page has its own account dropdown), and a first connection
+// takes the account with the most spend. With a Facebook Login for Business
 // configuration (META_LOGIN_CONFIG_ID) set to issue system-user tokens, the
 // token never expires; without one, it's a 60-day user token.
 const SCOPES = ['ads_read', 'business_management'];
@@ -96,15 +98,19 @@ function withParams(url, params) {
     return u.toString();
 }
 // Meta sends the browser here after sign-in. Whatever happens, the browser
-// goes back to the CRM with ?meta=choose or ?meta=error&reason=….
+// goes back to the CRM with ?meta=connected or ?meta=error&reason=….
 async function handleCallback(query) {
-    var _a, _b, _c, _d, _e, _f;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k;
     let back = defaultReturn();
     try {
         const state = verify(String((_a = query.state) !== null && _a !== void 0 ? _a : ''));
         back = state.r;
         if (query.error) {
-            return withParams(back, { meta: 'error', reason: String(query.error_description || 'Sign-in was cancelled') });
+            return {
+                url: withParams(back, { meta: 'error', reason: String(query.error_description || 'Sign-in was cancelled') }),
+                connected: false,
+                backfill: false,
+            };
         }
         const { data: shortLived } = await axios_1.default.get(`${graph_1.GRAPH}/oauth/access_token`, {
             params: { client_id: appId(), client_secret: appSecret(), redirect_uri: redirectUri(), code: String((_b = query.code) !== null && _b !== void 0 ? _b : '') },
@@ -123,23 +129,33 @@ async function handleCallback(query) {
         const debug = await (0, graph_1.graphGet)('debug_token', `${appId()}|${appSecret()}`, { input_token: token });
         const expiresAt = Number((_d = (_c = debug === null || debug === void 0 ? void 0 : debug.data) === null || _c === void 0 ? void 0 : _c.expires_at) !== null && _d !== void 0 ? _d : 0);
         const me = await (0, graph_1.graphGet)('me', token, { fields: 'name' }).catch(() => ({ name: null }));
-        const { error } = await supabase_1.supabase
-            .from('meta_ads_settings')
-            .update({
-            pending_token_encrypted: (0, secret_1.encryptSecret)(token),
-            pending_token_expires_at: expiresAt ? new Date(expiresAt * 1000).toISOString() : null,
-            pending_user: (_e = me === null || me === void 0 ? void 0 : me.name) !== null && _e !== void 0 ? _e : null,
-            pending_at: new Date().toISOString(),
-        })
-            .eq('id', 1);
-        if (error)
-            throw error;
-        return withParams(back, { meta: 'choose' });
+        const name = (_e = me === null || me === void 0 ? void 0 : me.name) !== null && _e !== void 0 ? _e : 'This Facebook account';
+        const accounts = await fetchAccounts(token);
+        const row = await (0, settings_1.getRow)();
+        let main = (_f = row.ad_account_id) !== null && _f !== void 0 ? _f : null;
+        if (main && !accounts.some((a) => a.id === main)) {
+            throw new Error(`${name} can’t see the ${(_g = row.account_name) !== null && _g !== void 0 ? _g : main} ad account (${main}). Sign in with someone who can, ` +
+                `or give ${name} access first: Business settings → Accounts → Ad accounts → ${(_h = row.account_name) !== null && _h !== void 0 ? _h : main} → Assign people.`);
+        }
+        if (!main)
+            main = await busiestAccount(token, accounts);
+        if (!main)
+            throw new Error(`${name} can’t see any ad accounts. Sign in with someone who has access in Business settings.`);
+        // Orders go to the ad account's dataset; take it when there's exactly one.
+        let datasetId;
+        if (!row.dataset_id) {
+            const pixels = await listDatasets(main, token).catch(() => []);
+            if (pixels.length === 1)
+                datasetId = pixels[0].id;
+        }
+        const { needsBackfill } = await (0, settings_1.updateSettings)(Object.assign({ ad_account_id: main, access_token: token, via: 'facebook', by: (_j = me === null || me === void 0 ? void 0 : me.name) !== null && _j !== void 0 ? _j : null, expires_at: expiresAt ? new Date(expiresAt * 1000).toISOString() : null }, (datasetId ? { dataset_id: datasetId } : {})));
+        await clearPending();
+        return { url: withParams(back, { meta: 'connected' }), connected: true, backfill: needsBackfill };
     }
     catch (error) {
-        const reason = (error === null || error === void 0 ? void 0 : error.response) ? (0, graph_1.graphError)(error) : (_f = error === null || error === void 0 ? void 0 : error.message) !== null && _f !== void 0 ? _f : 'Sign-in failed';
+        const reason = (error === null || error === void 0 ? void 0 : error.response) ? (0, graph_1.graphError)(error) : (_k = error === null || error === void 0 ? void 0 : error.message) !== null && _k !== void 0 ? _k : 'Sign-in failed';
         console.error('[meta-ads] sign-in failed:', reason);
-        return withParams(back, { meta: 'error', reason });
+        return { url: withParams(back, { meta: 'error', reason }), connected: false, backfill: false };
     }
 }
 // The token to list accounts with: the one just signed in, or the saved one.
@@ -152,9 +168,8 @@ async function tokenForPicking() {
         return { token: (0, secret_1.decryptSecret)(row.token_encrypted), pending: false, row };
     throw new Error('Sign in with Facebook first');
 }
-async function listAdAccounts() {
-    var _a, _b, _c, _d;
-    const { token, row } = await tokenForPicking();
+async function fetchAccounts(token) {
+    var _a, _b;
     const accounts = [];
     let page = await (0, graph_1.graphGet)('me/adaccounts', token, {
         fields: 'name,account_id,currency,timezone_name,account_status,business{name}',
@@ -166,24 +181,39 @@ async function listAdAccounts() {
             break;
         page = await (0, graph_1.graphGet)(page.paging.next, token);
     }
-    return {
-        user: (_d = (_c = row.pending_user) !== null && _c !== void 0 ? _c : row.connected_by) !== null && _d !== void 0 ? _d : null,
-        accounts: accounts.map((a) => {
-            var _a, _b;
-            return ({
-                id: a.id,
-                name: a.name,
-                currency: a.currency,
-                timezone: a.timezone_name,
-                business: (_b = (_a = a.business) === null || _a === void 0 ? void 0 : _a.name) !== null && _b !== void 0 ? _b : null,
-                active: a.account_status === 1,
-            });
-        }),
-    };
+    return accounts.map((a) => {
+        var _a, _b;
+        return ({
+            id: a.id,
+            name: a.name,
+            currency: a.currency,
+            timezone: a.timezone_name,
+            business: (_b = (_a = a.business) === null || _a === void 0 ? void 0 : _a.name) !== null && _b !== void 0 ? _b : null,
+            active: a.account_status === 1,
+        });
+    });
 }
-async function listDatasets(adAccountId) {
+// The active account that spent the most in the last 30 days (the first one if none spent).
+async function busiestAccount(token, accounts) {
+    var _a, _b, _c, _d;
+    const active = accounts.filter((a) => a.active);
+    let best = null;
+    for (const account of active) {
+        const insights = await (0, graph_1.graphGet)(`${account.id}/insights`, token, { date_preset: 'last_30d', fields: 'spend' }).catch(() => null);
+        const spend = Number((_c = (_b = (_a = insights === null || insights === void 0 ? void 0 : insights.data) === null || _a === void 0 ? void 0 : _a[0]) === null || _b === void 0 ? void 0 : _b.spend) !== null && _c !== void 0 ? _c : 0);
+        if (!best || spend > best.spend)
+            best = { id: account.id, spend };
+    }
+    return (_d = best === null || best === void 0 ? void 0 : best.id) !== null && _d !== void 0 ? _d : null;
+}
+async function listAdAccounts() {
+    var _a, _b;
+    const { token, row } = await tokenForPicking();
+    return { user: (_b = (_a = row.pending_user) !== null && _a !== void 0 ? _a : row.connected_by) !== null && _b !== void 0 ? _b : null, accounts: await fetchAccounts(token) };
+}
+async function listDatasets(adAccountId, withToken) {
     var _a;
-    const { token } = await tokenForPicking();
+    const token = withToken !== null && withToken !== void 0 ? withToken : (await tokenForPicking()).token;
     const page = await (0, graph_1.graphGet)(`${adAccountId}/adspixels`, token, { fields: 'name,id', limit: 100 });
     return ((_a = page.data) !== null && _a !== void 0 ? _a : []).map((d) => ({ id: d.id, name: d.name }));
 }

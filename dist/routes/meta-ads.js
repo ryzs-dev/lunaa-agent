@@ -54,7 +54,12 @@ exports.metaAdsRouter.get('/oauth/start', (req, res) => {
     }
 });
 exports.metaAdsRouter.get('/oauth/callback', async (req, res) => {
-    res.redirect(await (0, oauth_1.handleCallback)(req.query));
+    const result = await (0, oauth_1.handleCallback)(req.query);
+    // Signing in again clears an old sync error; a first connection pulls 13 months.
+    if (result.connected) {
+        (result.backfill ? (0, scheduler_1.runSync)(scheduler_1.BACKFILL_DAYS) : (0, scheduler_1.runSync)()).catch((e) => console.error('[meta-ads] sync after sign-in failed:', e.message));
+    }
+    res.redirect(result.url);
 });
 exports.metaAdsRouter.get('/oauth/accounts', async (_req, res) => {
     var _a, _b, _c, _d;

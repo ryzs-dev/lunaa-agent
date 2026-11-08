@@ -77,7 +77,15 @@ export function sheetRowAlreadyExists(
   rows: unknown[][],
   payload: ExtractedData
 ): boolean {
-  if (rows.length < 2) return false;
+  return findSheetRowIndex(rows, payload) >= 0;
+}
+
+// Index in rows (0 is the header) of the row written for this order, or -1.
+export function findSheetRowIndex(
+  rows: unknown[][],
+  payload: ExtractedData
+): number {
+  if (rows.length < 2) return -1;
 
   const headers = (rows[0] || []).map((header) => String(header ?? ''));
   const phoneIdx = headers.findIndex(
@@ -100,7 +108,7 @@ export function sheetRowAlreadyExists(
     .replace(/\s+/g, '')
     .toLowerCase();
 
-  return rows.slice(1).some((row) => {
+  const index = rows.slice(1).findIndex((row) => {
     const cells = row as unknown[];
     const rowPhone =
       phoneIdx >= 0 ? normalizePhoneDigits(String(cells[phoneIdx] ?? '')) : '';
@@ -119,6 +127,32 @@ export function sheetRowAlreadyExists(
       total === rowTotal &&
       shipment === rowShip
     );
+  });
+  return index < 0 ? -1 : index + 1;
+}
+
+// Columns the bot never overwrites on a correction: staff fill or change these.
+const STAFF_COLUMNS = new Set(['fbname', 'new/repeat', 'status', 'agent by / under']);
+
+// The corrected row: the bot's own columns and both orders' product columns
+// are rewritten, anything staff typed elsewhere in the row is kept.
+export function mergeSheetRow(
+  existing: unknown[],
+  headers: string[],
+  next: ExtractedData,
+  previousProductNames: string[]
+): Array<string | number> {
+  const fresh = buildSheetRow(next, headers);
+  const products = new Set(
+    [...previousProductNames, ...Object.keys(next.productQuantityMap ?? {})].map(normalizeHeader)
+  );
+  return headers.map((header, index) => {
+    const normalized = normalizeHeader(header);
+    const owned =
+      (sheetFieldMap[normalized] && !STAFF_COLUMNS.has(normalized)) || products.has(normalized);
+    if (owned) return fresh[index];
+    const cell = existing[index];
+    return cell === undefined || cell === null ? '' : (cell as string | number);
   });
 }
 

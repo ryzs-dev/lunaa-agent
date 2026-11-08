@@ -3,7 +3,9 @@ import { googleClient } from '.';
 import {
   buildSheetRow,
   extraGridRowsNeeded,
+  findSheetRowIndex,
   isGridLimitError,
+  mergeSheetRow,
   quoteSheetName,
   sheetRowAlreadyExists,
   sheetRowWriteRange,
@@ -283,6 +285,92 @@ export class GoogleSheetService {
       console.error('Failed to insert order into Google Sheets:', error);
       return {
         success: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  // A staff correction: the order's row is rewritten in place, or moved to
+  // another monthly tab when the date changed month. Without the old row, the
+  // corrected one is added and staff are told to remove the old one.
+  async replaceOrder(previous: ExtractedData, next: ExtractedData) {
+    try {
+      next.order.order_items = await Promise.all(
+        (next.order.order_items || []).map(async (item: any) => {
+          const product = await this.productService.getProductById(item.product_id);
+          return { ...item, product_name: product?.name || 'Unknown Product' };
+        })
+      );
+      const productQuantityMap: Record<string, number> = {};
+      for (const item of next.order.order_items) {
+        if (item.product_name) productQuantityMap[item.product_name] = item.quantity;
+      }
+      const payload = { ...next, productQuantityMap };
+      const previousProducts = (previous.order.order_items || [])
+        .map((item) => item.product_name)
+        .filter((name): name is string => Boolean(name));
+
+      const oldSheets = resolveSheetNames(this.sheetNames, previous.order.order_date);
+      const newSheets = resolveSheetNames(this.sheetNames, next.order.order_date);
+      const newMonthSheet = monthSheetName(orderSheetMonth(next.order.order_date));
+      let missing = false;
+
+      for (const sheet of [...new Set([...oldSheets, ...newSheets])]) {
+        await this.enqueueWrite(async () => {
+          let rows: unknown[][] = [];
+          if (oldSheets.includes(sheet)) {
+            const response = await googleClient.spreadsheets.values.get({
+              spreadsheetId: this.spreadSheetId,
+              range: `${quoteSheetName(sheet)}!A:CZ`,
+            });
+            rows = response.data.values || [];
+          }
+          const index = findSheetRowIndex(rows, previous);
+
+          if (!newSheets.includes(sheet)) {
+            // The date moved to another month: take the row out of this tab.
+            if (index < 0) return;
+            const { sheetId } = await this.getSheetMeta(sheet);
+            if (sheetId == null) return;
+            await googleClient.spreadsheets.batchUpdate({
+              spreadsheetId: this.spreadSheetId,
+              requestBody: {
+                requests: [
+                  {
+                    deleteDimension: {
+                      range: { sheetId, dimension: 'ROWS', startIndex: index, endIndex: index + 1 },
+                    },
+                  },
+                ],
+              },
+            });
+            return;
+          }
+
+          if (index < 0) {
+            if (oldSheets.includes(sheet)) missing = true;
+            if (sheet === newMonthSheet) await this.ensureMonthSheet(sheet, next.order.order_date);
+            await this.writeSheetRow(sheet, payload);
+            return;
+          }
+
+          const headers = (rows[0] || []).map((header) => String(header ?? ''));
+          await googleClient.spreadsheets.values.update({
+            spreadsheetId: this.spreadSheetId,
+            range: `${quoteSheetName(sheet)}!A${index + 1}`,
+            valueInputOption: 'RAW',
+            requestBody: {
+              values: [mergeSheetRow(rows[index] || [], headers, payload, previousProducts)],
+            },
+          });
+        });
+      }
+
+      return { success: true as const, missingOldRow: missing };
+    } catch (error) {
+      console.error('Failed to correct order in Google Sheets:', error);
+      return {
+        success: false as const,
         error: error instanceof Error ? error.message : String(error),
       };
     }

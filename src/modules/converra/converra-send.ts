@@ -7,6 +7,8 @@ import { getConverraConfig } from './converra-connection';
 type GraphStylePayload = {
   to: string;
   text?: { body: string };
+  // Up to three reply buttons under the text.
+  buttons?: { id: string; title: string }[];
   template?: {
     name: string;
     language?: { code?: string };
@@ -29,7 +31,12 @@ export function converraBody(payload: GraphStylePayload, idempotencyKey?: string
       },
     };
   }
-  return { to: payload.to, idempotency_key: key, text: payload.text?.body ?? '' };
+  return {
+    to: payload.to,
+    idempotency_key: key,
+    text: payload.text?.body ?? '',
+    ...(payload.buttons?.length ? { buttons: payload.buttons } : {}),
+  };
 }
 
 export async function sendThroughConverra(payload: GraphStylePayload, idempotencyKey?: string) {

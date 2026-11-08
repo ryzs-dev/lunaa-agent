@@ -56,7 +56,12 @@ export function orderFailedText(savedAs: string | null | undefined, reason: stri
 // Answers only the staff member who sent the message, through Converra so it
 // shows in their thread. It is a chat reply inside their open window, so it
 // never needs a template. A failed reply is logged and never affects the order.
-export async function replyToStaff(to: string | null | undefined, text: string, wamid?: string | null) {
+export async function replyToStaff(
+  to: string | null | undefined,
+  text: string,
+  wamid?: string | null,
+  buttons?: { id: string; title: string }[]
+) {
   if (!to) return;
   if (wamid) {
     if (replied.has(wamid)) return;
@@ -64,7 +69,7 @@ export async function replyToStaff(to: string | null | undefined, text: string, 
     if (replied.size > REMEMBERED) replied.delete(replied.values().next().value as string);
   }
   try {
-    await sendThroughConverra({ to, text: { body: text } }, wamid ? `staff-reply:${wamid}` : undefined);
+    await sendThroughConverra({ to, text: { body: text }, buttons }, wamid ? `staff-reply:${wamid}` : undefined);
   } catch (error: any) {
     console.error('[staff-reply] could not reply:', error.response?.data?.error ?? error.message);
   }

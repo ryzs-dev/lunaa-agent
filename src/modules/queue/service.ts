@@ -8,11 +8,18 @@ import OrderTrackingService from '../order_tracking/service';
 import ReceiptService from '../receipts/service';
 import {
   orderFailedText,
-  orderReceivedText,
   orderRepeatText,
+  receiptLine,
   receiptOnlyText,
   replyToStaff,
 } from '../receipts/staff-reply';
+import { correctOrder, handleOrderButton } from '../orders/staff-actions';
+import {
+  orderBeingChanged,
+  orderButtons,
+  orderSummaryText,
+  rememberOrderPayload,
+} from '../orders/staff-check';
 import ReceiptDatabase from '../receipts/database';
 
 const customerService = new CustomerService();
@@ -32,6 +39,32 @@ const worker = new Worker(
       const receipt = await receiptService.ingestStandalone({ ...media, sender, caption, received_at });
       const order = receipt.order_id ? await receiptDb.getOrderTotal(receipt.order_id) : null;
       await replyToStaff(sender, receiptOnlyText(order?.order_number, receipt), media.wamid);
+      return;
+    }
+
+    if (job.name === 'order.button') {
+      await handleOrderButton(job.data);
+      return;
+    }
+
+    // Staff chat comes through here too: only answer what looks like an order.
+    const lookedLikeOrder = job.data.order?.total_amount || job.data.customer?.phone_number;
+
+    // The sender tapped Change: this message replaces that order.
+    const changing = lookedLikeOrder ? await orderBeingChanged(job.data.sender) : null;
+    if (changing) {
+      try {
+        await correctOrder(job.data, changing);
+      } catch (error) {
+        console.error('Error correcting order:', changing, error);
+        const noItems = error instanceof Error && /order item/i.test(error.message);
+        await replyToStaff(
+          job.data.sender,
+          `⚠️ Order not changed: ${noItems ? 'no products found' : 'some details are missing'}. Please check and send it again.`,
+          job.data.wamid
+        );
+        throw error;
+      }
       return;
     }
 
@@ -95,15 +128,26 @@ const worker = new Worker(
         );
       }
 
+      // The sheet write filled in product names, which the summary shows.
+      if (dbResult?.id) {
+        await rememberOrderPayload(dbResult.id, job.data).catch((error) =>
+          console.error('Could not remember order for corrections:', error)
+        );
+      }
       await replyToStaff(
         job.data.sender,
-        orderReceivedText(dbResult ?? {}, job.data.customer?.name, receipt),
-        job.data.wamid
+        orderSummaryText({
+          heading: '✅ Order saved',
+          orderNumber: dbResult?.order_number,
+          orderDate: dbResult?.order_date,
+          data: job.data,
+          extraLines: [receipt ? receiptLine(receipt) : null],
+        }),
+        job.data.wamid,
+        dbResult?.id ? orderButtons(dbResult.id) : undefined
       );
     } catch (error) {
       console.error('Error processing job:', job.id, error);
-      // Staff chat comes through here too: only answer what looks like an order.
-      const lookedLikeOrder = job.data.order?.total_amount || job.data.customer?.phone_number;
       if (lookedLikeOrder && job.attemptsMade + 1 >= (job.opts.attempts ?? 1)) {
         const noItems = error instanceof Error && /order item/i.test(error.message);
         await replyToStaff(

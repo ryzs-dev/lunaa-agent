@@ -235,6 +235,89 @@ class GoogleSheetService {
             };
         }
     }
+    // A staff correction: the order's row is rewritten in place, or moved to
+    // another monthly tab when the date changed month. Without the old row, the
+    // corrected one is added and staff are told to remove the old one.
+    async replaceOrder(previous, next) {
+        try {
+            next.order.order_items = await Promise.all((next.order.order_items || []).map(async (item) => {
+                const product = await this.productService.getProductById(item.product_id);
+                return Object.assign(Object.assign({}, item), { product_name: (product === null || product === void 0 ? void 0 : product.name) || 'Unknown Product' });
+            }));
+            const productQuantityMap = {};
+            for (const item of next.order.order_items) {
+                if (item.product_name)
+                    productQuantityMap[item.product_name] = item.quantity;
+            }
+            const payload = Object.assign(Object.assign({}, next), { productQuantityMap });
+            const previousProducts = (previous.order.order_items || [])
+                .map((item) => item.product_name)
+                .filter((name) => Boolean(name));
+            const oldSheets = (0, monthlySheet_1.resolveSheetNames)(this.sheetNames, previous.order.order_date);
+            const newSheets = (0, monthlySheet_1.resolveSheetNames)(this.sheetNames, next.order.order_date);
+            const newMonthSheet = (0, monthlySheet_1.monthSheetName)((0, monthlySheet_1.orderSheetMonth)(next.order.order_date));
+            let missing = false;
+            for (const sheet of [...new Set([...oldSheets, ...newSheets])]) {
+                await this.enqueueWrite(async () => {
+                    let rows = [];
+                    if (oldSheets.includes(sheet)) {
+                        const response = await _1.googleClient.spreadsheets.values.get({
+                            spreadsheetId: this.spreadSheetId,
+                            range: `${(0, sheetMapper_1.quoteSheetName)(sheet)}!A:CZ`,
+                        });
+                        rows = response.data.values || [];
+                    }
+                    const index = (0, sheetMapper_1.findSheetRowIndex)(rows, previous);
+                    if (!newSheets.includes(sheet)) {
+                        // The date moved to another month: take the row out of this tab.
+                        if (index < 0)
+                            return;
+                        const { sheetId } = await this.getSheetMeta(sheet);
+                        if (sheetId == null)
+                            return;
+                        await _1.googleClient.spreadsheets.batchUpdate({
+                            spreadsheetId: this.spreadSheetId,
+                            requestBody: {
+                                requests: [
+                                    {
+                                        deleteDimension: {
+                                            range: { sheetId, dimension: 'ROWS', startIndex: index, endIndex: index + 1 },
+                                        },
+                                    },
+                                ],
+                            },
+                        });
+                        return;
+                    }
+                    if (index < 0) {
+                        if (oldSheets.includes(sheet))
+                            missing = true;
+                        if (sheet === newMonthSheet)
+                            await this.ensureMonthSheet(sheet, next.order.order_date);
+                        await this.writeSheetRow(sheet, payload);
+                        return;
+                    }
+                    const headers = (rows[0] || []).map((header) => String(header !== null && header !== void 0 ? header : ''));
+                    await _1.googleClient.spreadsheets.values.update({
+                        spreadsheetId: this.spreadSheetId,
+                        range: `${(0, sheetMapper_1.quoteSheetName)(sheet)}!A${index + 1}`,
+                        valueInputOption: 'RAW',
+                        requestBody: {
+                            values: [(0, sheetMapper_1.mergeSheetRow)(rows[index] || [], headers, payload, previousProducts)],
+                        },
+                    });
+                });
+            }
+            return { success: true, missingOldRow: missing };
+        }
+        catch (error) {
+            console.error('Failed to correct order in Google Sheets:', error);
+            return {
+                success: false,
+                error: error instanceof Error ? error.message : String(error),
+            };
+        }
+    }
     async getSheetData(sheetName) {
         console.log(`📋 Fetching data from sheet: ${sheetName}`);
         try {

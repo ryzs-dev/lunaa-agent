@@ -9,6 +9,8 @@ exports.sheetRowWriteRange = sheetRowWriteRange;
 exports.buildSheetRow = buildSheetRow;
 exports.normalizePhoneDigits = normalizePhoneDigits;
 exports.sheetRowAlreadyExists = sheetRowAlreadyExists;
+exports.findSheetRowIndex = findSheetRowIndex;
+exports.mergeSheetRow = mergeSheetRow;
 exports.isGridLimitError = isGridLimitError;
 const HEADER_ALIASES = {
     'fb name': 'fbname',
@@ -63,9 +65,13 @@ function normalizePhoneDigits(phone) {
     return digits;
 }
 function sheetRowAlreadyExists(rows, payload) {
+    return findSheetRowIndex(rows, payload) >= 0;
+}
+// Index in rows (0 is the header) of the row written for this order, or -1.
+function findSheetRowIndex(rows, payload) {
     var _a;
     if (rows.length < 2)
-        return false;
+        return -1;
     const headers = (rows[0] || []).map((header) => String(header !== null && header !== void 0 ? header : ''));
     const phoneIdx = headers.findIndex((header) => normalizeHeader(header) === 'phone number');
     const dateIdx = headers.findIndex((header) => normalizeHeader(header) === 'order date');
@@ -77,7 +83,7 @@ function sheetRowAlreadyExists(rows, payload) {
     const shipment = String(payload.order.shipment_description || '')
         .replace(/\s+/g, '')
         .toLowerCase();
-    return rows.slice(1).some((row) => {
+    const index = rows.slice(1).findIndex((row) => {
         var _a, _b, _c, _d;
         const cells = row;
         const rowPhone = phoneIdx >= 0 ? normalizePhoneDigits(String((_a = cells[phoneIdx]) !== null && _a !== void 0 ? _a : '')) : '';
@@ -91,6 +97,24 @@ function sheetRowAlreadyExists(rows, payload) {
             date === rowDate &&
             total === rowTotal &&
             shipment === rowShip);
+    });
+    return index < 0 ? -1 : index + 1;
+}
+// Columns the bot never overwrites on a correction: staff fill or change these.
+const STAFF_COLUMNS = new Set(['fbname', 'new/repeat', 'status', 'agent by / under']);
+// The corrected row: the bot's own columns and both orders' product columns
+// are rewritten, anything staff typed elsewhere in the row is kept.
+function mergeSheetRow(existing, headers, next, previousProductNames) {
+    var _a;
+    const fresh = buildSheetRow(next, headers);
+    const products = new Set([...previousProductNames, ...Object.keys((_a = next.productQuantityMap) !== null && _a !== void 0 ? _a : {})].map(normalizeHeader));
+    return headers.map((header, index) => {
+        const normalized = normalizeHeader(header);
+        const owned = (exports.sheetFieldMap[normalized] && !STAFF_COLUMNS.has(normalized)) || products.has(normalized);
+        if (owned)
+            return fresh[index];
+        const cell = existing[index];
+        return cell === undefined || cell === null ? '' : cell;
     });
 }
 function isGridLimitError(error) {

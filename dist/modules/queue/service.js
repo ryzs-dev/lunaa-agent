@@ -12,6 +12,8 @@ const service_4 = require("../google/service");
 const service_5 = __importDefault(require("../order_tracking/service"));
 const service_6 = __importDefault(require("../receipts/service"));
 const staff_reply_1 = require("../receipts/staff-reply");
+const staff_actions_1 = require("../orders/staff-actions");
+const staff_check_1 = require("../orders/staff-check");
 const database_1 = __importDefault(require("../receipts/database"));
 const customerService = new service_1.default();
 const addressService = new service_2.default();
@@ -21,7 +23,7 @@ const orderTrackingService = new service_5.default();
 const receiptService = new service_6.default();
 const receiptDb = new database_1.default();
 const worker = new bullmq_1.Worker('orders', async (job) => {
-    var _a, _b, _c, _d, _e, _f, _g, _h;
+    var _a, _b, _c, _d, _e, _f, _g;
     // A receipt sent on its own, after the order it pays for.
     if (job.name === 'receipt.received') {
         const { media, sender, caption, received_at } = job.data;
@@ -30,14 +32,34 @@ const worker = new bullmq_1.Worker('orders', async (job) => {
         await (0, staff_reply_1.replyToStaff)(sender, (0, staff_reply_1.receiptOnlyText)(order === null || order === void 0 ? void 0 : order.order_number, receipt), media.wamid);
         return;
     }
+    if (job.name === 'order.button') {
+        await (0, staff_actions_1.handleOrderButton)(job.data);
+        return;
+    }
+    // Staff chat comes through here too: only answer what looks like an order.
+    const lookedLikeOrder = ((_a = job.data.order) === null || _a === void 0 ? void 0 : _a.total_amount) || ((_b = job.data.customer) === null || _b === void 0 ? void 0 : _b.phone_number);
+    // The sender tapped Change: this message replaces that order.
+    const changing = lookedLikeOrder ? await (0, staff_check_1.orderBeingChanged)(job.data.sender) : null;
+    if (changing) {
+        try {
+            await (0, staff_actions_1.correctOrder)(job.data, changing);
+        }
+        catch (error) {
+            console.error('Error correcting order:', changing, error);
+            const noItems = error instanceof Error && /order item/i.test(error.message);
+            await (0, staff_reply_1.replyToStaff)(job.data.sender, `⚠️ Order not changed: ${noItems ? 'no products found' : 'some details are missing'}. Please check and send it again.`, job.data.wamid);
+            throw error;
+        }
+        return;
+    }
     let savedOrder = null;
     try {
         const customer = await customerService.createCustomer(job.data.customer);
         const existingOrder = await orderService.findSimilarOrder({
             customer_id: customer.id,
-            order_date: (_a = job.data.order) === null || _a === void 0 ? void 0 : _a.order_date,
-            total_amount: (_b = job.data.order) === null || _b === void 0 ? void 0 : _b.total_amount,
-            shipment_description: (_c = job.data.order) === null || _c === void 0 ? void 0 : _c.shipment_description,
+            order_date: (_c = job.data.order) === null || _c === void 0 ? void 0 : _c.order_date,
+            total_amount: (_d = job.data.order) === null || _d === void 0 ? void 0 : _d.total_amount,
+            shipment_description: (_e = job.data.order) === null || _e === void 0 ? void 0 : _e.shipment_description,
         });
         let dbResult = existingOrder;
         savedOrder = existingOrder;
@@ -51,7 +73,7 @@ const worker = new bullmq_1.Worker('orders', async (job) => {
         let receipt = null;
         if (job.data.receipt && (dbResult === null || dbResult === void 0 ? void 0 : dbResult.id)) {
             try {
-                receipt = await receiptService.ingest(Object.assign(Object.assign({}, job.data.receipt), { sender: (_d = job.data.sender) !== null && _d !== void 0 ? _d : null, caption: null }), dbResult.id);
+                receipt = await receiptService.ingest(Object.assign(Object.assign({}, job.data.receipt), { sender: (_f = job.data.sender) !== null && _f !== void 0 ? _f : null, caption: null }), dbResult.id);
             }
             catch (error) {
                 console.error('Error saving receipt for job', job.id, error);
@@ -70,13 +92,21 @@ const worker = new bullmq_1.Worker('orders', async (job) => {
         if (!sheetResult.success) {
             throw new Error(`Google Sheets write failed after CRM save: ${sheetResult.error}`);
         }
-        await (0, staff_reply_1.replyToStaff)(job.data.sender, (0, staff_reply_1.orderReceivedText)(dbResult !== null && dbResult !== void 0 ? dbResult : {}, (_e = job.data.customer) === null || _e === void 0 ? void 0 : _e.name, receipt), job.data.wamid);
+        // The sheet write filled in product names, which the summary shows.
+        if (dbResult === null || dbResult === void 0 ? void 0 : dbResult.id) {
+            await (0, staff_check_1.rememberOrderPayload)(dbResult.id, job.data).catch((error) => console.error('Could not remember order for corrections:', error));
+        }
+        await (0, staff_reply_1.replyToStaff)(job.data.sender, (0, staff_check_1.orderSummaryText)({
+            heading: '✅ Order saved',
+            orderNumber: dbResult === null || dbResult === void 0 ? void 0 : dbResult.order_number,
+            orderDate: dbResult === null || dbResult === void 0 ? void 0 : dbResult.order_date,
+            data: job.data,
+            extraLines: [receipt ? (0, staff_reply_1.receiptLine)(receipt) : null],
+        }), job.data.wamid, (dbResult === null || dbResult === void 0 ? void 0 : dbResult.id) ? (0, staff_check_1.orderButtons)(dbResult.id) : undefined);
     }
     catch (error) {
         console.error('Error processing job:', job.id, error);
-        // Staff chat comes through here too: only answer what looks like an order.
-        const lookedLikeOrder = ((_f = job.data.order) === null || _f === void 0 ? void 0 : _f.total_amount) || ((_g = job.data.customer) === null || _g === void 0 ? void 0 : _g.phone_number);
-        if (lookedLikeOrder && job.attemptsMade + 1 >= ((_h = job.opts.attempts) !== null && _h !== void 0 ? _h : 1)) {
+        if (lookedLikeOrder && job.attemptsMade + 1 >= ((_g = job.opts.attempts) !== null && _g !== void 0 ? _g : 1)) {
             const noItems = error instanceof Error && /order item/i.test(error.message);
             await (0, staff_reply_1.replyToStaff)(job.data.sender, (0, staff_reply_1.orderFailedText)(savedOrder === null || savedOrder === void 0 ? void 0 : savedOrder.order_number, noItems ? 'no products found' : 'some details are missing'), job.data.wamid);
         }

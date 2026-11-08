@@ -1,0 +1,120 @@
+import connection from '../queue';
+import { ExtractedData } from '../google/types';
+
+// After the bot saves a WhatsApp order it shows staff what it read, with
+// Confirm and Change. Change makes that staff member's next order message
+// replace this order instead of adding a new one.
+
+const FIX_SECONDS = 30 * 60;
+const PAYLOAD_SECONDS = 14 * 24 * 60 * 60;
+
+const fixKey = (sender: string) => `order-bot:fix:${sender}`;
+const payloadKey = (orderId: string) => `order-bot:order:${orderId}`;
+
+export type OrderButton = { action: 'confirm' | 'change'; orderId: string };
+
+export function orderButtons(orderId: string) {
+  return [
+    { id: `order_ok:${orderId}`, title: 'Confirm' },
+    { id: `order_fix:${orderId}`, title: 'Change' },
+  ];
+}
+
+export function parseOrderButton(id: unknown): OrderButton | null {
+  const match = /^order_(ok|fix):([0-9a-f-]{36})$/i.exec(String(id ?? ''));
+  if (!match) return null;
+  return { action: match[1] === 'ok' ? 'confirm' : 'change', orderId: match[2] };
+}
+
+const money = (value: unknown) => `RM ${Number(value ?? 0).toFixed(2)}`;
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+export function displayDate(value: unknown) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(value ?? ''));
+  if (!match) return null;
+  const month = MONTHS[Number(match[2]) - 1];
+  return month ? `${Number(match[3])} ${month} ${match[1]}` : null;
+}
+
+// What the bot read, so staff can spot a wrong date, item or total at a glance.
+export function orderSummaryText(input: {
+  heading: string;
+  orderNumber?: string | null;
+  orderDate?: unknown;
+  data: ExtractedData;
+  extraLines?: Array<string | null | undefined>;
+}) {
+  const { customer, address, order } = input.data;
+  const items = (order.order_items || [])
+    .map((item) => `${item.quantity}× ${item.product_name || 'Unknown product'}`)
+    .join(', ');
+  const buyer = [customer.name, customer.phone_number].filter(Boolean).join(' · ');
+  const place = [address.city, address.state].filter(Boolean).join(', ');
+  return [
+    `${input.heading}: ${input.orderNumber ?? ''}`.trim(),
+    `Date: ${displayDate(input.orderDate) ?? displayDate(order.order_date) ?? 'not given'}`,
+    buyer ? `Buyer: ${buyer}` : null,
+    place ? `Ship to: ${place}` : null,
+    `Items: ${items || 'none'}`,
+    `Total: ${money(order.total_amount)}`,
+    ...(input.extraLines ?? []),
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
+// A correction often leaves out what didn't change; the saved order fills it in.
+export function fillCorrection(next: ExtractedData, previous: ExtractedData | null): ExtractedData {
+  if (!previous) return next;
+  const pick = <T>(value: T | undefined | null, fallback: T | undefined) =>
+    value === undefined || value === null || (value as unknown) === '' ? fallback : value;
+  return {
+    ...next,
+    customer: {
+      name: pick(next.customer?.name, previous.customer.name),
+      phone_number: pick(next.customer?.phone_number, previous.customer.phone_number),
+      email: pick(next.customer?.email, previous.customer.email),
+    },
+    address: {
+      full_address: pick(next.address?.full_address, previous.address.full_address),
+      city: pick(next.address?.city, previous.address.city),
+      postcode: pick(next.address?.postcode, previous.address.postcode),
+      state: pick(next.address?.state, previous.address.state),
+    },
+    order: {
+      ...next.order,
+      order_date: pick(next.order?.order_date, previous.order.order_date),
+      payment_method: pick(next.order?.payment_method, previous.order.payment_method),
+    },
+    remark: pick(next.remark, previous.remark),
+  };
+}
+
+// The order as it was written to the sheet, so a correction can find its row.
+export async function rememberOrderPayload(orderId: string, data: ExtractedData) {
+  const { customer, address, order, remark } = data;
+  await connection.set(
+    payloadKey(orderId),
+    JSON.stringify({ customer, address, order, remark }),
+    'EX',
+    PAYLOAD_SECONDS
+  );
+}
+
+export async function orderPayload(orderId: string): Promise<ExtractedData | null> {
+  const raw = await connection.get(payloadKey(orderId));
+  return raw ? (JSON.parse(raw) as ExtractedData) : null;
+}
+
+export async function startChange(sender: string, orderId: string) {
+  await connection.set(fixKey(sender), orderId, 'EX', FIX_SECONDS);
+}
+
+export async function orderBeingChanged(sender: string | null | undefined) {
+  return sender ? connection.get(fixKey(sender)) : null;
+}
+
+export async function endChange(sender: string, orderId?: string) {
+  if (orderId && (await connection.get(fixKey(sender))) !== orderId) return;
+  await connection.del(fixKey(sender));
+}

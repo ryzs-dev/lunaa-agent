@@ -8,6 +8,7 @@ const express_1 = __importDefault(require("express"));
 const service_1 = __importDefault(require("../modules/orders/service"));
 const service_2 = __importDefault(require("../modules/order_tracking/service"));
 const converra_forwarder_1 = require("../modules/converra/converra-forwarder");
+const converra_order_event_1 = require("../modules/converra/converra-order-event");
 const service_3 = require("../modules/parcel-daily/service");
 const rules_1 = require("../modules/shipping/rules");
 const database_1 = require("../modules/orders/database");
@@ -87,7 +88,6 @@ exports.orderRouter.get('/customer/:customerId', async (req, res) => {
 });
 // POST /api/orders - Create a new order
 exports.orderRouter.post('/', async (req, res) => {
-    var _a, _b, _c;
     const orderData = req.body;
     try {
         const newOrder = await orderService.createOrder(orderData);
@@ -96,24 +96,8 @@ exports.orderRouter.post('/', async (req, res) => {
             message: 'Order created successfully',
             order: newOrder,
         });
-        // Fire-and-forget: emit order.created to Converra asynchronously
-        // so the dashboard response is never delayed by this
-        const orderId = (_a = newOrder === null || newOrder === void 0 ? void 0 : newOrder.id) !== null && _a !== void 0 ? _a : `manual-${Date.now()}`;
-        (0, converra_forwarder_1.forwardToConverra)({
-            event_type: 'order.created',
-            external_event_id: `order-${orderId}`,
-            timestamp: new Date().toISOString(),
-            payload: {
-                order_id: orderId,
-                customer_id: orderData.customer_id,
-                total_amount: orderData.total_amount,
-                status: (_b = orderData.status) !== null && _b !== void 0 ? _b : 'unpaid',
-                payment_method: (_c = orderData.payment_method) !== null && _c !== void 0 ? _c : '',
-                order_date: orderData.order_date,
-            },
-        }).catch((err) => {
-            console.error('[order.router] Failed to forward order.created to Converra:', err);
-        });
+        // Fire-and-forget, so the dashboard response is never delayed by it.
+        void (0, converra_order_event_1.announceOrderToConverra)(Object.assign(Object.assign({}, newOrder), { customer_id: orderData.customer_id }));
     }
     catch (error) {
         console.error('Error creating order:', error);

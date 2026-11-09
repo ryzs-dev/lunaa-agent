@@ -15,6 +15,7 @@ import {
   replyToStaff,
 } from '../receipts/staff-reply';
 import { correctOrder, handleOrderButton, previewOrder } from '../orders/staff-actions';
+import { announceOrderToConverra } from '../converra/converra-order-event';
 import {
   orderBeingChanged,
   orderButtons,
@@ -146,6 +147,11 @@ const worker = new Worker(
         throw new Error(
           `Google Sheets write failed after CRM save: ${sheetResult.error}`
         );
+      }
+
+      // Converra stops follow-ups and flows still selling to this customer.
+      if (dbResult?.id) {
+        void announceOrderToConverra({ ...dbResult, phone: customer.phone_number });
       }
 
       if (!orderButtonsOn(job.data.sender) || !dbResult?.id) {

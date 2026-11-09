@@ -13,6 +13,7 @@ const service_5 = __importDefault(require("../order_tracking/service"));
 const service_6 = __importDefault(require("../receipts/service"));
 const staff_reply_1 = require("../receipts/staff-reply");
 const staff_actions_1 = require("../orders/staff-actions");
+const converra_order_event_1 = require("../converra/converra-order-event");
 const staff_check_1 = require("../orders/staff-check");
 const database_1 = __importDefault(require("../receipts/database"));
 const customerService = new service_1.default();
@@ -107,6 +108,10 @@ const worker = new bullmq_1.Worker('orders', async (job) => {
         console.log('Both operations completed:', { dbResult, sheetResult });
         if (!sheetResult.success) {
             throw new Error(`Google Sheets write failed after CRM save: ${sheetResult.error}`);
+        }
+        // Converra stops follow-ups and flows still selling to this customer.
+        if (dbResult === null || dbResult === void 0 ? void 0 : dbResult.id) {
+            void (0, converra_order_event_1.announceOrderToConverra)(Object.assign(Object.assign({}, dbResult), { phone: customer.phone_number }));
         }
         if (!(0, staff_check_1.orderButtonsOn)(job.data.sender) || !(dbResult === null || dbResult === void 0 ? void 0 : dbResult.id)) {
             await (0, staff_reply_1.replyToStaff)(job.data.sender, (0, staff_reply_1.orderReceivedText)(dbResult !== null && dbResult !== void 0 ? dbResult : {}, (_g = job.data.customer) === null || _g === void 0 ? void 0 : _g.name, receipt), job.data.wamid);

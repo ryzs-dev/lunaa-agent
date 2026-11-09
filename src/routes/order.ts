@@ -4,6 +4,7 @@ import { UUID } from 'crypto';
 import OrderTrackingService from '../modules/order_tracking/service';
 import { UpdateLineItemsInput, OrderType } from '../modules/orders/types';
 import { forwardToConverra } from '../modules/converra/converra-forwarder';
+import { announceOrderToConverra } from '../modules/converra/converra-order-event';
 import { ParcelDailyService } from '../modules/parcel-daily/service';
 import { bookShipment } from '../modules/shipping/rules';
 import { OrderValidationError } from '../modules/orders/database';
@@ -117,24 +118,8 @@ orderRouter.post('/', async (req, res) => {
       order: newOrder,
     });
 
-    // Fire-and-forget: emit order.created to Converra asynchronously
-    // so the dashboard response is never delayed by this
-    const orderId: string = (newOrder as any)?.id ?? `manual-${Date.now()}`;
-    forwardToConverra({
-      event_type: 'order.created',
-      external_event_id: `order-${orderId}`,
-      timestamp: new Date().toISOString(),
-      payload: {
-        order_id: orderId,
-        customer_id: orderData.customer_id,
-        total_amount: orderData.total_amount,
-        status: orderData.status ?? 'unpaid',
-        payment_method: orderData.payment_method ?? '',
-        order_date: orderData.order_date,
-      },
-    }).catch((err: unknown) => {
-      console.error('[order.router] Failed to forward order.created to Converra:', err);
-    });
+    // Fire-and-forget, so the dashboard response is never delayed by it.
+    void announceOrderToConverra({ ...(newOrder as any), customer_id: orderData.customer_id });
   } catch (error) {
     console.error('Error creating order:', error);
     const message =

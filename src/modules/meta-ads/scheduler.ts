@@ -1,6 +1,5 @@
 import { syncInsights } from './sync';
 import { sendPendingConversions } from './conversions';
-import { adComments } from './comments';
 import { listPages, pageReport } from './pages';
 import { connection } from './settings';
 
@@ -37,8 +36,8 @@ async function runSend() {
   }
 }
 
-// Keep this month's comments and page numbers loaded (the ranges the Ads and
-// Pages pages open on), so nobody waits on Meta when they open them.
+// Keep this month's page numbers loaded (the range the Pages page opens on),
+// so nobody waits on Meta when they open it.
 const WARM_EVERY_MS = 9 * 60 * 1000;
 async function warm() {
   try {
@@ -46,7 +45,6 @@ async function warm() {
     if (!conn?.row.ad_account_id) return;
     const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kuala_Lumpur' }).format(new Date());
     const from = `${today.slice(0, 7)}-01`;
-    await adComments(conn.row.ad_account_id, from, today).catch(() => undefined);
     const page = (await listPages().catch(() => [])).find((p) => p.access);
     if (page) await pageReport(page.id, from, today).catch(() => undefined);
   } catch {}

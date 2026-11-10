@@ -5,7 +5,6 @@ exports.runSync = runSync;
 exports.startMetaAdsScheduler = startMetaAdsScheduler;
 const sync_1 = require("./sync");
 const conversions_1 = require("./conversions");
-const comments_1 = require("./comments");
 const pages_1 = require("./pages");
 const settings_1 = require("./settings");
 const SYNC_EVERY_MS = 60 * 60 * 1000;
@@ -40,8 +39,8 @@ async function runSend() {
         sending = false;
     }
 }
-// Keep this month's comments and page numbers loaded (the ranges the Ads and
-// Pages pages open on), so nobody waits on Meta when they open them.
+// Keep this month's page numbers loaded (the range the Pages page opens on),
+// so nobody waits on Meta when they open it.
 const WARM_EVERY_MS = 9 * 60 * 1000;
 async function warm() {
     try {
@@ -50,7 +49,6 @@ async function warm() {
             return;
         const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kuala_Lumpur' }).format(new Date());
         const from = `${today.slice(0, 7)}-01`;
-        await (0, comments_1.adComments)(conn.row.ad_account_id, from, today).catch(() => undefined);
         const page = (await (0, pages_1.listPages)().catch(() => [])).find((p) => p.access);
         if (page)
             await (0, pages_1.pageReport)(page.id, from, today).catch(() => undefined);

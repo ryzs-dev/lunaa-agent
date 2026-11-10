@@ -60,12 +60,33 @@ const METRICS: Record<string, keyof Omit<PageDay, 'date'>> = {
 const TTL_MS = 10 * 60 * 1000;
 const cache = new Map<string, { at: number; value: any }>();
 
+// Fresh for 10 minutes; after that the old value is served at once while a
+// new one loads in the background (kept for up to a day).
+const STALE_MS = 24 * 60 * 60 * 1000;
+const loading = new Map<string, Promise<any>>();
+
 export async function cached<T>(key: string, load: () => Promise<T>): Promise<T> {
   const hit = cache.get(key);
-  if (hit && Date.now() - hit.at < TTL_MS) return hit.value as T;
-  const value = await load();
-  cache.set(key, { at: Date.now(), value });
-  return value;
+  const age = hit ? Date.now() - hit.at : Infinity;
+  const refresh = () => {
+    if (!loading.has(key)) {
+      const p = load()
+        .then((value) => {
+          cache.set(key, { at: Date.now(), value });
+          if (cache.size > 500) cache.delete(cache.keys().next().value as string);
+          return value;
+        })
+        .finally(() => loading.delete(key));
+      loading.set(key, p);
+    }
+    return loading.get(key)! as Promise<T>;
+  };
+  if (hit && age < TTL_MS) return hit.value as T;
+  if (hit && age < STALE_MS) {
+    refresh().catch(() => {});
+    return hit.value as T;
+  }
+  return refresh();
 }
 
 export async function userToken() {
@@ -248,38 +269,56 @@ export type PostComment = {
   permalink: string | null;
 };
 
-// The latest comments on one of the page's posts. Needs pages_read_user_content.
+// Comments read through the ids lookup with the page token: Meta returns the
+// text without pages_read_user_content (names only come with it).
+export const COMMENT_FIELDS = 'id,message,from{name},created_time,comment_count,like_count,permalink_url';
+
+export const toComment = (c: any): PostComment => ({
+  id: c.id,
+  message: c.message,
+  from: c.from?.name ?? null,
+  created_time: c.created_time,
+  replies: c.comment_count ?? 0,
+  likes: c.like_count ?? 0,
+  permalink: c.permalink_url ?? null,
+});
+
+// Several posts at once (50 per request): link, picture, comment total and the
+// latest `limit` comments of each. limit 0 just counts.
+export async function postsWithComments(pageToken: string, postIds: string[], limit: number) {
+  const out = new Map<string, { permalink: string | null; picture: string | null; total: number; comments: PostComment[] }>();
+  const edge = limit
+    ? `comments.order(reverse_chronological).summary(total_count).limit(${limit}){${COMMENT_FIELDS}}`
+    : 'comments.summary(total_count).limit(0)';
+  for (let i = 0; i < postIds.length; i += 50) {
+    const res: any = await graphGet('', pageToken, {
+      ids: postIds.slice(i, i + 50).join(','),
+      fields: `permalink_url,full_picture,${edge}`,
+    });
+    for (const [id, post] of Object.entries<any>(res)) {
+      out.set(id, {
+        permalink: post.permalink_url ?? null,
+        picture: post.full_picture ?? null,
+        total: post.comments?.summary?.total_count ?? 0,
+        comments: (post.comments?.data ?? []).filter((c: any) => c.message).map(toComment),
+      });
+    }
+  }
+  return out;
+}
+
+export async function pageToken(pageId: string) {
+  const token = await userToken();
+  const raw = (await cached(`page-tokens:${token.slice(-12)}`, () => pagesWithTokens(token))).find((p: any) => p.id === pageId);
+  return (raw?.access_token as string | undefined) ?? null;
+}
+
+// The latest comments on one post (a page post or an ad's post).
 export async function postComments(pageId: string, postId: string): Promise<PostComment[]> {
   if (!/^\d+$/.test(pageId) || !new RegExp(`^${pageId}_\\d+$`).test(postId)) throw new Error('Unknown post');
-  const token = await userToken();
   return cached(`post-comments:${postId}`, async () => {
-    const raw = (await pagesWithTokens(token)).find((p) => p.id === pageId);
-    if (!raw) throw new Error('The person who signed in with Facebook has no role on this page.');
-    try {
-      const res: any = await graphGet(`${postId}/comments`, raw.access_token, {
-        fields: 'id,message,from{name},created_time,comment_count,like_count,permalink_url',
-        order: 'reverse_chronological',
-        limit: 50,
-      });
-      return (res.data ?? [])
-        .filter((c: any) => c.message)
-        .map((c: any) => ({
-          id: c.id,
-          message: c.message,
-          from: c.from?.name ?? null,
-          created_time: c.created_time,
-          replies: c.comment_count ?? 0,
-          likes: c.like_count ?? 0,
-          permalink: c.permalink_url ?? null,
-        }));
-    } catch (e: any) {
-      const err = e?.response?.data?.error;
-      if (err?.code === 10 || err?.code === 200) {
-        throw new Error(
-          'Facebook hasn’t allowed reading comments yet. Sign in with Facebook again (Integrations → Meta ads) and allow page comments.'
-        );
-      }
-      throw e;
-    }
+    const token = await pageToken(pageId);
+    if (!token) throw new Error('The person who signed in with Facebook has no role on this page.');
+    return (await postsWithComments(token, [postId], 50)).get(postId)?.comments ?? [];
   });
 }

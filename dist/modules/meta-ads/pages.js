@@ -1,10 +1,13 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.toComment = exports.COMMENT_FIELDS = void 0;
 exports.cached = cached;
 exports.userToken = userToken;
 exports.pagesWithTokens = pagesWithTokens;
 exports.listPages = listPages;
 exports.pageReport = pageReport;
+exports.postsWithComments = postsWithComments;
+exports.pageToken = pageToken;
 exports.postComments = postComments;
 const graph_1 = require("./graph");
 const settings_1 = require("./settings");
@@ -19,13 +22,34 @@ const METRICS = {
 };
 const TTL_MS = 10 * 60 * 1000;
 const cache = new Map();
+// Fresh for 10 minutes; after that the old value is served at once while a
+// new one loads in the background (kept for up to a day).
+const STALE_MS = 24 * 60 * 60 * 1000;
+const loading = new Map();
 async function cached(key, load) {
     const hit = cache.get(key);
-    if (hit && Date.now() - hit.at < TTL_MS)
+    const age = hit ? Date.now() - hit.at : Infinity;
+    const refresh = () => {
+        if (!loading.has(key)) {
+            const p = load()
+                .then((value) => {
+                cache.set(key, { at: Date.now(), value });
+                if (cache.size > 500)
+                    cache.delete(cache.keys().next().value);
+                return value;
+            })
+                .finally(() => loading.delete(key));
+            loading.set(key, p);
+        }
+        return loading.get(key);
+    };
+    if (hit && age < TTL_MS)
         return hit.value;
-    const value = await load();
-    cache.set(key, { at: Date.now(), value });
-    return value;
+    if (hit && age < STALE_MS) {
+        refresh().catch(() => { });
+        return hit.value;
+    }
+    return refresh();
 }
 async function userToken() {
     const conn = await (0, settings_1.connection)();
@@ -194,43 +218,61 @@ async function pageReport(pageId, from, to) {
         };
     });
 }
-// The latest comments on one of the page's posts. Needs pages_read_user_content.
+// Comments read through the ids lookup with the page token: Meta returns the
+// text without pages_read_user_content (names only come with it).
+exports.COMMENT_FIELDS = 'id,message,from{name},created_time,comment_count,like_count,permalink_url';
+const toComment = (c) => {
+    var _a, _b, _c, _d, _e;
+    return ({
+        id: c.id,
+        message: c.message,
+        from: (_b = (_a = c.from) === null || _a === void 0 ? void 0 : _a.name) !== null && _b !== void 0 ? _b : null,
+        created_time: c.created_time,
+        replies: (_c = c.comment_count) !== null && _c !== void 0 ? _c : 0,
+        likes: (_d = c.like_count) !== null && _d !== void 0 ? _d : 0,
+        permalink: (_e = c.permalink_url) !== null && _e !== void 0 ? _e : null,
+    });
+};
+exports.toComment = toComment;
+// Several posts at once (50 per request): link, picture, comment total and the
+// latest `limit` comments of each. limit 0 just counts.
+async function postsWithComments(pageToken, postIds, limit) {
+    var _a, _b, _c, _d, _e, _f, _g;
+    const out = new Map();
+    const edge = limit
+        ? `comments.order(reverse_chronological).summary(total_count).limit(${limit}){${exports.COMMENT_FIELDS}}`
+        : 'comments.summary(total_count).limit(0)';
+    for (let i = 0; i < postIds.length; i += 50) {
+        const res = await (0, graph_1.graphGet)('', pageToken, {
+            ids: postIds.slice(i, i + 50).join(','),
+            fields: `permalink_url,full_picture,${edge}`,
+        });
+        for (const [id, post] of Object.entries(res)) {
+            out.set(id, {
+                permalink: (_a = post.permalink_url) !== null && _a !== void 0 ? _a : null,
+                picture: (_b = post.full_picture) !== null && _b !== void 0 ? _b : null,
+                total: (_e = (_d = (_c = post.comments) === null || _c === void 0 ? void 0 : _c.summary) === null || _d === void 0 ? void 0 : _d.total_count) !== null && _e !== void 0 ? _e : 0,
+                comments: ((_g = (_f = post.comments) === null || _f === void 0 ? void 0 : _f.data) !== null && _g !== void 0 ? _g : []).filter((c) => c.message).map(exports.toComment),
+            });
+        }
+    }
+    return out;
+}
+async function pageToken(pageId) {
+    var _a;
+    const token = await userToken();
+    const raw = (await cached(`page-tokens:${token.slice(-12)}`, () => pagesWithTokens(token))).find((p) => p.id === pageId);
+    return (_a = raw === null || raw === void 0 ? void 0 : raw.access_token) !== null && _a !== void 0 ? _a : null;
+}
+// The latest comments on one post (a page post or an ad's post).
 async function postComments(pageId, postId) {
     if (!/^\d+$/.test(pageId) || !new RegExp(`^${pageId}_\\d+$`).test(postId))
         throw new Error('Unknown post');
-    const token = await userToken();
     return cached(`post-comments:${postId}`, async () => {
-        var _a, _b, _c;
-        const raw = (await pagesWithTokens(token)).find((p) => p.id === pageId);
-        if (!raw)
+        var _a, _b;
+        const token = await pageToken(pageId);
+        if (!token)
             throw new Error('The person who signed in with Facebook has no role on this page.');
-        try {
-            const res = await (0, graph_1.graphGet)(`${postId}/comments`, raw.access_token, {
-                fields: 'id,message,from{name},created_time,comment_count,like_count,permalink_url',
-                order: 'reverse_chronological',
-                limit: 50,
-            });
-            return ((_a = res.data) !== null && _a !== void 0 ? _a : [])
-                .filter((c) => c.message)
-                .map((c) => {
-                var _a, _b, _c, _d, _e;
-                return ({
-                    id: c.id,
-                    message: c.message,
-                    from: (_b = (_a = c.from) === null || _a === void 0 ? void 0 : _a.name) !== null && _b !== void 0 ? _b : null,
-                    created_time: c.created_time,
-                    replies: (_c = c.comment_count) !== null && _c !== void 0 ? _c : 0,
-                    likes: (_d = c.like_count) !== null && _d !== void 0 ? _d : 0,
-                    permalink: (_e = c.permalink_url) !== null && _e !== void 0 ? _e : null,
-                });
-            });
-        }
-        catch (e) {
-            const err = (_c = (_b = e === null || e === void 0 ? void 0 : e.response) === null || _b === void 0 ? void 0 : _b.data) === null || _c === void 0 ? void 0 : _c.error;
-            if ((err === null || err === void 0 ? void 0 : err.code) === 10 || (err === null || err === void 0 ? void 0 : err.code) === 200) {
-                throw new Error('Facebook hasn’t allowed reading comments yet. Sign in with Facebook again (Integrations → Meta ads) and allow page comments.');
-            }
-            throw e;
-        }
+        return (_b = (_a = (await postsWithComments(token, [postId], 50)).get(postId)) === null || _a === void 0 ? void 0 : _a.comments) !== null && _b !== void 0 ? _b : [];
     });
 }

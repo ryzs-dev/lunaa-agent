@@ -12,7 +12,7 @@ import {
   takePendingToken,
 } from '../modules/meta-ads/oauth';
 import { listPages, pageReport, postComments } from '../modules/meta-ads/pages';
-import { adComments } from '../modules/meta-ads/comments';
+import { adComments, campaignAds } from '../modules/meta-ads/comments';
 import { resolveMonthKey } from '../utils/timezone';
 
 export const metaAdsRouter = express.Router();
@@ -183,6 +183,21 @@ metaAdsRouter.get('/pages/:id/report', async (req, res) => {
 metaAdsRouter.get('/pages/:id/posts/:postId/comments', async (req, res) => {
   try {
     res.json({ success: true, comments: await postComments(req.params.id, req.params.postId) });
+  } catch (error: any) {
+    res.status(400).json({ success: false, message: error?.response?.data?.error?.message ?? error.message });
+  }
+});
+
+// A campaign's ads in a period, with each ad's comment count.
+metaAdsRouter.get('/campaigns/:id/ads', async (req, res) => {
+  try {
+    const ads = await campaignAds(
+      String(req.query.account ?? ''),
+      req.params.id,
+      String(req.query.from ?? ''),
+      String(req.query.to ?? '')
+    );
+    res.json({ success: true, ads });
   } catch (error: any) {
     res.status(400).json({ success: false, message: error?.response?.data?.error?.message ?? error.message });
   }

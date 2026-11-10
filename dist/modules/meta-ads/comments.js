@@ -1,123 +1,163 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.campaignAds = campaignAds;
 exports.adComments = adComments;
 const graph_1 = require("./graph");
 const pages_1 = require("./pages");
-const DAY = 86400000;
-function friendly(e) {
-    var _a, _b, _c;
-    const err = (_b = (_a = e === null || e === void 0 ? void 0 : e.response) === null || _a === void 0 ? void 0 : _a.data) === null || _b === void 0 ? void 0 : _b.error;
-    if ((err === null || err === void 0 ? void 0 : err.code) === 10 || (err === null || err === void 0 ? void 0 : err.code) === 200 || /pages_read_user_content/i.test((_c = err === null || err === void 0 ? void 0 : err.message) !== null && _c !== void 0 ? _c : '')) {
-        throw new Error('Facebook hasn’t allowed reading comments yet. Sign in with Facebook again (Integrations → Meta ads) and allow page comments.');
-    }
-    throw e;
-}
-async function pool(items, size, fn) {
-    const out = [];
-    let i = 0;
-    await Promise.all(Array.from({ length: Math.min(size, items.length) }, async () => {
-        while (i < items.length) {
-            const item = items[i++];
-            out.push(await fn(item));
-        }
-    }));
-    return out;
-}
-async function adComments(accountId, from, to) {
+const CONVERSATION = 'onsite_conversion.messaging_conversation_started_7d';
+function check(accountId, from, to) {
     if (!/^act_\d+$/.test(accountId))
         throw new Error('Unknown ad account');
     if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to) || from > to) {
         throw new Error('Send from and to as YYYY-MM-DD');
     }
+}
+// Ad-level numbers for the period, optionally for one campaign.
+async function adInsights(token, accountId, from, to, campaignId) {
+    var _a, _b;
+    const filtering = [{ field: 'impressions', operator: 'GREATER_THAN', value: 0 }];
+    if (campaignId)
+        filtering.push({ field: 'campaign.id', operator: 'EQUAL', value: campaignId });
+    const rows = [];
+    let page = await (0, graph_1.graphGet)(`${accountId}/insights`, token, {
+        level: 'ad',
+        fields: 'ad_id,ad_name,campaign_id,campaign_name,spend,impressions,clicks,actions',
+        time_range: JSON.stringify({ since: from, until: to }),
+        filtering: JSON.stringify(filtering),
+        limit: 500,
+    });
+    for (;;) {
+        rows.push(...((_a = page.data) !== null && _a !== void 0 ? _a : []));
+        if (!((_b = page.paging) === null || _b === void 0 ? void 0 : _b.next))
+            break;
+        page = await (0, graph_1.graphGet)(page.paging.next, token);
+    }
+    return rows;
+}
+// Each ad's status, thumbnail and post, 50 ads per request.
+async function adCreatives(token, adIds) {
+    var _a, _b, _c, _d, _e;
+    const out = new Map();
+    for (let i = 0; i < adIds.length; i += 50) {
+        const res = await (0, graph_1.graphGet)('', token, {
+            ids: adIds.slice(i, i + 50).join(','),
+            fields: 'effective_status,creative{effective_object_story_id,thumbnail_url}',
+        });
+        for (const [id, ad] of Object.entries(res)) {
+            out.set(id, {
+                status: (_a = ad.effective_status) !== null && _a !== void 0 ? _a : null,
+                thumbnail: (_c = (_b = ad.creative) === null || _b === void 0 ? void 0 : _b.thumbnail_url) !== null && _c !== void 0 ? _c : null,
+                post_id: (_e = (_d = ad.creative) === null || _d === void 0 ? void 0 : _d.effective_object_story_id) !== null && _e !== void 0 ? _e : null,
+            });
+        }
+    }
+    return out;
+}
+// Post ids grouped by page, keeping only pages the sign-in has a token for.
+async function byPage(postIds) {
+    const groups = new Map();
+    for (const id of new Set(postIds)) {
+        const pageId = id.split('_')[0];
+        let g = groups.get(pageId);
+        if (!g) {
+            const token = await (0, pages_1.pageToken)(pageId);
+            if (!token)
+                continue;
+            g = { token, posts: [] };
+            groups.set(pageId, g);
+        }
+        g.posts.push(id);
+    }
+    return groups;
+}
+async function campaignAds(accountId, campaignId, from, to) {
+    check(accountId, from, to);
+    if (!/^\d+$/.test(campaignId))
+        throw new Error('Unknown campaign');
+    const token = await (0, pages_1.userToken)();
+    return (0, pages_1.cached)(`campaign-ads:${accountId}:${campaignId}:${from}:${to}`, async () => {
+        const rows = await adInsights(token, accountId, from, to, campaignId);
+        const creatives = await adCreatives(token, rows.map((r) => r.ad_id));
+        const counts = new Map();
+        const pages = await byPage([...creatives.values()].map((c) => c.post_id).filter((p) => Boolean(p)));
+        for (const g of pages.values()) {
+            for (const [id, post] of await (0, pages_1.postsWithComments)(g.token, g.posts, 0))
+                counts.set(id, post);
+        }
+        return rows
+            .map((r) => {
+            var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o;
+            const c = creatives.get(r.ad_id);
+            const post = (c === null || c === void 0 ? void 0 : c.post_id) ? counts.get(c.post_id) : undefined;
+            return {
+                ad_id: r.ad_id,
+                name: r.ad_name,
+                status: (_a = c === null || c === void 0 ? void 0 : c.status) !== null && _a !== void 0 ? _a : null,
+                spend: Number((_b = r.spend) !== null && _b !== void 0 ? _b : 0),
+                impressions: Number((_c = r.impressions) !== null && _c !== void 0 ? _c : 0),
+                clicks: Number((_d = r.clicks) !== null && _d !== void 0 ? _d : 0),
+                conversations: Number((_g = (_f = (_e = r.actions) === null || _e === void 0 ? void 0 : _e.find((a) => a.action_type === CONVERSATION)) === null || _f === void 0 ? void 0 : _f.value) !== null && _g !== void 0 ? _g : 0),
+                thumbnail: (_h = c === null || c === void 0 ? void 0 : c.thumbnail) !== null && _h !== void 0 ? _h : null,
+                post_id: (_j = c === null || c === void 0 ? void 0 : c.post_id) !== null && _j !== void 0 ? _j : null,
+                page_id: (_l = (_k = c === null || c === void 0 ? void 0 : c.post_id) === null || _k === void 0 ? void 0 : _k.split('_')[0]) !== null && _l !== void 0 ? _l : null,
+                permalink: (_m = post === null || post === void 0 ? void 0 : post.permalink) !== null && _m !== void 0 ? _m : null,
+                comments: (_o = post === null || post === void 0 ? void 0 : post.total) !== null && _o !== void 0 ? _o : 0,
+            };
+        })
+            .sort((a, b) => b.spend - a.spend);
+    });
+}
+async function adComments(accountId, from, to) {
+    check(accountId, from, to);
     const token = await (0, pages_1.userToken)();
     return (0, pages_1.cached)(`comments:${accountId}:${from}:${to}`, async () => {
-        var _a, _b, _c, _d, _e, _f;
-        // Ads that showed in the period.
-        const shown = [];
-        let page = await (0, graph_1.graphGet)(`${accountId}/insights`, token, {
-            level: 'ad',
-            fields: 'ad_id,ad_name,campaign_name,impressions',
-            time_range: JSON.stringify({ since: from, until: to }),
-            filtering: JSON.stringify([{ field: 'impressions', operator: 'GREATER_THAN', value: 0 }]),
-            limit: 500,
-        });
-        for (;;) {
-            shown.push(...((_a = page.data) !== null && _a !== void 0 ? _a : []));
-            if (!((_b = page.paging) === null || _b === void 0 ? void 0 : _b.next))
-                break;
-            page = await (0, graph_1.graphGet)(page.paging.next, token);
-        }
-        if (!shown.length)
+        var _a, _b;
+        const rows = await adInsights(token, accountId, from, to);
+        if (!rows.length)
             return [];
-        // Each ad's page post.
-        const posts = new Map();
-        for (let i = 0; i < shown.length; i += 50) {
-            const chunk = shown.slice(i, i + 50);
-            const res = await (0, graph_1.graphGet)('', token, {
-                ids: chunk.map((a) => a.ad_id).join(','),
-                fields: 'creative{effective_object_story_id}',
-            });
-            for (const ad of chunk) {
-                const story = (_d = (_c = res[ad.ad_id]) === null || _c === void 0 ? void 0 : _c.creative) === null || _d === void 0 ? void 0 : _d.effective_object_story_id;
-                if (!story)
+        const creatives = await adCreatives(token, rows.map((r) => r.ad_id));
+        // Ads share posts: one group per post, naming every ad and campaign on it.
+        const groups = new Map();
+        for (const r of rows) {
+            const c = creatives.get(r.ad_id);
+            if (!(c === null || c === void 0 ? void 0 : c.post_id))
+                continue;
+            const g = (_a = groups.get(c.post_id)) !== null && _a !== void 0 ? _a : {
+                post_id: c.post_id,
+                page_id: c.post_id.split('_')[0],
+                ads: [],
+                campaigns: [],
+                thumbnail: c.thumbnail,
+                permalink: null,
+                total: 0,
+                comments: [],
+            };
+            if (!g.ads.includes(r.ad_name))
+                g.ads.push(r.ad_name);
+            if (r.campaign_name && !g.campaigns.includes(r.campaign_name))
+                g.campaigns.push(r.campaign_name);
+            groups.set(c.post_id, g);
+        }
+        const since = Date.parse(`${from}T00:00:00+08:00`);
+        const until = Date.parse(`${to}T00:00:00+08:00`) + 86400000;
+        const pages = await byPage([...groups.keys()]);
+        for (const p of pages.values()) {
+            for (const [id, post] of await (0, pages_1.postsWithComments)(p.token, p.posts, 25)) {
+                const g = groups.get(id);
+                if (!g)
                     continue;
-                const entry = (_e = posts.get(story)) !== null && _e !== void 0 ? _e : { ads: [], campaign: (_f = ad.campaign_name) !== null && _f !== void 0 ? _f : null };
-                if (!entry.ads.includes(ad.ad_name))
-                    entry.ads.push(ad.ad_name);
-                posts.set(story, entry);
+                g.permalink = post.permalink;
+                g.thumbnail = (_b = g.thumbnail) !== null && _b !== void 0 ? _b : post.picture;
+                g.total = post.total;
+                g.comments = post.comments.filter((c) => {
+                    const t = Date.parse(c.created_time);
+                    return t >= since && t < until;
+                });
             }
         }
-        // Page tokens for the pages the sign-in manages; posts on other pages are skipped.
-        const pageTokens = new Map();
-        for (const p of await (0, pages_1.pagesWithTokens)(token))
-            pageTokens.set(p.id, p.access_token);
-        const since = Date.parse(`${from}T00:00:00+08:00`);
-        const until = Date.parse(`${to}T00:00:00+08:00`) + DAY;
-        let denied = null;
-        const lists = await pool([...posts.entries()], 8, async ([postId, info]) => {
-            var _a, _b, _c;
-            const pageToken = pageTokens.get(postId.split('_')[0]);
-            if (!pageToken)
-                return [];
-            try {
-                const res = await (0, graph_1.graphGet)(`${postId}/comments`, pageToken, {
-                    fields: 'id,message,from{name},created_time,comment_count,like_count,permalink_url',
-                    order: 'reverse_chronological',
-                    limit: 50,
-                });
-                const post = await (0, graph_1.graphGet)(postId, pageToken, { fields: 'permalink_url' }).catch(() => null);
-                return ((_a = res.data) !== null && _a !== void 0 ? _a : [])
-                    .filter((c) => {
-                    const t = Date.parse(c.created_time);
-                    return t >= since && t < until && c.message;
-                })
-                    .map((c) => {
-                    var _a, _b, _c, _d, _e, _f;
-                    return ({
-                        id: c.id,
-                        message: c.message,
-                        from: (_b = (_a = c.from) === null || _a === void 0 ? void 0 : _a.name) !== null && _b !== void 0 ? _b : null,
-                        created_time: c.created_time,
-                        replies: (_c = c.comment_count) !== null && _c !== void 0 ? _c : 0,
-                        likes: (_d = c.like_count) !== null && _d !== void 0 ? _d : 0,
-                        permalink: (_e = c.permalink_url) !== null && _e !== void 0 ? _e : null,
-                        post_id: postId,
-                        post_permalink: (_f = post === null || post === void 0 ? void 0 : post.permalink_url) !== null && _f !== void 0 ? _f : null,
-                        ads: info.ads,
-                        campaign: info.campaign,
-                    });
-                });
-            }
-            catch (e) {
-                const err = (_c = (_b = e === null || e === void 0 ? void 0 : e.response) === null || _b === void 0 ? void 0 : _b.data) === null || _c === void 0 ? void 0 : _c.error;
-                if ((err === null || err === void 0 ? void 0 : err.code) === 10 || (err === null || err === void 0 ? void 0 : err.code) === 200)
-                    denied = e;
-                return [];
-            }
-        });
-        const comments = lists.flat().sort((a, b) => b.created_time.localeCompare(a.created_time));
-        if (!comments.length && denied)
-            friendly(denied);
-        return comments;
+        // Ads with comments in the period, the latest comment first.
+        return [...groups.values()]
+            .filter((g) => g.comments.length > 0)
+            .sort((a, b) => b.comments[0].created_time.localeCompare(a.comments[0].created_time));
     });
 }

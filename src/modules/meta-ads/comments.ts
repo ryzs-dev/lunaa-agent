@@ -25,6 +25,8 @@ export type AdCommentGroup = {
   post_id: string;
   page_id: string;
   ads: string[];
+  // The first ad on this post, for its own page.
+  ad_id: string;
   campaigns: string[];
   thumbnail: string | null;
   permalink: string | null;
@@ -160,6 +162,7 @@ export async function adComments(accountId: string, from: string, to: string): P
           post_id: c.post_id,
           page_id: c.post_id.split('_')[0],
           ads: [],
+          ad_id: r.ad_id,
           campaigns: [],
           thumbnail: c.thumbnail,
           permalink: null,
@@ -191,5 +194,70 @@ export async function adComments(accountId: string, from: string, to: string): P
     return [...groups.values()]
       .filter((g) => g.comments.length > 0)
       .sort((a, b) => b.comments[0].created_time.localeCompare(a.comments[0].created_time));
+  });
+}
+
+export type AdDetail = {
+  ad_id: string;
+  name: string;
+  status: string | null;
+  campaign: { id: string; name: string } | null;
+  thumbnail: string | null;
+  post_id: string | null;
+  page_id: string | null;
+  permalink: string | null;
+  spend: number;
+  impressions: number;
+  clicks: number;
+  conversations: number;
+  total_comments: number;
+  comments: PostComment[];
+};
+
+// One ad: its numbers for the period and the latest 100 comments on its post.
+export async function adDetail(adId: string, from: string, to: string): Promise<AdDetail> {
+  if (!/^\d+$/.test(adId)) throw new Error('Unknown ad');
+  check('act_0', from, to);
+  const token = await userToken();
+  return cached(`ad:${adId}:${from}:${to}`, async () => {
+    const [ad, insights]: any[] = await Promise.all([
+      graphGet(adId, token, {
+        fields: 'name,effective_status,campaign{id,name},creative{effective_object_story_id,thumbnail_url}',
+      }),
+      graphGet(`${adId}/insights`, token, {
+        fields: 'spend,impressions,clicks,actions',
+        time_range: JSON.stringify({ since: from, until: to }),
+      }),
+    ]);
+    const row = insights.data?.[0] ?? {};
+    const postId: string | null = ad.creative?.effective_object_story_id ?? null;
+    const pageId = postId?.split('_')[0] ?? null;
+    const pt = pageId ? await pageToken(pageId) : null;
+    const post = pt && postId ? (await postsWithComments(pt, [postId], 100)).get(postId) : undefined;
+    return {
+      ad_id: adId,
+      name: ad.name,
+      status: ad.effective_status ?? null,
+      campaign: ad.campaign ? { id: ad.campaign.id, name: ad.campaign.name } : null,
+      thumbnail: ad.creative?.thumbnail_url ?? post?.picture ?? null,
+      post_id: postId,
+      page_id: pageId,
+      permalink: post?.permalink ?? null,
+      spend: Number(row.spend ?? 0),
+      impressions: Number(row.impressions ?? 0),
+      clicks: Number(row.clicks ?? 0),
+      conversations: Number(row.actions?.find((a: any) => a.action_type === CONVERSATION)?.value ?? 0),
+      total_comments: post?.total ?? 0,
+      comments: post?.comments ?? [],
+    };
+  });
+}
+
+export async function campaignName(campaignId: string) {
+  if (!/^\d+$/.test(campaignId)) throw new Error('Unknown campaign');
+  const token = await userToken();
+  return cached(`campaign-name:${campaignId}`, async () => {
+    const c: any = await graphGet(campaignId, token, { fields: 'name,effective_status' });
+    return { id: campaignId, name: c.name as string, status: (c.effective_status as string) ?? null };
   });
 }

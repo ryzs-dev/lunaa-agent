@@ -2,6 +2,8 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.campaignAds = campaignAds;
 exports.adComments = adComments;
+exports.adDetail = adDetail;
+exports.campaignName = campaignName;
 const graph_1 = require("./graph");
 const pages_1 = require("./pages");
 const CONVERSATION = 'onsite_conversion.messaging_conversation_started_7d';
@@ -126,6 +128,7 @@ async function adComments(accountId, from, to) {
                 post_id: c.post_id,
                 page_id: c.post_id.split('_')[0],
                 ads: [],
+                ad_id: r.ad_id,
                 campaigns: [],
                 thumbnail: c.thumbnail,
                 permalink: null,
@@ -159,5 +162,55 @@ async function adComments(accountId, from, to) {
         return [...groups.values()]
             .filter((g) => g.comments.length > 0)
             .sort((a, b) => b.comments[0].created_time.localeCompare(a.comments[0].created_time));
+    });
+}
+// One ad: its numbers for the period and the latest 100 comments on its post.
+async function adDetail(adId, from, to) {
+    if (!/^\d+$/.test(adId))
+        throw new Error('Unknown ad');
+    check('act_0', from, to);
+    const token = await (0, pages_1.userToken)();
+    return (0, pages_1.cached)(`ad:${adId}:${from}:${to}`, async () => {
+        var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t;
+        const [ad, insights] = await Promise.all([
+            (0, graph_1.graphGet)(adId, token, {
+                fields: 'name,effective_status,campaign{id,name},creative{effective_object_story_id,thumbnail_url}',
+            }),
+            (0, graph_1.graphGet)(`${adId}/insights`, token, {
+                fields: 'spend,impressions,clicks,actions',
+                time_range: JSON.stringify({ since: from, until: to }),
+            }),
+        ]);
+        const row = (_b = (_a = insights.data) === null || _a === void 0 ? void 0 : _a[0]) !== null && _b !== void 0 ? _b : {};
+        const postId = (_d = (_c = ad.creative) === null || _c === void 0 ? void 0 : _c.effective_object_story_id) !== null && _d !== void 0 ? _d : null;
+        const pageId = (_e = postId === null || postId === void 0 ? void 0 : postId.split('_')[0]) !== null && _e !== void 0 ? _e : null;
+        const pt = pageId ? await (0, pages_1.pageToken)(pageId) : null;
+        const post = pt && postId ? (await (0, pages_1.postsWithComments)(pt, [postId], 100)).get(postId) : undefined;
+        return {
+            ad_id: adId,
+            name: ad.name,
+            status: (_f = ad.effective_status) !== null && _f !== void 0 ? _f : null,
+            campaign: ad.campaign ? { id: ad.campaign.id, name: ad.campaign.name } : null,
+            thumbnail: (_j = (_h = (_g = ad.creative) === null || _g === void 0 ? void 0 : _g.thumbnail_url) !== null && _h !== void 0 ? _h : post === null || post === void 0 ? void 0 : post.picture) !== null && _j !== void 0 ? _j : null,
+            post_id: postId,
+            page_id: pageId,
+            permalink: (_k = post === null || post === void 0 ? void 0 : post.permalink) !== null && _k !== void 0 ? _k : null,
+            spend: Number((_l = row.spend) !== null && _l !== void 0 ? _l : 0),
+            impressions: Number((_m = row.impressions) !== null && _m !== void 0 ? _m : 0),
+            clicks: Number((_o = row.clicks) !== null && _o !== void 0 ? _o : 0),
+            conversations: Number((_r = (_q = (_p = row.actions) === null || _p === void 0 ? void 0 : _p.find((a) => a.action_type === CONVERSATION)) === null || _q === void 0 ? void 0 : _q.value) !== null && _r !== void 0 ? _r : 0),
+            total_comments: (_s = post === null || post === void 0 ? void 0 : post.total) !== null && _s !== void 0 ? _s : 0,
+            comments: (_t = post === null || post === void 0 ? void 0 : post.comments) !== null && _t !== void 0 ? _t : [],
+        };
+    });
+}
+async function campaignName(campaignId) {
+    if (!/^\d+$/.test(campaignId))
+        throw new Error('Unknown campaign');
+    const token = await (0, pages_1.userToken)();
+    return (0, pages_1.cached)(`campaign-name:${campaignId}`, async () => {
+        var _a;
+        const c = await (0, graph_1.graphGet)(campaignId, token, { fields: 'name,effective_status' });
+        return { id: campaignId, name: c.name, status: (_a = c.effective_status) !== null && _a !== void 0 ? _a : null };
     });
 }

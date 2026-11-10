@@ -57,7 +57,7 @@ const METRICS: Record<string, keyof Omit<PageDay, 'date'>> = {
 const TTL_MS = 10 * 60 * 1000;
 const cache = new Map<string, { at: number; value: any }>();
 
-async function cached<T>(key: string, load: () => Promise<T>): Promise<T> {
+export async function cached<T>(key: string, load: () => Promise<T>): Promise<T> {
   const hit = cache.get(key);
   if (hit && Date.now() - hit.at < TTL_MS) return hit.value as T;
   const value = await load();
@@ -65,13 +65,13 @@ async function cached<T>(key: string, load: () => Promise<T>): Promise<T> {
   return value;
 }
 
-async function userToken() {
+export async function userToken() {
   const conn = await connection();
   if (!conn) throw new Error('Sign in with Facebook first');
   return conn.token;
 }
 
-async function pagesWithTokens(token: string) {
+export async function pagesWithTokens(token: string) {
   const out: any[] = [];
   let page: any = await graphGet('me/accounts', token, {
     fields: 'name,id,access_token,followers_count,fan_count,link,picture{url}',

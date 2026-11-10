@@ -12,6 +12,7 @@ import {
   takePendingToken,
 } from '../modules/meta-ads/oauth';
 import { listPages, pageReport } from '../modules/meta-ads/pages';
+import { adComments } from '../modules/meta-ads/comments';
 import { resolveMonthKey } from '../utils/timezone';
 
 export const metaAdsRouter = express.Router();
@@ -174,6 +175,16 @@ metaAdsRouter.get('/pages/:id/report', async (req, res) => {
   try {
     const report = await pageReport(req.params.id, String(req.query.from ?? ''), String(req.query.to ?? ''));
     res.json({ success: true, report });
+  } catch (error: any) {
+    res.status(400).json({ success: false, message: error?.response?.data?.error?.message ?? error.message });
+  }
+});
+
+// Comments on the ads an account ran in a period, newest first.
+metaAdsRouter.get('/comments', async (req, res) => {
+  try {
+    const comments = await adComments(String(req.query.account ?? ''), String(req.query.from ?? ''), String(req.query.to ?? ''));
+    res.json({ success: true, comments });
   } catch (error: any) {
     res.status(400).json({ success: false, message: error?.response?.data?.error?.message ?? error.message });
   }

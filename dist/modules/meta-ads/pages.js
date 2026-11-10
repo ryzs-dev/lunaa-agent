@@ -1,5 +1,8 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.cached = cached;
+exports.userToken = userToken;
+exports.pagesWithTokens = pagesWithTokens;
 exports.listPages = listPages;
 exports.pageReport = pageReport;
 const graph_1 = require("./graph");

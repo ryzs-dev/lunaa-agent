@@ -47,7 +47,7 @@ async function pagesWithTokens(token) {
     }
     return out;
 }
-const toPage = (p) => {
+const toPage = (p, access = true, business = null) => {
     var _a, _b, _c, _d, _e, _f;
     return ({
         id: p.id,
@@ -55,8 +55,33 @@ const toPage = (p) => {
         followers: (_b = (_a = p.followers_count) !== null && _a !== void 0 ? _a : p.fan_count) !== null && _b !== void 0 ? _b : null,
         picture: (_e = (_d = (_c = p.picture) === null || _c === void 0 ? void 0 : _c.data) === null || _d === void 0 ? void 0 : _d.url) !== null && _e !== void 0 ? _e : null,
         link: (_f = p.link) !== null && _f !== void 0 ? _f : null,
+        access,
+        business,
     });
 };
+// Pages the business portfolios own that the person has no role on, so they
+// show up (greyed) instead of silently missing.
+async function businessPages(token, have) {
+    var _a, _b;
+    const out = [];
+    try {
+        const businesses = await (0, graph_1.graphGet)('me/businesses', token, { fields: 'name', limit: 100 });
+        for (const b of (_a = businesses.data) !== null && _a !== void 0 ? _a : []) {
+            const owned = await (0, graph_1.graphGet)(`${b.id}/owned_pages`, token, {
+                fields: 'name,id,followers_count,fan_count,link,picture{url}',
+                limit: 100,
+            }).catch(() => null);
+            for (const p of (_b = owned === null || owned === void 0 ? void 0 : owned.data) !== null && _b !== void 0 ? _b : []) {
+                if (have.has(p.id))
+                    continue;
+                have.add(p.id);
+                out.push(toPage(p, false, b.name));
+            }
+        }
+    }
+    catch (_c) { }
+    return out;
+}
 const missingPermission = (e) => {
     var _a, _b, _c;
     const err = (_b = (_a = e === null || e === void 0 ? void 0 : e.response) === null || _a === void 0 ? void 0 : _a.data) === null || _b === void 0 ? void 0 : _b.error;
@@ -67,9 +92,11 @@ async function listPages() {
     return cached(`pages:${token.slice(-12)}`, async () => {
         try {
             // Lunaa's own page first.
-            return (await pagesWithTokens(token))
-                .map(toPage)
-                .sort((a, b) => Number(/lunaa/i.test(b.name)) - Number(/lunaa/i.test(a.name)) || a.name.localeCompare(b.name));
+            const mine = (await pagesWithTokens(token)).map((p) => toPage(p));
+            const others = await businessPages(token, new Set(mine.map((p) => p.id)));
+            return [...mine, ...others].sort((a, b) => Number(b.access) - Number(a.access) ||
+                Number(/lunaa/i.test(b.name)) - Number(/lunaa/i.test(a.name)) ||
+                a.name.localeCompare(b.name));
         }
         catch (e) {
             if (missingPermission(e)) {
@@ -91,8 +118,9 @@ async function pageReport(pageId, from, to) {
     return cached(`report:${pageId}:${from}:${to}`, async () => {
         var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r;
         const raw = (await pagesWithTokens(token)).find((p) => p.id === pageId);
-        if (!raw)
-            throw new Error('This Facebook sign-in can’t see that page');
+        if (!raw) {
+            throw new Error('The person who signed in with Facebook has no role on this page. Give them access in Business settings → Pages, then sign in again.');
+        }
         const pageToken = raw.access_token;
         // Daily values, at most 90 days per request. Meta stamps each value with
         // the end of its day, so the day itself is end_time minus one.

@@ -11,6 +11,9 @@ export type FacebookPage = {
   followers: number | null;
   picture: string | null;
   link: string | null;
+  // False for a page in the business that the signed-in person has no role on.
+  access: boolean;
+  business: string | null;
 };
 
 export type PageDay = {
@@ -85,13 +88,36 @@ export async function pagesWithTokens(token: string) {
   return out;
 }
 
-const toPage = (p: any): FacebookPage => ({
+const toPage = (p: any, access = true, business: string | null = null): FacebookPage => ({
   id: p.id,
   name: p.name,
   followers: p.followers_count ?? p.fan_count ?? null,
   picture: p.picture?.data?.url ?? null,
   link: p.link ?? null,
+  access,
+  business,
 });
+
+// Pages the business portfolios own that the person has no role on, so they
+// show up (greyed) instead of silently missing.
+async function businessPages(token: string, have: Set<string>) {
+  const out: FacebookPage[] = [];
+  try {
+    const businesses: any = await graphGet('me/businesses', token, { fields: 'name', limit: 100 });
+    for (const b of businesses.data ?? []) {
+      const owned: any = await graphGet(`${b.id}/owned_pages`, token, {
+        fields: 'name,id,followers_count,fan_count,link,picture{url}',
+        limit: 100,
+      }).catch(() => null);
+      for (const p of owned?.data ?? []) {
+        if (have.has(p.id)) continue;
+        have.add(p.id);
+        out.push(toPage(p, false, b.name));
+      }
+    }
+  } catch {}
+  return out;
+}
 
 const missingPermission = (e: any) => {
   const err = e?.response?.data?.error;
@@ -103,9 +129,14 @@ export async function listPages(): Promise<FacebookPage[]> {
   return cached(`pages:${token.slice(-12)}`, async () => {
     try {
       // Lunaa's own page first.
-      return (await pagesWithTokens(token))
-        .map(toPage)
-        .sort((a, b) => Number(/lunaa/i.test(b.name)) - Number(/lunaa/i.test(a.name)) || a.name.localeCompare(b.name));
+      const mine = (await pagesWithTokens(token)).map((p) => toPage(p));
+      const others = await businessPages(token, new Set(mine.map((p) => p.id)));
+      return [...mine, ...others].sort(
+        (a, b) =>
+          Number(b.access) - Number(a.access) ||
+          Number(/lunaa/i.test(b.name)) - Number(/lunaa/i.test(a.name)) ||
+          a.name.localeCompare(b.name)
+      );
     } catch (e: any) {
       if (missingPermission(e)) {
         throw new Error('The Facebook sign-in didn’t allow page access. Sign in with Facebook again and tick the page.');
@@ -126,7 +157,11 @@ export async function pageReport(pageId: string, from: string, to: string): Prom
   const token = await userToken();
   return cached(`report:${pageId}:${from}:${to}`, async () => {
     const raw = (await pagesWithTokens(token)).find((p) => p.id === pageId);
-    if (!raw) throw new Error('This Facebook sign-in can’t see that page');
+    if (!raw) {
+      throw new Error(
+        'The person who signed in with Facebook has no role on this page. Give them access in Business settings → Pages, then sign in again.'
+      );
+    }
     const pageToken: string = raw.access_token;
 
     // Daily values, at most 90 days per request. Meta stamps each value with

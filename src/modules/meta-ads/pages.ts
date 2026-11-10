@@ -237,3 +237,49 @@ export async function pageReport(pageId: string, from: string, to: string): Prom
     };
   });
 }
+
+export type PostComment = {
+  id: string;
+  message: string;
+  from: string | null;
+  created_time: string;
+  replies: number;
+  likes: number;
+  permalink: string | null;
+};
+
+// The latest comments on one of the page's posts. Needs pages_read_user_content.
+export async function postComments(pageId: string, postId: string): Promise<PostComment[]> {
+  if (!/^\d+$/.test(pageId) || !new RegExp(`^${pageId}_\\d+$`).test(postId)) throw new Error('Unknown post');
+  const token = await userToken();
+  return cached(`post-comments:${postId}`, async () => {
+    const raw = (await pagesWithTokens(token)).find((p) => p.id === pageId);
+    if (!raw) throw new Error('The person who signed in with Facebook has no role on this page.');
+    try {
+      const res: any = await graphGet(`${postId}/comments`, raw.access_token, {
+        fields: 'id,message,from{name},created_time,comment_count,like_count,permalink_url',
+        order: 'reverse_chronological',
+        limit: 50,
+      });
+      return (res.data ?? [])
+        .filter((c: any) => c.message)
+        .map((c: any) => ({
+          id: c.id,
+          message: c.message,
+          from: c.from?.name ?? null,
+          created_time: c.created_time,
+          replies: c.comment_count ?? 0,
+          likes: c.like_count ?? 0,
+          permalink: c.permalink_url ?? null,
+        }));
+    } catch (e: any) {
+      const err = e?.response?.data?.error;
+      if (err?.code === 10 || err?.code === 200) {
+        throw new Error(
+          'Facebook hasn’t allowed reading comments yet. Sign in with Facebook again (Integrations → Meta ads) and allow page comments.'
+        );
+      }
+      throw e;
+    }
+  });
+}

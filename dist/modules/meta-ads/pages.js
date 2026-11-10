@@ -5,6 +5,7 @@ exports.userToken = userToken;
 exports.pagesWithTokens = pagesWithTokens;
 exports.listPages = listPages;
 exports.pageReport = pageReport;
+exports.postComments = postComments;
 const graph_1 = require("./graph");
 const settings_1 = require("./settings");
 const METRICS = {
@@ -191,5 +192,45 @@ async function pageReport(pageId, from, to) {
             },
             posts,
         };
+    });
+}
+// The latest comments on one of the page's posts. Needs pages_read_user_content.
+async function postComments(pageId, postId) {
+    if (!/^\d+$/.test(pageId) || !new RegExp(`^${pageId}_\\d+$`).test(postId))
+        throw new Error('Unknown post');
+    const token = await userToken();
+    return cached(`post-comments:${postId}`, async () => {
+        var _a, _b, _c;
+        const raw = (await pagesWithTokens(token)).find((p) => p.id === pageId);
+        if (!raw)
+            throw new Error('The person who signed in with Facebook has no role on this page.');
+        try {
+            const res = await (0, graph_1.graphGet)(`${postId}/comments`, raw.access_token, {
+                fields: 'id,message,from{name},created_time,comment_count,like_count,permalink_url',
+                order: 'reverse_chronological',
+                limit: 50,
+            });
+            return ((_a = res.data) !== null && _a !== void 0 ? _a : [])
+                .filter((c) => c.message)
+                .map((c) => {
+                var _a, _b, _c, _d, _e;
+                return ({
+                    id: c.id,
+                    message: c.message,
+                    from: (_b = (_a = c.from) === null || _a === void 0 ? void 0 : _a.name) !== null && _b !== void 0 ? _b : null,
+                    created_time: c.created_time,
+                    replies: (_c = c.comment_count) !== null && _c !== void 0 ? _c : 0,
+                    likes: (_d = c.like_count) !== null && _d !== void 0 ? _d : 0,
+                    permalink: (_e = c.permalink_url) !== null && _e !== void 0 ? _e : null,
+                });
+            });
+        }
+        catch (e) {
+            const err = (_c = (_b = e === null || e === void 0 ? void 0 : e.response) === null || _b === void 0 ? void 0 : _b.data) === null || _c === void 0 ? void 0 : _c.error;
+            if ((err === null || err === void 0 ? void 0 : err.code) === 10 || (err === null || err === void 0 ? void 0 : err.code) === 200) {
+                throw new Error('Facebook hasn’t allowed reading comments yet. Sign in with Facebook again (Integrations → Meta ads) and allow page comments.');
+            }
+            throw e;
+        }
     });
 }

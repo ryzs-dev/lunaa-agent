@@ -179,6 +179,15 @@ exports.metaAdsRouter.get('/pages/:id/report', async (req, res) => {
         res.status(400).json({ success: false, message: (_f = (_e = (_d = (_c = error === null || error === void 0 ? void 0 : error.response) === null || _c === void 0 ? void 0 : _c.data) === null || _d === void 0 ? void 0 : _d.error) === null || _e === void 0 ? void 0 : _e.message) !== null && _f !== void 0 ? _f : error.message });
     }
 });
+exports.metaAdsRouter.get('/pages/:id/posts/:postId/comments', async (req, res) => {
+    var _a, _b, _c, _d;
+    try {
+        res.json({ success: true, comments: await (0, pages_1.postComments)(req.params.id, req.params.postId) });
+    }
+    catch (error) {
+        res.status(400).json({ success: false, message: (_d = (_c = (_b = (_a = error === null || error === void 0 ? void 0 : error.response) === null || _a === void 0 ? void 0 : _a.data) === null || _b === void 0 ? void 0 : _b.error) === null || _c === void 0 ? void 0 : _c.message) !== null && _d !== void 0 ? _d : error.message });
+    }
+});
 // Comments on the ads an account ran in a period, newest first.
 exports.metaAdsRouter.get('/comments', async (req, res) => {
     var _a, _b, _c, _d, _e, _f, _g;

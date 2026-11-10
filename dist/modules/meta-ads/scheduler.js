@@ -5,6 +5,9 @@ exports.runSync = runSync;
 exports.startMetaAdsScheduler = startMetaAdsScheduler;
 const sync_1 = require("./sync");
 const conversions_1 = require("./conversions");
+const comments_1 = require("./comments");
+const pages_1 = require("./pages");
+const settings_1 = require("./settings");
 const SYNC_EVERY_MS = 60 * 60 * 1000;
 const SEND_EVERY_MS = 10 * 60 * 1000;
 // Meta keeps adjusting the last week as late conversions are counted.
@@ -37,7 +40,26 @@ async function runSend() {
         sending = false;
     }
 }
+// Keep this month's comments and page numbers loaded (the ranges the Ads and
+// Pages pages open on), so nobody waits on Meta when they open them.
+const WARM_EVERY_MS = 9 * 60 * 1000;
+async function warm() {
+    try {
+        const conn = await (0, settings_1.connection)();
+        if (!(conn === null || conn === void 0 ? void 0 : conn.row.ad_account_id))
+            return;
+        const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kuala_Lumpur' }).format(new Date());
+        const from = `${today.slice(0, 7)}-01`;
+        await (0, comments_1.adComments)(conn.row.ad_account_id, from, today).catch(() => undefined);
+        const page = (await (0, pages_1.listPages)().catch(() => [])).find((p) => p.access);
+        if (page)
+            await (0, pages_1.pageReport)(page.id, from, today).catch(() => undefined);
+    }
+    catch (_a) { }
+}
 function startMetaAdsScheduler() {
+    setTimeout(warm, 20000);
+    setInterval(warm, WARM_EVERY_MS);
     const sync = () => runSync().catch((e) => console.error('[meta-ads] sync failed:', e.message));
     setTimeout(sync, 30000);
     setInterval(sync, SYNC_EVERY_MS);

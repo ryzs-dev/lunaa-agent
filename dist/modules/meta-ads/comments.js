@@ -38,11 +38,11 @@ async function adInsights(token, accountId, from, to, campaignId) {
 async function adCreatives(token, adIds) {
     var _a, _b, _c, _d, _e;
     const out = new Map();
-    for (let i = 0; i < adIds.length; i += 50) {
-        const res = await (0, graph_1.graphGet)('', token, {
-            ids: adIds.slice(i, i + 50).join(','),
-            fields: 'effective_status,creative{effective_object_story_id,thumbnail_url}',
-        });
+    const chunks = [];
+    for (let i = 0; i < adIds.length; i += 50)
+        chunks.push(adIds.slice(i, i + 50));
+    const results = await Promise.all(chunks.map((ids) => (0, graph_1.graphGet)('', token, { ids: ids.join(','), fields: 'effective_status,creative{effective_object_story_id,thumbnail_url}' })));
+    for (const res of results) {
         for (const [id, ad] of Object.entries(res)) {
             out.set(id, {
                 status: (_a = ad.effective_status) !== null && _a !== void 0 ? _a : null,

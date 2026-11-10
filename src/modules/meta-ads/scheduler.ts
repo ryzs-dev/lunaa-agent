@@ -1,5 +1,8 @@
 import { syncInsights } from './sync';
 import { sendPendingConversions } from './conversions';
+import { adComments } from './comments';
+import { listPages, pageReport } from './pages';
+import { connection } from './settings';
 
 const SYNC_EVERY_MS = 60 * 60 * 1000;
 const SEND_EVERY_MS = 10 * 60 * 1000;
@@ -34,7 +37,24 @@ async function runSend() {
   }
 }
 
+// Keep this month's comments and page numbers loaded (the ranges the Ads and
+// Pages pages open on), so nobody waits on Meta when they open them.
+const WARM_EVERY_MS = 9 * 60 * 1000;
+async function warm() {
+  try {
+    const conn = await connection();
+    if (!conn?.row.ad_account_id) return;
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kuala_Lumpur' }).format(new Date());
+    const from = `${today.slice(0, 7)}-01`;
+    await adComments(conn.row.ad_account_id, from, today).catch(() => undefined);
+    const page = (await listPages().catch(() => [])).find((p) => p.access);
+    if (page) await pageReport(page.id, from, today).catch(() => undefined);
+  } catch {}
+}
+
 export function startMetaAdsScheduler() {
+  setTimeout(warm, 20_000);
+  setInterval(warm, WARM_EVERY_MS);
   const sync = () => runSync().catch((e) => console.error('[meta-ads] sync failed:', e.message));
   setTimeout(sync, 30_000);
   setInterval(sync, SYNC_EVERY_MS);

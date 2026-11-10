@@ -64,11 +64,14 @@ async function adInsights(token: string, accountId: string, from: string, to: st
 // Each ad's status, thumbnail and post, 50 ads per request.
 async function adCreatives(token: string, adIds: string[]) {
   const out = new Map<string, { status: string | null; thumbnail: string | null; post_id: string | null }>();
-  for (let i = 0; i < adIds.length; i += 50) {
-    const res: any = await graphGet('', token, {
-      ids: adIds.slice(i, i + 50).join(','),
-      fields: 'effective_status,creative{effective_object_story_id,thumbnail_url}',
-    });
+  const chunks: string[][] = [];
+  for (let i = 0; i < adIds.length; i += 50) chunks.push(adIds.slice(i, i + 50));
+  const results = await Promise.all(
+    chunks.map((ids) =>
+      graphGet('', token, { ids: ids.join(','), fields: 'effective_status,creative{effective_object_story_id,thumbnail_url}' })
+    )
+  );
+  for (const res of results as any[]) {
     for (const [id, ad] of Object.entries<any>(res)) {
       out.set(id, {
         status: ad.effective_status ?? null,

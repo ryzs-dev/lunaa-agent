@@ -290,11 +290,14 @@ export async function postsWithComments(pageToken: string, postIds: string[], li
   const edge = limit
     ? `comments.order(reverse_chronological).summary(total_count).limit(${limit}){${COMMENT_FIELDS}}`
     : 'comments.summary(total_count).limit(0)';
-  for (let i = 0; i < postIds.length; i += 50) {
-    const res: any = await graphGet('', pageToken, {
-      ids: postIds.slice(i, i + 50).join(','),
-      fields: `permalink_url,full_picture,${edge}`,
-    });
+  // Smaller chunks when pulling comments, all requests at once.
+  const size = limit ? 10 : 50;
+  const chunks: string[][] = [];
+  for (let i = 0; i < postIds.length; i += size) chunks.push(postIds.slice(i, i + size));
+  const results = await Promise.all(
+    chunks.map((ids) => graphGet('', pageToken, { ids: ids.join(','), fields: `permalink_url,full_picture,${edge}` }))
+  );
+  for (const res of results as any[]) {
     for (const [id, post] of Object.entries<any>(res)) {
       out.set(id, {
         permalink: post.permalink_url ?? null,

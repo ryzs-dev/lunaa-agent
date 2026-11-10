@@ -10,6 +10,7 @@ const supabase_1 = require("../modules/supabase");
 const settings_1 = require("../modules/meta-ads/settings");
 const scheduler_1 = require("../modules/meta-ads/scheduler");
 const oauth_1 = require("../modules/meta-ads/oauth");
+const pages_1 = require("../modules/meta-ads/pages");
 const timezone_1 = require("../utils/timezone");
 exports.metaAdsRouter = express_1.default.Router();
 exports.metaAdsRouter.get('/settings', async (_req, res) => {
@@ -155,6 +156,26 @@ exports.metaAdsRouter.get('/accounts/available', async (_req, res) => {
     }
     catch (error) {
         res.status(400).json({ success: false, message: (_d = (_c = (_b = (_a = error === null || error === void 0 ? void 0 : error.response) === null || _a === void 0 ? void 0 : _a.data) === null || _b === void 0 ? void 0 : _b.error) === null || _c === void 0 ? void 0 : _c.message) !== null && _d !== void 0 ? _d : error.message });
+    }
+});
+// Facebook pages the sign-in manages, and one page's insights for a period.
+exports.metaAdsRouter.get('/pages', async (_req, res) => {
+    var _a, _b, _c, _d;
+    try {
+        res.json({ success: true, pages: await (0, pages_1.listPages)() });
+    }
+    catch (error) {
+        res.status(400).json({ success: false, message: (_d = (_c = (_b = (_a = error === null || error === void 0 ? void 0 : error.response) === null || _a === void 0 ? void 0 : _a.data) === null || _b === void 0 ? void 0 : _b.error) === null || _c === void 0 ? void 0 : _c.message) !== null && _d !== void 0 ? _d : error.message });
+    }
+});
+exports.metaAdsRouter.get('/pages/:id/report', async (req, res) => {
+    var _a, _b, _c, _d, _e, _f;
+    try {
+        const report = await (0, pages_1.pageReport)(req.params.id, String((_a = req.query.from) !== null && _a !== void 0 ? _a : ''), String((_b = req.query.to) !== null && _b !== void 0 ? _b : ''));
+        res.json({ success: true, report });
+    }
+    catch (error) {
+        res.status(400).json({ success: false, message: (_f = (_e = (_d = (_c = error === null || error === void 0 ? void 0 : error.response) === null || _c === void 0 ? void 0 : _c.data) === null || _d === void 0 ? void 0 : _d.error) === null || _e === void 0 ? void 0 : _e.message) !== null && _f !== void 0 ? _f : error.message });
     }
 });
 // The extra ad accounts synced for the Ads page (the main one stays as is).

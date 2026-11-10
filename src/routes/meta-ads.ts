@@ -11,6 +11,7 @@ import {
   startUrl,
   takePendingToken,
 } from '../modules/meta-ads/oauth';
+import { listPages, pageReport } from '../modules/meta-ads/pages';
 import { resolveMonthKey } from '../utils/timezone';
 
 export const metaAdsRouter = express.Router();
@@ -155,6 +156,24 @@ metaAdsRouter.get('/campaigns', async (req, res) => {
 metaAdsRouter.get('/accounts/available', async (_req, res) => {
   try {
     res.json({ success: true, ...(await listAdAccounts()) });
+  } catch (error: any) {
+    res.status(400).json({ success: false, message: error?.response?.data?.error?.message ?? error.message });
+  }
+});
+
+// Facebook pages the sign-in manages, and one page's insights for a period.
+metaAdsRouter.get('/pages', async (_req, res) => {
+  try {
+    res.json({ success: true, pages: await listPages() });
+  } catch (error: any) {
+    res.status(400).json({ success: false, message: error?.response?.data?.error?.message ?? error.message });
+  }
+});
+
+metaAdsRouter.get('/pages/:id/report', async (req, res) => {
+  try {
+    const report = await pageReport(req.params.id, String(req.query.from ?? ''), String(req.query.to ?? ''));
+    res.json({ success: true, report });
   } catch (error: any) {
     res.status(400).json({ success: false, message: error?.response?.data?.error?.message ?? error.message });
   }

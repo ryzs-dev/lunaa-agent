@@ -23,7 +23,7 @@ const settings_1 = require("./settings");
 // takes the account with the most spend. With a Facebook Login for Business
 // configuration (META_LOGIN_CONFIG_ID) set to issue system-user tokens, the
 // token never expires; without one, it's a 60-day user token.
-const SCOPES = ['ads_read', 'business_management'];
+const SCOPES = ['ads_read', 'business_management', 'pages_show_list', 'pages_read_engagement', 'read_insights'];
 const STATE_TTL_MS = 15 * 60 * 1000;
 const PENDING_TTL_MS = 30 * 60 * 1000;
 const appId = () => { var _a; return (_a = process.env.META_APP_ID) !== null && _a !== void 0 ? _a : ''; };
@@ -181,17 +181,41 @@ async function fetchAccounts(token) {
             break;
         page = await (0, graph_1.graphGet)(page.paging.next, token);
     }
+    const owners = await accountBusinesses(token);
     return accounts.map((a) => {
-        var _a, _b;
+        var _a, _b, _c;
         return ({
             id: a.id,
             name: a.name,
             currency: a.currency,
             timezone: a.timezone_name,
-            business: (_b = (_a = a.business) === null || _a === void 0 ? void 0 : _a.name) !== null && _b !== void 0 ? _b : null,
+            business: (_c = (_a = owners.get(a.id)) !== null && _a !== void 0 ? _a : (_b = a.business) === null || _b === void 0 ? void 0 : _b.name) !== null && _c !== void 0 ? _c : null,
             active: a.account_status === 1,
         });
     });
+}
+// Which business portfolio each ad account sits in, owned or as a client
+// account, for the portfolios the sign-in belongs to. Best effort: without
+// business_management it's just empty.
+async function accountBusinesses(token) {
+    var _a, _b, _c;
+    const owners = new Map();
+    try {
+        const businesses = await (0, graph_1.graphGet)('me/businesses', token, { fields: 'name', limit: 100 });
+        for (const b of (_a = businesses.data) !== null && _a !== void 0 ? _a : []) {
+            for (const edge of ['owned_ad_accounts', 'client_ad_accounts']) {
+                let page = await (0, graph_1.graphGet)(`${b.id}/${edge}`, token, { fields: 'id', limit: 200 }).catch(() => null);
+                while (page) {
+                    for (const a of (_b = page.data) !== null && _b !== void 0 ? _b : [])
+                        if (!owners.has(a.id))
+                            owners.set(a.id, b.name);
+                    page = ((_c = page.paging) === null || _c === void 0 ? void 0 : _c.next) ? await (0, graph_1.graphGet)(page.paging.next, token).catch(() => null) : null;
+                }
+            }
+        }
+    }
+    catch (_d) { }
+    return owners;
 }
 // The active account that spent the most in the last 30 days (the first one if none spent).
 async function busiestAccount(token, accounts) {

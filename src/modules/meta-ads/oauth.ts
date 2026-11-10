@@ -12,7 +12,7 @@ import { getRow, updateSettings } from './settings';
 // configuration (META_LOGIN_CONFIG_ID) set to issue system-user tokens, the
 // token never expires; without one, it's a 60-day user token.
 
-const SCOPES = ['ads_read', 'business_management'];
+const SCOPES = ['ads_read', 'business_management', 'pages_show_list', 'pages_read_engagement', 'read_insights'];
 const STATE_TTL_MS = 15 * 60 * 1000;
 const PENDING_TTL_MS = 30 * 60 * 1000;
 
@@ -193,14 +193,35 @@ async function fetchAccounts(token: string): Promise<AdAccount[]> {
     if (!page.paging?.next) break;
     page = await graphGet(page.paging.next, token);
   }
+  const owners = await accountBusinesses(token);
   return accounts.map((a) => ({
     id: a.id as string,
     name: a.name as string,
     currency: a.currency as string,
     timezone: a.timezone_name as string,
-    business: a.business?.name ?? null,
+    business: owners.get(a.id) ?? a.business?.name ?? null,
     active: a.account_status === 1,
   }));
+}
+
+// Which business portfolio each ad account sits in, owned or as a client
+// account, for the portfolios the sign-in belongs to. Best effort: without
+// business_management it's just empty.
+async function accountBusinesses(token: string) {
+  const owners = new Map<string, string>();
+  try {
+    const businesses: any = await graphGet('me/businesses', token, { fields: 'name', limit: 100 });
+    for (const b of businesses.data ?? []) {
+      for (const edge of ['owned_ad_accounts', 'client_ad_accounts']) {
+        let page: any = await graphGet(`${b.id}/${edge}`, token, { fields: 'id', limit: 200 }).catch(() => null);
+        while (page) {
+          for (const a of page.data ?? []) if (!owners.has(a.id)) owners.set(a.id, b.name);
+          page = page.paging?.next ? await graphGet(page.paging.next, token).catch(() => null) : null;
+        }
+      }
+    }
+  } catch {}
+  return owners;
 }
 
 // The active account that spent the most in the last 30 days (the first one if none spent).

@@ -7,7 +7,7 @@ const DAY = 86400000;
 function friendly(e) {
     var _a, _b, _c;
     const err = (_b = (_a = e === null || e === void 0 ? void 0 : e.response) === null || _a === void 0 ? void 0 : _a.data) === null || _b === void 0 ? void 0 : _b.error;
-    if ((err === null || err === void 0 ? void 0 : err.code) === 10 || /pages_read_user_content/i.test((_c = err === null || err === void 0 ? void 0 : err.message) !== null && _c !== void 0 ? _c : '')) {
+    if ((err === null || err === void 0 ? void 0 : err.code) === 10 || (err === null || err === void 0 ? void 0 : err.code) === 200 || /pages_read_user_content/i.test((_c = err === null || err === void 0 ? void 0 : err.message) !== null && _c !== void 0 ? _c : '')) {
         throw new Error('Facebook hasn’t allowed reading comments yet. Sign in with Facebook again (Integrations → Meta ads) and allow page comments.');
     }
     throw e;
@@ -110,7 +110,7 @@ async function adComments(accountId, from, to) {
             }
             catch (e) {
                 const err = (_c = (_b = e === null || e === void 0 ? void 0 : e.response) === null || _b === void 0 ? void 0 : _b.data) === null || _c === void 0 ? void 0 : _c.error;
-                if ((err === null || err === void 0 ? void 0 : err.code) === 10)
+                if ((err === null || err === void 0 ? void 0 : err.code) === 10 || (err === null || err === void 0 ? void 0 : err.code) === 200)
                     denied = e;
                 return [];
             }

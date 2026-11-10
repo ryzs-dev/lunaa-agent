@@ -23,7 +23,7 @@ const DAY = 86400000;
 
 function friendly(e: any): never {
   const err = e?.response?.data?.error;
-  if (err?.code === 10 || /pages_read_user_content/i.test(err?.message ?? '')) {
+  if (err?.code === 10 || err?.code === 200 || /pages_read_user_content/i.test(err?.message ?? '')) {
     throw new Error(
       'Facebook hasn’t allowed reading comments yet. Sign in with Facebook again (Integrations → Meta ads) and allow page comments.'
     );
@@ -124,7 +124,7 @@ export async function adComments(accountId: string, from: string, to: string): P
           );
       } catch (e: any) {
         const err = e?.response?.data?.error;
-        if (err?.code === 10) denied = e;
+        if (err?.code === 10 || err?.code === 200) denied = e;
         return [] as AdComment[];
       }
     });

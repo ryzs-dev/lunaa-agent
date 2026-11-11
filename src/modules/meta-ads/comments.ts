@@ -18,7 +18,10 @@ export type CampaignAd = {
   post_id: string | null;
   page_id: string | null;
   permalink: string | null;
+  // The ad's post totals since it was published.
   comments: number;
+  reactions: number;
+  shares: number;
 };
 
 export type AdCommentGroup = {
@@ -35,6 +38,7 @@ export type AdCommentGroup = {
 };
 
 const CONVERSATION = 'onsite_conversion.messaging_conversation_started_7d';
+const action = (row: any, type: string) => Number(row?.actions?.find((a: any) => a.action_type === type)?.value ?? 0);
 
 function check(accountId: string, from: string, to: string) {
   if (!/^act_\d+$/.test(accountId)) throw new Error('Unknown ad account');
@@ -106,13 +110,13 @@ export async function campaignAds(accountId: string, campaignId: string, from: s
   check(accountId, from, to);
   if (!/^\d+$/.test(campaignId)) throw new Error('Unknown campaign');
   const token = await userToken();
-  return cached(`campaign-ads:${accountId}:${campaignId}:${from}:${to}`, async () => {
+  return cached(`campaign-ads2:${accountId}:${campaignId}:${from}:${to}`, async () => {
     const rows = await adInsights(token, accountId, from, to, campaignId);
     const creatives = await adCreatives(
       token,
       rows.map((r) => r.ad_id)
     );
-    const counts = new Map<string, { permalink: string | null; total: number }>();
+    const counts = new Map<string, { permalink: string | null; total: number; reactions: number; shares: number }>();
     const pages = await byPage([...creatives.values()].map((c) => c.post_id).filter((p): p is string => Boolean(p)));
     for (const g of pages.values()) {
       for (const [id, post] of await postsWithComments(g.token, g.posts, 0)) counts.set(id, post);
@@ -134,6 +138,8 @@ export async function campaignAds(accountId: string, campaignId: string, from: s
           page_id: c?.post_id?.split('_')[0] ?? null,
           permalink: post?.permalink ?? null,
           comments: post?.total ?? 0,
+          reactions: post?.reactions ?? 0,
+          shares: post?.shares ?? 0,
         };
       })
       .sort((a, b) => b.spend - a.spend);
@@ -211,6 +217,11 @@ export type AdDetail = {
   clicks: number;
   conversations: number;
   total_comments: number;
+  // Post totals since it was published.
+  reactions: number;
+  shares: number;
+  // From Meta's ad numbers for the period.
+  engagement: { total: number; reactions: number; comments: number; shares: number; saves: number };
   comments: PostComment[];
 };
 
@@ -219,7 +230,7 @@ export async function adDetail(adId: string, from: string, to: string): Promise<
   if (!/^\d+$/.test(adId)) throw new Error('Unknown ad');
   check('act_0', from, to);
   const token = await userToken();
-  return cached(`ad:${adId}:${from}:${to}`, async () => {
+  return cached(`ad2:${adId}:${from}:${to}`, async () => {
     const [ad, insights]: any[] = await Promise.all([
       graphGet(adId, token, {
         fields: 'name,effective_status,campaign{id,name},creative{effective_object_story_id,thumbnail_url}',
@@ -248,6 +259,15 @@ export async function adDetail(adId: string, from: string, to: string): Promise<
       clicks: Number(row.clicks ?? 0),
       conversations: Number(row.actions?.find((a: any) => a.action_type === CONVERSATION)?.value ?? 0),
       total_comments: post?.total ?? 0,
+      reactions: post?.reactions ?? 0,
+      shares: post?.shares ?? 0,
+      engagement: {
+        total: action(row, 'post_engagement'),
+        reactions: action(row, 'post_reaction'),
+        comments: action(row, 'comment'),
+        shares: action(row, 'post'),
+        saves: action(row, 'onsite_conversion.post_save'),
+      },
       comments: post?.comments ?? [],
     };
   });

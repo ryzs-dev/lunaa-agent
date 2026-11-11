@@ -286,7 +286,17 @@ export const toComment = (c: any): PostComment => ({
 // Several posts at once (50 per request): link, picture, comment total and the
 // latest `limit` comments of each. limit 0 just counts.
 export async function postsWithComments(pageToken: string, postIds: string[], limit: number) {
-  const out = new Map<string, { permalink: string | null; picture: string | null; total: number; comments: PostComment[] }>();
+  const out = new Map<
+    string,
+    {
+      permalink: string | null;
+      picture: string | null;
+      total: number;
+      reactions: number;
+      shares: number;
+      comments: PostComment[];
+    }
+  >();
   const edge = limit
     ? `comments.order(reverse_chronological).summary(total_count).limit(${limit}){${COMMENT_FIELDS}}`
     : 'comments.summary(total_count).limit(0)';
@@ -295,7 +305,7 @@ export async function postsWithComments(pageToken: string, postIds: string[], li
   const chunks: string[][] = [];
   for (let i = 0; i < postIds.length; i += size) chunks.push(postIds.slice(i, i + size));
   const results = await Promise.all(
-    chunks.map((ids) => graphGet('', pageToken, { ids: ids.join(','), fields: `permalink_url,full_picture,${edge}` }))
+    chunks.map((ids) => graphGet('', pageToken, { ids: ids.join(','), fields: `permalink_url,full_picture,shares,reactions.summary(total_count).limit(0),${edge}` }))
   );
   for (const res of results as any[]) {
     for (const [id, post] of Object.entries<any>(res)) {
@@ -303,6 +313,8 @@ export async function postsWithComments(pageToken: string, postIds: string[], li
         permalink: post.permalink_url ?? null,
         picture: post.full_picture ?? null,
         total: post.comments?.summary?.total_count ?? 0,
+        reactions: post.reactions?.summary?.total_count ?? 0,
+        shares: post.shares?.count ?? 0,
         comments: (post.comments?.data ?? []).filter((c: any) => c.message).map(toComment),
       });
     }

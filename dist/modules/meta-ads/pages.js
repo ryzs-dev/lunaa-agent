@@ -237,7 +237,7 @@ exports.toComment = toComment;
 // Several posts at once (50 per request): link, picture, comment total and the
 // latest `limit` comments of each. limit 0 just counts.
 async function postsWithComments(pageToken, postIds, limit) {
-    var _a, _b, _c, _d, _e, _f, _g;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m;
     const out = new Map();
     const edge = limit
         ? `comments.order(reverse_chronological).summary(total_count).limit(${limit}){${exports.COMMENT_FIELDS}}`
@@ -247,14 +247,16 @@ async function postsWithComments(pageToken, postIds, limit) {
     const chunks = [];
     for (let i = 0; i < postIds.length; i += size)
         chunks.push(postIds.slice(i, i + size));
-    const results = await Promise.all(chunks.map((ids) => (0, graph_1.graphGet)('', pageToken, { ids: ids.join(','), fields: `permalink_url,full_picture,${edge}` })));
+    const results = await Promise.all(chunks.map((ids) => (0, graph_1.graphGet)('', pageToken, { ids: ids.join(','), fields: `permalink_url,full_picture,shares,reactions.summary(total_count).limit(0),${edge}` })));
     for (const res of results) {
         for (const [id, post] of Object.entries(res)) {
             out.set(id, {
                 permalink: (_a = post.permalink_url) !== null && _a !== void 0 ? _a : null,
                 picture: (_b = post.full_picture) !== null && _b !== void 0 ? _b : null,
                 total: (_e = (_d = (_c = post.comments) === null || _c === void 0 ? void 0 : _c.summary) === null || _d === void 0 ? void 0 : _d.total_count) !== null && _e !== void 0 ? _e : 0,
-                comments: ((_g = (_f = post.comments) === null || _f === void 0 ? void 0 : _f.data) !== null && _g !== void 0 ? _g : []).filter((c) => c.message).map(exports.toComment),
+                reactions: (_h = (_g = (_f = post.reactions) === null || _f === void 0 ? void 0 : _f.summary) === null || _g === void 0 ? void 0 : _g.total_count) !== null && _h !== void 0 ? _h : 0,
+                shares: (_k = (_j = post.shares) === null || _j === void 0 ? void 0 : _j.count) !== null && _k !== void 0 ? _k : 0,
+                comments: ((_m = (_l = post.comments) === null || _l === void 0 ? void 0 : _l.data) !== null && _m !== void 0 ? _m : []).filter((c) => c.message).map(exports.toComment),
             });
         }
     }

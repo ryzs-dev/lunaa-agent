@@ -7,6 +7,7 @@ exports.campaignName = campaignName;
 const graph_1 = require("./graph");
 const pages_1 = require("./pages");
 const CONVERSATION = 'onsite_conversion.messaging_conversation_started_7d';
+const action = (row, type) => { var _a, _b, _c; return Number((_c = (_b = (_a = row === null || row === void 0 ? void 0 : row.actions) === null || _a === void 0 ? void 0 : _a.find((a) => a.action_type === type)) === null || _b === void 0 ? void 0 : _b.value) !== null && _c !== void 0 ? _c : 0); };
 function check(accountId, from, to) {
     if (!/^act_\d+$/.test(accountId))
         throw new Error('Unknown ad account');
@@ -77,7 +78,7 @@ async function campaignAds(accountId, campaignId, from, to) {
     if (!/^\d+$/.test(campaignId))
         throw new Error('Unknown campaign');
     const token = await (0, pages_1.userToken)();
-    return (0, pages_1.cached)(`campaign-ads:${accountId}:${campaignId}:${from}:${to}`, async () => {
+    return (0, pages_1.cached)(`campaign-ads2:${accountId}:${campaignId}:${from}:${to}`, async () => {
         const rows = await adInsights(token, accountId, from, to, campaignId);
         const creatives = await adCreatives(token, rows.map((r) => r.ad_id));
         const counts = new Map();
@@ -88,7 +89,7 @@ async function campaignAds(accountId, campaignId, from, to) {
         }
         return rows
             .map((r) => {
-            var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o;
+            var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q;
             const c = creatives.get(r.ad_id);
             const post = (c === null || c === void 0 ? void 0 : c.post_id) ? counts.get(c.post_id) : undefined;
             return {
@@ -104,6 +105,8 @@ async function campaignAds(accountId, campaignId, from, to) {
                 page_id: (_l = (_k = c === null || c === void 0 ? void 0 : c.post_id) === null || _k === void 0 ? void 0 : _k.split('_')[0]) !== null && _l !== void 0 ? _l : null,
                 permalink: (_m = post === null || post === void 0 ? void 0 : post.permalink) !== null && _m !== void 0 ? _m : null,
                 comments: (_o = post === null || post === void 0 ? void 0 : post.total) !== null && _o !== void 0 ? _o : 0,
+                reactions: (_p = post === null || post === void 0 ? void 0 : post.reactions) !== null && _p !== void 0 ? _p : 0,
+                shares: (_q = post === null || post === void 0 ? void 0 : post.shares) !== null && _q !== void 0 ? _q : 0,
             };
         })
             .sort((a, b) => b.spend - a.spend);
@@ -170,8 +173,8 @@ async function adDetail(adId, from, to) {
         throw new Error('Unknown ad');
     check('act_0', from, to);
     const token = await (0, pages_1.userToken)();
-    return (0, pages_1.cached)(`ad:${adId}:${from}:${to}`, async () => {
-        var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t;
+    return (0, pages_1.cached)(`ad2:${adId}:${from}:${to}`, async () => {
+        var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u, _v;
         const [ad, insights] = await Promise.all([
             (0, graph_1.graphGet)(adId, token, {
                 fields: 'name,effective_status,campaign{id,name},creative{effective_object_story_id,thumbnail_url}',
@@ -200,7 +203,16 @@ async function adDetail(adId, from, to) {
             clicks: Number((_o = row.clicks) !== null && _o !== void 0 ? _o : 0),
             conversations: Number((_r = (_q = (_p = row.actions) === null || _p === void 0 ? void 0 : _p.find((a) => a.action_type === CONVERSATION)) === null || _q === void 0 ? void 0 : _q.value) !== null && _r !== void 0 ? _r : 0),
             total_comments: (_s = post === null || post === void 0 ? void 0 : post.total) !== null && _s !== void 0 ? _s : 0,
-            comments: (_t = post === null || post === void 0 ? void 0 : post.comments) !== null && _t !== void 0 ? _t : [],
+            reactions: (_t = post === null || post === void 0 ? void 0 : post.reactions) !== null && _t !== void 0 ? _t : 0,
+            shares: (_u = post === null || post === void 0 ? void 0 : post.shares) !== null && _u !== void 0 ? _u : 0,
+            engagement: {
+                total: action(row, 'post_engagement'),
+                reactions: action(row, 'post_reaction'),
+                comments: action(row, 'comment'),
+                shares: action(row, 'post'),
+                saves: action(row, 'onsite_conversion.post_save'),
+            },
+            comments: (_v = post === null || post === void 0 ? void 0 : post.comments) !== null && _v !== void 0 ? _v : [],
         };
     });
 }

@@ -95,6 +95,7 @@ async function syncAccount(account, token, days) {
                     reach: Number(r.reach) || 0,
                     clicks: Number(r.clicks) || 0,
                     conversations: pick(r.actions, CONVERSATION_TYPES),
+                    comments: pick(r.actions, ['comment']),
                     purchases: pick(r.actions, PURCHASE_TYPES),
                     purchase_value: pick(r.action_values, PURCHASE_TYPES),
                     synced_at: new Date().toISOString(),

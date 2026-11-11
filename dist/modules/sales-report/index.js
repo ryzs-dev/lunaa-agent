@@ -46,6 +46,7 @@ const timezone_1 = require("../../utils/timezone");
 const KEYS = [
     'ad_spend',
     'messages',
+    'ad_comments',
     'wa_orders',
     'wa_new',
     'wa_repeat',
@@ -157,7 +158,31 @@ async function setTarget(month, target) {
     if (error)
         throw error;
 }
+// Comments on the main ad account's ads per day, from the synced ad numbers.
+async function adComments(accountId, first, last) {
+    var _a, _b;
+    const byDay = new Map();
+    if (!accountId)
+        return byDay;
+    for (let from = 0;; from += 1000) {
+        const { data, error } = await supabase_1.supabase
+            .from('meta_ad_insights')
+            .select('date, comments')
+            .eq('ad_account_id', accountId)
+            .gte('date', first)
+            .lte('date', last)
+            .range(from, from + 999);
+        if (error)
+            throw error;
+        for (const r of data !== null && data !== void 0 ? data : [])
+            byDay.set(r.date, ((_a = byDay.get(r.date)) !== null && _a !== void 0 ? _a : 0) + Number((_b = r.comments) !== null && _b !== void 0 ? _b : 0));
+        if (!data || data.length < 1000)
+            break;
+    }
+    return byDay;
+}
 async function salesReport(month) {
+    var _a;
     const today = todayInMalaysia();
     const { first, last, daysInMonth } = monthBounds(month);
     if (first > today)
@@ -171,15 +196,17 @@ async function salesReport(month) {
     ]);
     if (error)
         throw error;
+    const comments = await adComments((_a = ads === null || ads === void 0 ? void 0 : ads.ad_account_id) !== null && _a !== void 0 ? _a : null, first, until);
     const mpCounts = marketplaceCounts(marketplace, first, until);
     const days = (data !== null && data !== void 0 ? data : []).map((r) => {
-        var _a, _b, _c;
+        var _a, _b, _c, _d;
         const c = {};
         for (const k of KEYS)
             c[k] = Number((_a = r[k]) !== null && _a !== void 0 ? _a : 0);
         const mp = mpCounts.get(String(r.day));
         c.mp_new = (_b = mp === null || mp === void 0 ? void 0 : mp.mp_new) !== null && _b !== void 0 ? _b : 0;
         c.mp_repeat = (_c = mp === null || mp === void 0 ? void 0 : mp.mp_repeat) !== null && _c !== void 0 ? _c : 0;
+        c.ad_comments = (_d = comments.get(String(r.day))) !== null && _d !== void 0 ? _d : 0;
         return Object.assign({ date: String(r.day) }, derive(c));
     });
     const sum = {};

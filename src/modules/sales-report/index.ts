@@ -9,6 +9,7 @@ import { APP_TIMEZONE } from '../../utils/timezone';
 type Counts = {
   ad_spend: number;
   messages: number;
+  ad_comments: number;
   wa_orders: number;
   wa_new: number;
   wa_repeat: number;
@@ -27,6 +28,7 @@ type Counts = {
 const KEYS: (keyof Counts)[] = [
   'ad_spend',
   'messages',
+  'ad_comments',
   'wa_orders',
   'wa_new',
   'wa_repeat',
@@ -160,6 +162,25 @@ export async function setTarget(month: string, target: number | null) {
   if (error) throw error;
 }
 
+// Comments on the main ad account's ads per day, from the synced ad numbers.
+async function adComments(accountId: string | null, first: string, last: string) {
+  const byDay = new Map<string, number>();
+  if (!accountId) return byDay;
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await supabase
+      .from('meta_ad_insights')
+      .select('date, comments')
+      .eq('ad_account_id', accountId)
+      .gte('date', first)
+      .lte('date', last)
+      .range(from, from + 999);
+    if (error) throw error;
+    for (const r of data ?? []) byDay.set(r.date, (byDay.get(r.date) ?? 0) + Number(r.comments ?? 0));
+    if (!data || data.length < 1000) break;
+  }
+  return byDay;
+}
+
 export async function salesReport(month: string) {
   const today = todayInMalaysia();
   const { first, last, daysInMonth } = monthBounds(month);
@@ -173,6 +194,7 @@ export async function salesReport(month: string) {
     marketplaceOrders(until),
   ]);
   if (error) throw error;
+  const comments = await adComments(ads?.ad_account_id ?? null, first, until);
   const mpCounts = marketplaceCounts(marketplace, first, until);
 
   const days: ReportRow[] = (data ?? []).map((r: Record<string, unknown>) => {
@@ -181,6 +203,7 @@ export async function salesReport(month: string) {
     const mp = mpCounts.get(String(r.day));
     c.mp_new = mp?.mp_new ?? 0;
     c.mp_repeat = mp?.mp_repeat ?? 0;
+    c.ad_comments = comments.get(String(r.day)) ?? 0;
     return { date: String(r.day), ...derive(c) };
   });
 

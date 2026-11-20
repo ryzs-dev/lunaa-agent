@@ -46,6 +46,30 @@ export class ParcelDailyService {
     return { status: response.status, body: response.data };
   }
 
+  // Voucher sign-in lives in the parcel service; pass status codes through.
+  async getVouchers() {
+    const response = await axios.get(`${this.parcelDailyServiceURL}/vouchers`, {
+      validateStatus: () => true,
+    });
+    return { status: response.status, body: response.data };
+  }
+
+  async voucherSignIn(login: unknown, password: unknown) {
+    const response = await axios.post(
+      `${this.parcelDailyServiceURL}/vouchers/sign-in`,
+      { login, password },
+      { validateStatus: () => true }
+    );
+    return { status: response.status, body: response.data };
+  }
+
+  async voucherSignOut() {
+    const response = await axios.post(`${this.parcelDailyServiceURL}/vouchers/sign-out`, {}, {
+      validateStatus: () => true,
+    });
+    return { status: response.status, body: response.data };
+  }
+
   async createShipment(shipmentData: ShipmentInput, crmOrderId: UUID) {
     const postcode = findPostcode(shipmentData.clientAddress.postcode, true);
     const normalizedPhone = this.normalizePhoneNumber(

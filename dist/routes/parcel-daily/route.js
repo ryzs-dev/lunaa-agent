@@ -45,6 +45,39 @@ exports.parcelDailyRouter.put('/settings', async (req, res) => {
         return res.status(502).json({ error: 'Couldn’t save Parcel Daily settings' });
     }
 });
+// Vouchers: sign-in state and the account's vouchers
+exports.parcelDailyRouter.get('/vouchers', async (req, res) => {
+    try {
+        const { status, body } = await parcelDailyService.getVouchers();
+        return res.status(status).json(body);
+    }
+    catch (error) {
+        console.error('Error fetching Parcel Daily vouchers:', error === null || error === void 0 ? void 0 : error.message);
+        return res.status(502).json({ success: false, message: 'Couldn’t reach the shipping service' });
+    }
+});
+exports.parcelDailyRouter.post('/vouchers/sign-in', async (req, res) => {
+    var _a;
+    const { login, password } = (_a = req.body) !== null && _a !== void 0 ? _a : {};
+    try {
+        const { status, body } = await parcelDailyService.voucherSignIn(login, password);
+        return res.status(status).json(body);
+    }
+    catch (error) {
+        console.error('Error signing in to Parcel Daily:', error === null || error === void 0 ? void 0 : error.message);
+        return res.status(502).json({ success: false, message: 'Couldn’t reach the shipping service' });
+    }
+});
+exports.parcelDailyRouter.post('/vouchers/sign-out', async (req, res) => {
+    try {
+        const { status, body } = await parcelDailyService.voucherSignOut();
+        return res.status(status).json(body);
+    }
+    catch (error) {
+        console.error('Error signing out of Parcel Daily:', error === null || error === void 0 ? void 0 : error.message);
+        return res.status(502).json({ success: false, message: 'Couldn’t reach the shipping service' });
+    }
+});
 // POST /quote - Live courier prices for a destination
 exports.parcelDailyRouter.post('/quote', async (req, res) => {
     var _a, _b;

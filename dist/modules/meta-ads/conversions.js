@@ -9,6 +9,7 @@ const crypto_1 = __importDefault(require("crypto"));
 const supabase_1 = require("../supabase");
 const settings_1 = require("./settings");
 const graph_1 = require("./graph");
+const channels_1 = require("../orders/channels");
 // Meta only accepts events up to 7 days old.
 const MAX_AGE_MS = 7 * 86400000;
 const BATCH = 100;
@@ -93,7 +94,7 @@ async function sendPendingConversions() {
     if (doneError)
         throw doneError;
     const sent = new Set((done !== null && done !== void 0 ? done : []).map((d) => d.order_id));
-    const pending = (orders !== null && orders !== void 0 ? orders : []).filter((o) => !sent.has(o.id) && !o.is_distributor && (!o.source || o.source === 'whatsapp'));
+    const pending = (orders !== null && orders !== void 0 ? orders : []).filter((o) => !sent.has(o.id) && !o.is_distributor && !(0, channels_1.isMarketplaceOrder)(o.source));
     let sentCount = 0;
     let failedCount = 0;
     for (let i = 0; i < pending.length; i += BATCH) {

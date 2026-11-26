@@ -94,6 +94,26 @@ async function routeUpdateContact(
   return { success: true };
 }
 
+/**
+ * POST /api/converra/commands/orders
+ * An order logged in Converra (Log a sale). Body: channel, name, phone, address,
+ * items [{ name, quantity }], amount, payment ("paid" | "cod"), sale_id.
+ */
+converraCommandRouter.post('/orders', async (req: Request, res: Response) => {
+  if (!isAuthorizedCommand(req)) {
+    return res.status(401).json({ success: false, error: 'Invalid bridge key' });
+  }
+  try {
+    const { orderFromConverra } = await import('./converra-order-intake');
+    const result = await orderFromConverra(req.body);
+    return res.status(result.status).json(result.body);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error('[ConverraCommands] Order from Converra failed:', message);
+    return res.status(500).json({ success: false, error: `The CRM could not save the order: ${message}` });
+  }
+});
+
 converraCommandRouter.post('/', async (req: Request, res: Response) => {
   if (!isAuthorizedCommand(req)) {
     return res.status(401).json({ success: false, error: 'Invalid bridge key' });

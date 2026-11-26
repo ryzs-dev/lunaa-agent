@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.getRepeatOrderValue = getRepeatOrderValue;
 exports.getChannelTotals = getChannelTotals;
 const supabase_1 = require("../supabase");
+const channels_1 = require("../orders/channels");
 const CUSTOMER_ID_CHUNK_SIZE = 200;
 // Malaysia calendar day of a moment, to compare with orders.sales_day.
 function malaysiaDay(d) {
@@ -83,11 +84,7 @@ function getMonthRange(month) {
 }
 const PAGE_SIZE = 1000;
 async function getChannelTotals(start, end) {
-    const totals = {
-        whatsapp: { orders: 0, revenue: 0 },
-        shopee: { orders: 0, revenue: 0 },
-        lazada: { orders: 0, revenue: 0 },
-    };
+    const totals = Object.fromEntries(channels_1.ORDER_CHANNELS.map((channel) => [channel, { orders: 0, revenue: 0 }]));
     for (let from = 0;; from += PAGE_SIZE) {
         const { data, error } = await supabase_1.supabase
             .from('orders')
@@ -101,7 +98,7 @@ async function getChannelTotals(start, end) {
         if (error)
             throw error;
         for (const row of data !== null && data !== void 0 ? data : []) {
-            const key = (row.source in totals ? row.source : 'whatsapp');
+            const key = (0, channels_1.orderChannel)(row.source);
             totals[key].orders += 1;
             totals[key].revenue += Number(row.total_amount || 0);
         }

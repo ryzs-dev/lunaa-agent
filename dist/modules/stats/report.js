@@ -42,6 +42,7 @@ const XLSX = __importStar(require("xlsx"));
 const supabase_1 = require("../supabase");
 const meta_ads_1 = require("../../routes/meta-ads");
 const database_1 = __importDefault(require("./database"));
+const channels_1 = require("../orders/channels");
 const statsDb = new database_1.default();
 const customerMix = (firstDay, lastDay) => statsDb.getCustomerMix(firstDay, lastDay);
 // A report staff build themselves: one day or one month, the sections they
@@ -67,7 +68,6 @@ exports.ORDER_COLUMNS = {
     delivery: 'Delivery status',
     remark: 'Remark',
 };
-const CHANNEL = { whatsapp: 'WhatsApp', shopee: 'Shopee', lazada: 'Lazada' };
 const SECTION_TITLE = {
     summary: 'Summary',
     daily: 'Day by day',
@@ -144,28 +144,28 @@ async function fetchOrders(b) {
         .range(from, to));
 }
 function orderCell(o, column) {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p;
     const tracking = Array.isArray(o.order_tracking) ? o.order_tracking[0] : o.order_tracking;
     const address = o.addresses;
     switch (column) {
         case 'date': return (_a = o.sales_day) !== null && _a !== void 0 ? _a : myt(o.created_at).slice(0, 10);
         case 'time': return myt(o.created_at).slice(11, 16);
         case 'order': return (_b = o.order_number) !== null && _b !== void 0 ? _b : '';
-        case 'channel': return (_c = CHANNEL[o.source]) !== null && _c !== void 0 ? _c : 'WhatsApp';
+        case 'channel': return (0, channels_1.channelLabel)(o.source);
         case 'type': return o.is_distributor ? 'Distributor' : 'Customer';
-        case 'customer': return ((_d = o.customers) === null || _d === void 0 ? void 0 : _d.name) || o.buyer_name || '';
-        case 'phone': return (_f = (_e = o.customers) === null || _e === void 0 ? void 0 : _e.phone_number) !== null && _f !== void 0 ? _f : '';
+        case 'customer': return ((_c = o.customers) === null || _c === void 0 ? void 0 : _c.name) || o.buyer_name || '';
+        case 'phone': return (_e = (_d = o.customers) === null || _d === void 0 ? void 0 : _d.phone_number) !== null && _e !== void 0 ? _e : '';
         case 'address': return address ? [address.full_address, address.postcode, address.city].filter(Boolean).join(', ') : '';
-        case 'state': return (_g = address === null || address === void 0 ? void 0 : address.state) !== null && _g !== void 0 ? _g : '';
-        case 'agent': return (_h = o.agent_name) !== null && _h !== void 0 ? _h : '';
-        case 'items': return (_j = o.shipment_description) !== null && _j !== void 0 ? _j : '';
+        case 'state': return (_f = address === null || address === void 0 ? void 0 : address.state) !== null && _f !== void 0 ? _f : '';
+        case 'agent': return (_g = o.agent_name) !== null && _g !== void 0 ? _g : '';
+        case 'items': return (_h = o.shipment_description) !== null && _h !== void 0 ? _h : '';
         case 'total': return money(Number(o.total_amount) || 0);
-        case 'payment': return (_k = o.payment_method) !== null && _k !== void 0 ? _k : '';
-        case 'status': return (_l = o.status) !== null && _l !== void 0 ? _l : '';
-        case 'courier': return (_m = tracking === null || tracking === void 0 ? void 0 : tracking.courier) !== null && _m !== void 0 ? _m : '';
-        case 'tracking': return (_o = tracking === null || tracking === void 0 ? void 0 : tracking.tracking_number) !== null && _o !== void 0 ? _o : '';
-        case 'delivery': return (_p = tracking === null || tracking === void 0 ? void 0 : tracking.status) !== null && _p !== void 0 ? _p : '';
-        case 'remark': return (_q = o.remark) !== null && _q !== void 0 ? _q : '';
+        case 'payment': return (_j = o.payment_method) !== null && _j !== void 0 ? _j : '';
+        case 'status': return (_k = o.status) !== null && _k !== void 0 ? _k : '';
+        case 'courier': return (_l = tracking === null || tracking === void 0 ? void 0 : tracking.courier) !== null && _l !== void 0 ? _l : '';
+        case 'tracking': return (_m = tracking === null || tracking === void 0 ? void 0 : tracking.tracking_number) !== null && _m !== void 0 ? _m : '';
+        case 'delivery': return (_o = tracking === null || tracking === void 0 ? void 0 : tracking.status) !== null && _o !== void 0 ? _o : '';
+        case 'remark': return (_p = o.remark) !== null && _p !== void 0 ? _p : '';
     }
 }
 // Same split as the dashboard: list price × quantity, or the order total shared

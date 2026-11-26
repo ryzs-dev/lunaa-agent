@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.isBookableCourier = isBookableCourier;
 exports.buildShipmentFromOrder = buildShipmentFromOrder;
 const country_1 = require("../../utils/country");
+const channels_1 = require("./channels");
 function hasExistingTracking(tracking) {
     var _a;
     if (!tracking)
@@ -41,8 +42,8 @@ function isBookableCourier(code) {
 const LEGACY_SERVICE_PROVIDERS = { sf_express: 'sfexd' };
 function buildShipmentFromOrder(order, options) {
     var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u;
-    if (order.source === 'shopee' || order.source === 'lazada') {
-        return { error: `${order.source === 'shopee' ? 'Shopee' : 'Lazada'} orders ship through the marketplace` };
+    if ((0, channels_1.isMarketplaceOrder)(order.source)) {
+        return { error: `${(0, channels_1.channelLabel)(order.source)} orders ship through the marketplace` };
     }
     if (hasExistingTracking(order.order_tracking)) {
         return { error: 'Order already has a tracking number' };

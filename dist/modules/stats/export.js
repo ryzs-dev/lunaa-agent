@@ -2,17 +2,13 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.monthOrdersCsv = monthOrdersCsv;
 const supabase_1 = require("../supabase");
+const channels_1 = require("../orders/channels");
 function csvCell(value) {
     const text = value == null ? '' : String(value);
     return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
-const CHANNEL = {
-    whatsapp: 'WhatsApp',
-    shopee: 'Shopee',
-    lazada: 'Lazada',
-};
 async function monthOrdersCsv(month) {
-    var _a, _b, _c;
+    var _a, _b;
     const [year, monthIndex] = month.split('-').map(Number);
     const nextMonth = monthIndex === 12 ? `${year + 1}-01` : `${year}-${String(monthIndex + 1).padStart(2, '0')}`;
     const rows = [];
@@ -40,12 +36,12 @@ async function monthOrdersCsv(month) {
         lines.push([
             String((_a = row.order_date) !== null && _a !== void 0 ? _a : '').slice(0, 10),
             row.order_number,
-            (_b = CHANNEL[row.source]) !== null && _b !== void 0 ? _b : 'WhatsApp',
+            (0, channels_1.channelLabel)(row.source),
             (customer === null || customer === void 0 ? void 0 : customer.name) || row.buyer_name || '',
             (customer === null || customer === void 0 ? void 0 : customer.phone_number) || '',
             row.agent_name || '',
             row.shipment_description || '',
-            (_c = row.total_amount) !== null && _c !== void 0 ? _c : '',
+            (_b = row.total_amount) !== null && _b !== void 0 ? _b : '',
         ]
             .map(csvCell)
             .join(','));

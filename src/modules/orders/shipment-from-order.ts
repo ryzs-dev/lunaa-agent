@@ -1,5 +1,6 @@
 import { ShipmentInput } from '../parcel-daily/types';
 import { countryFromPhone } from '../../utils/country';
+import { channelLabel, isMarketplaceOrder } from './channels';
 
 type OrderLike = {
   id?: string;
@@ -71,8 +72,8 @@ export function buildShipmentFromOrder(
   shipment?: ShipmentInput;
   error?: string;
 } {
-  if (order.source === 'shopee' || order.source === 'lazada') {
-    return { error: `${order.source === 'shopee' ? 'Shopee' : 'Lazada'} orders ship through the marketplace` };
+  if (isMarketplaceOrder(order.source)) {
+    return { error: `${channelLabel(order.source)} orders ship through the marketplace` };
   }
   if (hasExistingTracking(order.order_tracking)) {
     return { error: 'Order already has a tracking number' };

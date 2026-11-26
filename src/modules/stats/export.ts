@@ -1,15 +1,10 @@
 import { supabase } from '../supabase';
+import { channelLabel } from '../orders/channels';
 
 function csvCell(value: unknown) {
   const text = value == null ? '' : String(value);
   return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
-
-const CHANNEL: Record<string, string> = {
-  whatsapp: 'WhatsApp',
-  shopee: 'Shopee',
-  lazada: 'Lazada',
-};
 
 export async function monthOrdersCsv(month: string) {
   const [year, monthIndex] = month.split('-').map(Number);
@@ -43,7 +38,7 @@ export async function monthOrdersCsv(month: string) {
       [
         String(row.order_date ?? '').slice(0, 10),
         row.order_number,
-        CHANNEL[row.source] ?? 'WhatsApp',
+        channelLabel(row.source),
         customer?.name || row.buyer_name || '',
         customer?.phone_number || '',
         row.agent_name || '',

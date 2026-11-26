@@ -2,6 +2,7 @@ import * as XLSX from 'xlsx';
 import { supabase } from '../supabase';
 import { campaignTotals } from '../../routes/meta-ads';
 import StatsDatabase from './database';
+import { channelLabel } from '../orders/channels';
 
 const statsDb = new StatsDatabase();
 const customerMix = (firstDay: string, lastDay: string) => statsDb.getCustomerMix(firstDay, lastDay);
@@ -43,7 +44,6 @@ export type ReportRequest = {
   format: 'xlsx' | 'csv';
 };
 
-const CHANNEL: Record<string, string> = { whatsapp: 'WhatsApp', shopee: 'Shopee', lazada: 'Lazada' };
 const SECTION_TITLE: Record<ReportSection, string> = {
   summary: 'Summary',
   daily: 'Day by day',
@@ -145,7 +145,7 @@ function orderCell(o: any, column: OrderColumn): string | number | null {
     case 'date': return o.sales_day ?? myt(o.created_at).slice(0, 10);
     case 'time': return myt(o.created_at).slice(11, 16);
     case 'order': return o.order_number ?? '';
-    case 'channel': return CHANNEL[o.source] ?? 'WhatsApp';
+    case 'channel': return channelLabel(o.source);
     case 'type': return o.is_distributor ? 'Distributor' : 'Customer';
     case 'customer': return o.customers?.name || o.buyer_name || '';
     case 'phone': return o.customers?.phone_number ?? '';

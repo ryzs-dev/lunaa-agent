@@ -48,9 +48,10 @@ const div = (a: number, b: number) => (b ? a / b : null);
 const round = (n: number | null, places = 2) => (n == null ? null : Math.round(n * 10 ** places) / 10 ** places);
 
 // Her formulas: cost per message = spend ÷ messages; cost per conversion =
-// spend ÷ new WhatsApp orders; conversion = new WhatsApp orders ÷ messages;
-// repeat % = repeat WhatsApp orders ÷ WhatsApp orders; ROAS = all sales ÷
-// spend; AOV = all sales ÷ all orders.
+// spend ÷ new message orders; conversion = new message orders ÷ messages;
+// repeat % = repeat message orders ÷ message orders; ROAS = all sales ÷
+// spend; AOV = all sales ÷ all orders. A message order (the wa_ figures) is
+// one sold in chat: WhatsApp, Messenger or Instagram.
 function derive(c: Counts) {
   const marketplace = c.shopee_orders + c.lazada_orders;
   return {

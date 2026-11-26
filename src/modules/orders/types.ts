@@ -1,4 +1,5 @@
 import { UUID } from 'crypto';
+import { OrderChannel } from './channels';
 
 export interface OrderInput {
   created_at?: string | number | Date;
@@ -15,6 +16,8 @@ export interface OrderInput {
   shipment_description?: string;
   is_distributor?: boolean;
   created_by_phone?: string;
+  // Where it was sold; the database default is WhatsApp.
+  source?: OrderChannel;
 }
 
 export type OrderType = 'all' | 'customer' | 'distributor';

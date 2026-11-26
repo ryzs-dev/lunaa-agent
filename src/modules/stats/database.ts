@@ -1,4 +1,5 @@
 import { supabase } from '../supabase';
+import { ORDER_CHANNELS, OrderChannel, orderChannel } from '../orders/channels';
 
 export type ProductPerformanceRow = {
   product_id: string;
@@ -148,19 +149,14 @@ function getMonthRange(month: string) {
   };
 }
 
-export type ChannelTotals = Record<
-  'whatsapp' | 'shopee' | 'lazada',
-  { orders: number; revenue: number }
->;
+export type ChannelTotals = Record<OrderChannel, { orders: number; revenue: number }>;
 
 const PAGE_SIZE = 1000;
 
 export async function getChannelTotals(start: Date, end: Date): Promise<ChannelTotals> {
-  const totals: ChannelTotals = {
-    whatsapp: { orders: 0, revenue: 0 },
-    shopee: { orders: 0, revenue: 0 },
-    lazada: { orders: 0, revenue: 0 },
-  };
+  const totals = Object.fromEntries(
+    ORDER_CHANNELS.map((channel) => [channel, { orders: 0, revenue: 0 }])
+  ) as ChannelTotals;
 
   for (let from = 0; ; from += PAGE_SIZE) {
     const { data, error } = await supabase
@@ -176,7 +172,7 @@ export async function getChannelTotals(start: Date, end: Date): Promise<ChannelT
     if (error) throw error;
 
     for (const row of data ?? []) {
-      const key = (row.source in totals ? row.source : 'whatsapp') as keyof ChannelTotals;
+      const key = orderChannel(row.source);
       totals[key].orders += 1;
       totals[key].revenue += Number(row.total_amount || 0);
     }

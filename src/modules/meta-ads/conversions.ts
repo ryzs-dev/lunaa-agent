@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import { supabase } from '../supabase';
 import { connection } from './settings';
 import { graphError, graphPost } from './graph';
+import { isMarketplaceOrder } from '../orders/channels';
 
 // Meta only accepts events up to 7 days old.
 const MAX_AGE_MS = 7 * 86400000;
@@ -93,7 +94,7 @@ export async function sendPendingConversions() {
   const sent = new Set((done ?? []).map((d) => d.order_id));
 
   const pending = (orders ?? []).filter(
-    (o: any) => !sent.has(o.id) && !o.is_distributor && (!o.source || o.source === 'whatsapp')
+    (o: any) => !sent.has(o.id) && !o.is_distributor && !isMarketplaceOrder(o.source)
   );
 
   let sentCount = 0;

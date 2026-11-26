@@ -190,7 +190,26 @@ export async function orderFromConverra(raw: unknown): Promise<OrderIntakeResult
     new Map((products ?? []).map((p: Product) => [p.id, p]))
   );
 
-  // The same sale sent twice, or already typed on the WhatsApp order line today.
+  // The very same sale sent again (a retry from Converra).
+  const saleId = text(body.sale_id, 64);
+  const externalRef = saleId ? `converra:${saleId}` : null;
+  if (externalRef) {
+    const { data: sameSale, error: sameSaleError } = await supabase
+      .from('orders')
+      .select('id, order_number')
+      .eq('external_ref', externalRef)
+      .is('deleted_at', null)
+      .limit(1);
+    if (sameSaleError) throw sameSaleError;
+    if (sameSale?.[0]) {
+      return {
+        status: 200,
+        body: { success: true, duplicate: true, order_id: sameSale[0].id, order_number: sameSale[0].order_number },
+      };
+    }
+  }
+
+  // The same order already typed on the WhatsApp order line today.
   const existing = await orderService.findSimilarOrder({
     customer_id: customer.id,
     order_date: orderDate,
@@ -215,12 +234,13 @@ export async function orderFromConverra(raw: unknown): Promise<OrderIntakeResult
     total_amount: totalAmount,
     order_items: matched.items as never,
     shipment_description: shipmentDescription,
-    status: payment === 'paid' ? 'paid' : 'unpaid',
+    // Saved the way an order from the WhatsApp order line is saved, so reports read both alike.
     // Shipping reads "COD" here to collect the money on delivery.
     ...(payment === 'cod' ? { payment_method: 'COD' } : {}),
     remark,
     source: channel,
-  });
+    ...(externalRef ? { external_ref: externalRef } : {}),
+  } as never);
 
   // The order sheet staff work from, written the same way as an order from the WhatsApp order line.
   let warning: string | undefined;
@@ -244,7 +264,7 @@ export async function orderFromConverra(raw: unknown): Promise<OrderIntakeResult
     warning = 'Saved in the CRM, but the order sheet row was not written.';
   }
 
-  console.log('[converra] Order from Converra saved:', { order: order?.order_number, channel, sale: text(body.sale_id, 64) });
+  console.log('[converra] Order from Converra saved:', { order: order?.order_number, channel, sale: saleId });
   return {
     status: 200,
     body: { success: true, order_id: order?.id, order_number: order?.order_number, ...(warning ? { warning } : {}) },

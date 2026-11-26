@@ -165,7 +165,26 @@ async function orderFromConverra(raw) {
     const orderDate = todayInMalaysia();
     const totalAmount = Number.isFinite(amount) ? amount : 0;
     const shipmentDescription = (0, database_1.shipmentDescriptionFor)(matched.items, new Map((products !== null && products !== void 0 ? products : []).map((p) => [p.id, p])));
-    // The same sale sent twice, or already typed on the WhatsApp order line today.
+    // The very same sale sent again (a retry from Converra).
+    const saleId = text(body.sale_id, 64);
+    const externalRef = saleId ? `converra:${saleId}` : null;
+    if (externalRef) {
+        const { data: sameSale, error: sameSaleError } = await supabase_1.supabase
+            .from('orders')
+            .select('id, order_number')
+            .eq('external_ref', externalRef)
+            .is('deleted_at', null)
+            .limit(1);
+        if (sameSaleError)
+            throw sameSaleError;
+        if (sameSale === null || sameSale === void 0 ? void 0 : sameSale[0]) {
+            return {
+                status: 200,
+                body: { success: true, duplicate: true, order_id: sameSale[0].id, order_number: sameSale[0].order_number },
+            };
+        }
+    }
+    // The same order already typed on the WhatsApp order line today.
     const existing = await orderService.findSimilarOrder({
         customer_id: customer.id,
         order_date: orderDate,
@@ -181,7 +200,7 @@ async function orderFromConverra(raw) {
     const addressFields = locateAddress(addressText);
     const address = await addressService.createAddress(Object.assign({ customer_id: customer.id }, addressFields));
     const remark = text(body.note, 500) || undefined;
-    const order = await orderService.createOrder(Object.assign(Object.assign({ customer_id: customer.id, address_id: address.id, order_date: orderDate, total_amount: totalAmount, order_items: matched.items, shipment_description: shipmentDescription, status: payment === 'paid' ? 'paid' : 'unpaid' }, (payment === 'cod' ? { payment_method: 'COD' } : {})), { remark, source: channel }));
+    const order = await orderService.createOrder(Object.assign(Object.assign(Object.assign({ customer_id: customer.id, address_id: address.id, order_date: orderDate, total_amount: totalAmount, order_items: matched.items, shipment_description: shipmentDescription }, (payment === 'cod' ? { payment_method: 'COD' } : {})), { remark, source: channel }), (externalRef ? { external_ref: externalRef } : {})));
     // The order sheet staff work from, written the same way as an order from the WhatsApp order line.
     let warning;
     try {
@@ -199,7 +218,7 @@ async function orderFromConverra(raw) {
         console.error('[converra] Sheet row failed for order from Converra:', order === null || order === void 0 ? void 0 : order.id, error);
         warning = 'Saved in the CRM, but the order sheet row was not written.';
     }
-    console.log('[converra] Order from Converra saved:', { order: order === null || order === void 0 ? void 0 : order.order_number, channel, sale: text(body.sale_id, 64) });
+    console.log('[converra] Order from Converra saved:', { order: order === null || order === void 0 ? void 0 : order.order_number, channel, sale: saleId });
     return {
         status: 200,
         body: Object.assign({ success: true, order_id: order === null || order === void 0 ? void 0 : order.id, order_number: order === null || order === void 0 ? void 0 : order.order_number }, (warning ? { warning } : {})),

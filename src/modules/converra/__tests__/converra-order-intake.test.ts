@@ -63,7 +63,23 @@ describe('items typed in Converra', () => {
       ],
       products
     );
-    expect(result.unknown).toEqual(['Starter set', '2w1x']);
+    expect(result.unknown).toEqual(['Starter set']);
+    // On an order line, something that is not a product is a gift: kept, not refused.
+    expect(result.extras).toEqual(['1x']);
+  });
+
+  it('keeps free gifts typed on the order line', () => {
+    const result = matchItems([{ name: '1w8s3sachet', quantity: 1 }], [...products, { id: 'p-s', code: 's', name: 'Spray' }]);
+    expect(result.unknown).toEqual([]);
+    expect(result.items).toEqual([
+      { product_id: 'p-w', quantity: 1 },
+      { product_id: 'p-s', quantity: 8 },
+    ]);
+    expect(result.extras).toEqual(['3sachet']);
+  });
+
+  it('refuses an order line with no product in it at all', () => {
+    expect(matchItems([{ name: '3sachet', quantity: 1 }], products).unknown).toEqual(['3sachet']);
   });
 
   it('accepts the list as JSON text too', () => {

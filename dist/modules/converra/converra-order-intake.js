@@ -61,6 +61,9 @@ function matchItems(items, products) {
     }
     const quantities = new Map();
     const unknown = [];
+    // Things on an order line that are not products (free gifts such as "3sachet"): kept in the
+    // order's description, the way the WhatsApp order line keeps them.
+    const extras = [];
     const add = (product, quantity) => { var _a; return quantities.set(product.id, ((_a = quantities.get(product.id)) !== null && _a !== void 0 ? _a : 0) + quantity); };
     for (const item of items) {
         const key = item.name.trim().toLowerCase();
@@ -72,10 +75,18 @@ function matchItems(items, products) {
         const compact = key.replace(/\s+/g, '');
         if (CODE_LINE.test(compact)) {
             const parts = [...compact.matchAll(/(\d+)([a-z]+(?:\d+ml)?)/gi)];
-            const found = parts.map((part) => ({ product: byKey.get(part[2].toLowerCase()), quantity: Number(part[1]) }));
-            if (found.every((part) => part.product && part.quantity > 0)) {
-                for (const part of found)
-                    add(part.product, part.quantity * item.quantity);
+            const found = parts.map((part) => ({
+                token: part[0],
+                product: byKey.get(part[2].toLowerCase()),
+                quantity: Number(part[1]),
+            }));
+            if (found.some((part) => part.product && part.quantity > 0)) {
+                for (const part of found) {
+                    if (part.product && part.quantity > 0)
+                        add(part.product, part.quantity * item.quantity);
+                    else
+                        extras.push(part.token);
+                }
                 continue;
             }
         }
@@ -84,6 +95,7 @@ function matchItems(items, products) {
     return {
         items: [...quantities.entries()].map(([product_id, quantity]) => ({ product_id, quantity })),
         unknown,
+        extras,
     };
 }
 /** Postcode, city and state from an address as the customer wrote it. */
@@ -164,7 +176,7 @@ async function orderFromConverra(raw) {
     const customer = await customerService.createCustomer({ name: name || undefined, phone_number: phone });
     const orderDate = todayInMalaysia();
     const totalAmount = Number.isFinite(amount) ? amount : 0;
-    const shipmentDescription = (0, database_1.shipmentDescriptionFor)(matched.items, new Map((products !== null && products !== void 0 ? products : []).map((p) => [p.id, p])));
+    const shipmentDescription = (0, database_1.shipmentDescriptionFor)(matched.items, new Map((products !== null && products !== void 0 ? products : []).map((p) => [p.id, p])), matched.extras.join(''));
     // The very same sale sent again (a retry from Converra).
     const saleId = text(body.sale_id, 64);
     const externalRef = saleId ? `converra:${saleId}` : null;
